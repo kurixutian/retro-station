@@ -1029,14 +1029,20 @@ export default function App() {
   const revealTopBar = useCallback((customDuration?: number) => {
     setTopBarVisible(true);
     if (topBarTimer.current) clearTimeout(topBarTimer.current);
-    const duration = typeof customDuration === 'number' ? customDuration : (isPaused ? 10000 : 3000);
+    const duration = typeof customDuration === 'number' ? customDuration : (isPaused ? 5000 : 3000);
     topBarTimer.current = setTimeout(() => setTopBarVisible(false), duration);
   }, [isPaused]);
 
-  // When paused, automatically reveal the top bar for 10 seconds
+  // When paused, automatically reveal the top bar for 5 seconds; when unpaused, auto-hide immediately
   useEffect(() => {
     if (isPaused) {
-      revealTopBar(10000);
+      revealTopBar(5000);
+    } else {
+      if (topBarTimer.current) {
+        clearTimeout(topBarTimer.current);
+        topBarTimer.current = null;
+      }
+      setTopBarVisible(false);
     }
   }, [isPaused, revealTopBar]);
   const [isRewinding, setIsRewinding] = useState(false);
@@ -2917,7 +2923,7 @@ export default function App() {
                 {/* Pause Overlay */}
                 {isPaused && (
                   <div
-                    onClick={() => revealTopBar(10000)}
+                    onClick={() => revealTopBar(5000)}
                     className="absolute inset-0 z-20 bg-black/70 backdrop-blur-xs flex flex-col items-center justify-center gap-2 cursor-pointer select-none"
                   >
                     <Pause className="w-8 h-8 text-amber-400" />
@@ -2945,7 +2951,12 @@ export default function App() {
                   onClick={() => {
                     setIsPaused((p) => {
                       const next = !p;
-                      if (next) revealTopBar(10000);
+                      if (next) {
+                        revealTopBar(5000);
+                      } else {
+                        if (topBarTimer.current) clearTimeout(topBarTimer.current);
+                        setTopBarVisible(false);
+                      }
                       return next;
                     });
                   }}
