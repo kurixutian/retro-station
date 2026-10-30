@@ -3,6 +3,8 @@ import {
   Play,
   Pause,
   RotateCcw,
+  Download,
+  Upload,
   HardDrive,
   Tv,
   Volume2,
@@ -233,8 +235,77 @@ class RetroAudioSynth {
 const soundFX = new RetroAudioSynth();
 
 // ============================================================================
-// 5. THUMBNAIL GENERATOR
+// 5. BATTERY SAVE (.SAV / .SRM) BRIDGE & THUMBNAIL GENERATOR
 // ============================================================================
+function downloadBinaryFile(uint8Array, fileName) {
+  const blob = new Blob([uint8Array], { type: 'application/octet-stream' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+async function unwrapBatterySaveBytes(bytes) {
+  if (!bytes || bytes.length < 4) return bytes;
+  // 1. GZIP check (1F 8B)
+  if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
+    try {
+      const ds = new DecompressionStream('gzip');
+      const writer = ds.writable.getWriter();
+      writer.write(bytes);
+      writer.close();
+      return new Uint8Array(await new Response(ds.readable).arrayBuffer());
+    } catch (e) {}
+  }
+  // 2. ZLIB check (78 01, 78 9C, 78 DA)
+  if (bytes[0] === 0x78 && (bytes[1] === 0x01 || bytes[1] === 0x9c || bytes[1] === 0xda)) {
+    try {
+      const ds = new DecompressionStream('deflate');
+      const writer = ds.writable.getWriter();
+      writer.write(bytes);
+      writer.close();
+      return new Uint8Array(await new Response(ds.readable).arrayBuffer());
+    } catch (e) {}
+  }
+  // 3. RetroArch RZIPv1 container (#RZIPv1# -> 20-byte header + [4-byte chunk len + zlib stream]...)
+  if (bytes.length >= 24 && bytes[0] === 0x23 && bytes[1] === 0x52 && bytes[2] === 0x5a && bytes[3] === 0x49 && bytes[4] === 0x50) {
+    try {
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      let pos = 20;
+      const chunks = [];
+      let totalLen = 0;
+      while (pos + 4 <= bytes.length) {
+        const compSize = view.getUint32(pos, true);
+        pos += 4;
+        if (compSize === 0 || pos + compSize > bytes.length) break;
+        const slice = bytes.subarray(pos, pos + compSize);
+        const ds = new DecompressionStream('deflate');
+        const writer = ds.writable.getWriter();
+        writer.write(slice);
+        writer.close();
+        const outArr = new Uint8Array(await new Response(ds.readable).arrayBuffer());
+        chunks.push(outArr);
+        totalLen += outArr.length;
+        pos += compSize;
+      }
+      if (totalLen > 0) {
+        const merged = new Uint8Array(totalLen);
+        let offset = 0;
+        for (const c of chunks) {
+          merged.set(c, offset);
+          offset += c.length;
+        }
+        return merged;
+      }
+    } catch (e) {}
+  }
+  return bytes;
+}
+
 // Generate an authentic pixel-art dataURL thumbnail for pre-populated Pokémon Gold save states
 function createPrepopulatedThumbnail(mode = 'overworld') {
   if (typeof document === 'undefined') return null;
@@ -618,23 +689,55 @@ function buildPlayerHtml(core, romUrl, title) {
     '  try{' +
     '    if(!window.EJS_emulator||!window.EJS_emulator.gameManager)return false;' +
     '    var gm=window.EJS_emulator.gameManager;' +
-    '    var fs=gm.FS||(window.EJS_emulator.Module&&window.EJS_emulator.Module.FS);' +
-    '    if(!fs)return false;' +
-    '    try{fs.mkdir("/data");}catch(e){}' +
-    '    try{fs.mkdir("/data/saves");}catch(e){}' +
+    '    var mod=gm.Module||window.EJS_emulator.Module;' +
+    '    var fs=gm.FS||(mod&&mod.FS);' +
     '    var srmArr=srmBytes?(srmBytes instanceof Uint8Array?srmBytes:new Uint8Array(srmBytes)):null;' +
     '    var rtcArr=rtcBytes?(rtcBytes instanceof Uint8Array?rtcBytes:new Uint8Array(rtcBytes)):null;' +
-    '    var paths=[];' +
-    '    if(typeof gm.getSaveFilePath==="function"){try{paths.push(gm.getSaveFilePath());}catch(e){}}' +
-    '    if(gm.savePath)paths.push(gm.savePath);' +
-    '    if(window.EJS_gameName)paths.push("/data/saves/"+window.EJS_gameName+".srm");' +
-    '    paths.forEach(function(p){' +
-    '      if(!p)return;' +
-    '      if(srmArr){try{fs.writeFile(p,srmArr);}catch(e){}}' +
-    '      if(rtcArr){var r=p.replace(/\\.[^/.]+$/,".rtc");try{fs.writeFile(r,rtcArr);}catch(e){}}' +
-    '    });' +
-    '    if(typeof gm.loadSaveFiles==="function"){gm.loadSaveFiles();}' +
-    '    else if(typeof gm.restart==="function"){gm.restart();}' +
+    '    if(fs){' +
+    '      try{fs.mkdir("/data");}catch(e){}' +
+    '      try{fs.mkdir("/data/saves");}catch(e){}' +
+    '      var paths=[];' +
+    '      if(typeof gm.getSaveFilePath==="function"){try{paths.push(gm.getSaveFilePath());}catch(e){}}' +
+    '      if(gm.savePath)paths.push(gm.savePath);' +
+    '      if(window.EJS_gameName){' +
+    '        paths.push("/data/saves/"+window.EJS_gameName+".srm");' +
+    '        paths.push("/data/saves/"+window.EJS_gameName+".sav");' +
+    '      }' +
+    '      try{' +
+    '        var existing=fs.readdir("/data/saves");' +
+    '        existing.forEach(function(fn){' +
+    '          if(fn!=="."&&fn!==".."&&(fn.endsWith(".srm")||fn.endsWith(".sav")))paths.push("/data/saves/"+fn);' +
+    '        });' +
+    '      }catch(e){}' +
+    '      paths.forEach(function(p){' +
+    '        if(!p)return;' +
+    '        if(srmArr){try{fs.writeFile(p,srmArr);}catch(e){}}' +
+    '        if(rtcArr){var r=p.replace(/\\.[^/.]+$/,".rtc");try{fs.writeFile(r,rtcArr);}catch(e){}}' +
+    '      });' +
+    '    }' +
+    '    var applyWasmMemory=function(){' +
+    '      if(typeof gm.loadSaveFiles==="function"){try{gm.loadSaveFiles();}catch(e){}}' +
+    '      if(mod&&mod.HEAPU8){' +
+    '        var getMemData=mod._retro_get_memory_data||(gm.functions&&gm.functions.getMemoryData);' +
+    '        var getMemSize=mod._retro_get_memory_size||(gm.functions&&gm.functions.getMemorySize);' +
+    '        if(typeof getMemData==="function"&&typeof getMemSize==="function"){' +
+    '          if(srmArr){' +
+    '            var ptr=getMemData(0),sz=getMemSize(0);' +
+    '            if(ptr&&sz>0)mod.HEAPU8.set(srmArr.subarray(0,Math.min(srmArr.length,sz)),ptr);' +
+    '          }' +
+    '          if(rtcArr){' +
+    '            var rPtr=getMemData(1),rSz=getMemSize(1);' +
+    '            if(rPtr&&rSz>0)mod.HEAPU8.set(rtcArr.subarray(0,Math.min(rtcArr.length,rSz)),rPtr);' +
+    '          }' +
+    '        }' +
+    '      }' +
+    '    };' +
+    '    applyWasmMemory();' +
+    '    if(typeof gm.saveSaveFiles==="function"){try{gm.saveSaveFiles();}catch(e){}}' +
+    '    if(fs&&typeof fs.syncfs==="function"){try{fs.syncfs(false,function(){});}catch(e){}}' +
+    '    if(typeof gm.restart==="function"){try{gm.restart();}catch(e){}}' +
+    '    else if(mod&&typeof mod._retro_reset==="function"){try{mod._retro_reset();}catch(e){}}' +
+    '    setTimeout(applyWasmMemory,120);' +
     '    return true;' +
     '  }catch(e){console.error("loadSrmData err",e);return false;}' +
     '};' +
@@ -642,8 +745,21 @@ function buildPlayerHtml(core, romUrl, title) {
     '  try{' +
     '    if(!window.EJS_emulator||!window.EJS_emulator.gameManager)return null;' +
     '    var gm=window.EJS_emulator.gameManager;' +
-    '    if(typeof gm.getSaveFile==="function"){return gm.getSaveFile(false);}' +
-    '    var fs=gm.FS||(window.EJS_emulator.Module&&window.EJS_emulator.Module.FS);' +
+    '    var mod=gm.Module||window.EJS_emulator.Module;' +
+    '    if(typeof gm.saveSaveFiles==="function"){try{gm.saveSaveFiles();}catch(e){}}' +
+    '    if(mod&&mod.HEAPU8){' +
+    '      var getMemData=mod._retro_get_memory_data||(gm.functions&&gm.functions.getMemoryData);' +
+    '      var getMemSize=mod._retro_get_memory_size||(gm.functions&&gm.functions.getMemorySize);' +
+    '      if(typeof getMemData==="function"&&typeof getMemSize==="function"){' +
+    '        var ptr=getMemData(0),sz=getMemSize(0);' +
+    '        if(ptr&&sz>0)return new Uint8Array(mod.HEAPU8.buffer,ptr,sz).slice();' +
+    '      }' +
+    '    }' +
+    '    if(typeof gm.getSaveFile==="function"){' +
+    '      var sf=gm.getSaveFile(false);' +
+    '      if(sf&&sf.length>0)return new Uint8Array(sf);' +
+    '    }' +
+    '    var fs=gm.FS||(mod&&mod.FS);' +
     '    var p=typeof gm.getSaveFilePath==="function"?gm.getSaveFilePath():("/data/saves/"+window.EJS_gameName+".srm");' +
     '    if(fs&&fs.readFile){return fs.readFile(p);}' +
     '  }catch(e){}' +
@@ -674,6 +790,19 @@ function buildPlayerHtml(core, romUrl, title) {
     '    return window.EJS_emulator.gameManager.getState();' +
     '  }catch(e){return null;}' +
     '};' +
+    'window.addEventListener("dragover",function(e){e.preventDefault();e.stopPropagation();},true);' +
+    'window.addEventListener("drop",function(e){' +
+    '  e.preventDefault();e.stopPropagation();' +
+    '  var files=e.dataTransfer&&e.dataTransfer.files;' +
+    '  if(!files||!files.length)return;' +
+    '  Array.from(files).forEach(function(f){' +
+    '    var r=new FileReader();' +
+    '    r.onload=function(){' +
+    '      parent.postMessage({type:"ejs-file-dropped",name:f.name,bytes:Array.from(new Uint8Array(r.result))},"*");' +
+    '    };' +
+    '    r.readAsArrayBuffer(f);' +
+    '  });' +
+    '},true);' +
     'window.EJS_onSaveUpdate=function(e){' +
     '  try{' +
     '    if(e&&e.save){' +
@@ -1065,6 +1194,8 @@ export default function App() {
 
   // Hidden File Inputs
   const romInputRef = useRef(null);
+  const batteryInputRef = useRef(null);
+  const batteryTargetGameIdRef = useRef(null);
 
   const theme = THEMES[themeId] || THEMES.midnight;
 
@@ -1375,6 +1506,121 @@ export default function App() {
     idbDelete(`state:${gameId}:${slotNumber}`).catch(console.error);
     showToast(`Cleared Slot #${slotNumber}`);
   }, [showToast]);
+
+  // ============================================================================
+  // CARTRIDGE BATTERY SAVE (.SAV / .SRM / .RTC) IMPORT, DRAG-DROP & EXPORT
+  // ============================================================================
+  const importBatteryPayloads = useCallback(async (items, explicitGameId = null) => {
+    const targetGameId = explicitGameId || batteryTargetGameIdRef.current || detailGame?.id || activeGame?.id;
+    if (!targetGameId || !items || items.length === 0) return;
+
+    let srmBytes = null;
+    let rtcBytes = null;
+    const names = [];
+
+    for (const item of items) {
+      const lower = (item.name || '').toLowerCase();
+      if (lower.endsWith('.rtc')) {
+        rtcBytes = item.bytes instanceof Uint8Array ? item.bytes : new Uint8Array(item.bytes);
+        await idbPut(`rtc:${targetGameId}`, rtcBytes);
+        pendingRtcRef.current = rtcBytes;
+        names.push('.rtc');
+      } else if (lower.endsWith('.srm') || lower.endsWith('.sav') || item.bytes) {
+        const raw = item.bytes instanceof Uint8Array ? item.bytes : new Uint8Array(item.bytes);
+        srmBytes = await unwrapBatterySaveBytes(raw);
+        await idbPut(`srm:${targetGameId}`, srmBytes);
+        pendingSrmRef.current = srmBytes;
+        names.push(`${(srmBytes.length / 1024).toFixed(0)}KB Battery`);
+      }
+    }
+
+    if (!srmBytes && !rtcBytes) return;
+
+    if (currentView === 'ingame' && activeGame?.id === targetGameId) {
+      const win = emuFrameRef.current?.contentWindow;
+      win?.loadSrmData?.(srmBytes, rtcBytes);
+      setInGameMenuOpen(false);
+      setIsPaused(false);
+      soundFX.coin();
+      showToast(`Battery Save Loaded (${names.join(' + ')}) • Game Restarted — Select CONTINUE`);
+    } else {
+      soundFX.coin();
+      showToast(`Battery Save Stored (${names.join(' + ')}) • Launch game & select CONTINUE`);
+    }
+  }, [activeGame?.id, currentView, detailGame?.id, showToast]);
+
+  const handleBatteryInputChange = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    try {
+      const payloads = await Promise.all(
+        files.map(async (f) => ({
+          name: f.name,
+          bytes: new Uint8Array(await f.arrayBuffer())
+        }))
+      );
+      await importBatteryPayloads(payloads, batteryTargetGameIdRef.current);
+    } catch (err) {
+      showToast(`Battery Import Error: ${err.message}`);
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  const handleScreenDrop = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const files = Array.from(e.dataTransfer?.files || []);
+    if (files.length === 0) return;
+    const payloads = await Promise.all(
+      files.map(async (f) => ({
+        name: f.name,
+        bytes: new Uint8Array(await f.arrayBuffer())
+      }))
+    );
+    await importBatteryPayloads(payloads, activeGame?.id);
+  };
+
+  useEffect(() => {
+    const onDropMsg = (e) => {
+      if (e.data?.type === 'ejs-file-dropped' && e.data?.bytes) {
+        importBatteryPayloads(
+          [{ name: e.data.name || 'save.srm', bytes: new Uint8Array(e.data.bytes) }],
+          activeGame?.id
+        );
+      }
+    };
+    window.addEventListener('message', onDropMsg);
+    return () => window.removeEventListener('message', onDropMsg);
+  }, [activeGame?.id, importBatteryPayloads]);
+
+  const exportBatterySave = useCallback(async (game, ext = 'sav') => {
+    if (!game) return;
+    const win = emuFrameRef.current?.contentWindow;
+    let srmBytes = null;
+    if (currentView === 'ingame' && activeGame?.id === game.id && win?.getSrmData) {
+      try {
+        srmBytes = win.getSrmData();
+        if (srmBytes && srmBytes.length > 0) {
+          await idbPut(`srm:${game.id}`, srmBytes).catch(() => {});
+        }
+      } catch (e) {}
+    }
+    if (!srmBytes || srmBytes.length === 0) {
+      try {
+        srmBytes = await idbGet(`srm:${game.id}`);
+      } catch (e) {}
+    }
+    if (!srmBytes || srmBytes.length === 0) {
+      showToast('No in-game battery save found yet — save inside the game first');
+      return;
+    }
+    const baseName = (game.fileName || game.title || 'game').replace(/\.[^/.]+$/, '');
+    const outName = `${baseName}.${ext}`;
+    downloadBinaryFile(srmBytes, outName);
+    soundFX.save();
+    showToast(`Exported ${outName} (${(srmBytes.length / 1024).toFixed(1)} KB)`);
+  }, [activeGame?.id, currentView, showToast]);
 
   // ============================================================================
   // KEYBOARD CONTROLS (FOR LAPTOP / DESKTOP PLAYABILITY)
@@ -2186,12 +2432,20 @@ export default function App() {
 
   return (
     <div className={`min-h-screen w-full ${theme.appBg} font-sans select-none overflow-x-hidden`}>
-      {/* Hidden File Input for ROMs */}
+      {/* Hidden File Inputs for ROMs & Battery Saves (.sav / .srm / .rtc) */}
       <input
         ref={romInputRef}
         type="file"
         accept=".gb,.gbc,.gba,.nes,.sfc,.smc,.md,.gen,.smd,.bin,.zip"
         onChange={handleRomUpload}
+        className="hidden"
+      />
+      <input
+        ref={batteryInputRef}
+        type="file"
+        multiple
+        accept=".sav,.srm,.rtc,*/*"
+        onChange={handleBatteryInputChange}
         className="hidden"
       />
 
@@ -2430,7 +2684,12 @@ export default function App() {
           (Top Settings Bar -> Upper Game Screen -> Lower Control Deck)
       ==================================================================== */}
       {currentView === 'ingame' && (
-        <div className="fixed inset-0 w-full overflow-hidden bg-zinc-950" style={{ height: '100dvh' }}>
+        <div
+          className="fixed inset-0 w-full overflow-hidden bg-zinc-950"
+          style={{ height: '100dvh' }}
+          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          onDrop={handleScreenDrop}
+        >
           {/* Vertical Handheld Shell Container */}
           <div
             className={`relative w-full h-full max-w-[560px] mx-auto flex flex-col overflow-hidden ${theme.shellBg}`}
@@ -2564,6 +2823,43 @@ export default function App() {
                     <Sliders className="w-4 h-4 text-purple-400" />
                     <span>Shaders & Theme</span>
                   </button>
+                </div>
+
+                {/* Cartridge Battery Save (.SAV / .SRM) Bridge */}
+                <div className="pt-2 border-t border-zinc-800/80 space-y-1.5">
+                  <div className="flex items-center justify-between text-[10px] text-zinc-400">
+                    <span className="font-bold uppercase tracking-wider text-amber-300/90">Cartridge Battery (.sav / .srm)</span>
+                    <span>Drag & drop onto screen</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <button
+                      onClick={() => {
+                        batteryTargetGameIdRef.current = activeGame.id;
+                        batteryInputRef.current?.click();
+                      }}
+                      className="flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-cyan-300 text-[11px] font-bold transition"
+                      title="Import .sav, .srm, or .rtc battery save file"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Import Save</span>
+                    </button>
+                    <button
+                      onClick={() => exportBatterySave(activeGame, 'sav')}
+                      className="flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 text-[11px] font-bold transition"
+                      title="Download .sav for physical cartridge flashers (GB Operator / FlashGBX)"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Export .SAV</span>
+                    </button>
+                    <button
+                      onClick={() => exportBatterySave(activeGame, 'srm')}
+                      className="flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 text-[11px] font-semibold transition"
+                      title="Download .srm for RetroArch"
+                    >
+                      <Download className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Export .SRM</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* Audio Mute Row */}
@@ -2908,6 +3204,36 @@ export default function App() {
                       <Play className="w-5 h-5 fill-current ml-0.5" />
                     </button>
                   )}
+
+                  <button
+                    onClick={() => {
+                      batteryTargetGameIdRef.current = targetGame.id;
+                      batteryInputRef.current?.click();
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-cyan-300 border border-cyan-500/30 text-xs font-bold transition"
+                    title="Import .sav, .srm, or .rtc battery save file"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Import Battery (.sav / .srm)</span>
+                  </button>
+
+                  <button
+                    onClick={() => exportBatterySave(targetGame, 'sav')}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-amber-300 border border-amber-500/30 text-xs font-bold transition"
+                    title="Download .sav for physical cartridge flasher (GB Operator / FlashGBX)"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Export .SAV</span>
+                  </button>
+
+                  <button
+                    onClick={() => exportBatterySave(targetGame, 'srm')}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-zinc-200 border border-zinc-700 text-xs font-bold transition"
+                    title="Download .srm for RetroArch"
+                  >
+                    <Download className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Export .SRM</span>
+                  </button>
 
                   <button
                     onClick={() => {
