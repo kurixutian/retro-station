@@ -2,6 +2,22 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Safe-area insets for fullscreen notch & mobile home-bars */
+html, body {
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.safe-top {
+  padding-top: max(env(safe-area-inset-top, 0px), 16px);
+}
+
+.safe-bottom {
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 12px);
+}
+
 @keyframes kenburns-slide {
   0% {
     transform: scale(1.05) translateY(-6%);

@@ -2330,7 +2330,10 @@ export default function App() {
       {currentView === 'home' && (
         <div className="pb-16">
           {/* Sticky Top Navigation Bar */}
-          <header className="sticky top-0 z-30 backdrop-blur-xl bg-zinc-950/85 border-b border-zinc-800/80 px-4 sm:px-6 py-3">
+          <header
+            className="sticky top-0 z-30 backdrop-blur-xl bg-zinc-950/85 border-b border-zinc-800/80 px-4 sm:px-6 py-3"
+            style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 12px)' }}
+          >
             <div className="max-w-6xl mx-auto flex items-center justify-between gap-3">
               {/* Brand Logo */}
               <div className="flex items-center gap-2.5">
@@ -2557,13 +2560,15 @@ export default function App() {
             <button
               aria-label="Show top bar"
               onClick={revealTopBar}
-              className="absolute top-0 left-0 right-0 h-5 z-20"
+              className="absolute top-0 left-0 right-0 z-20"
+              style={{ height: 'max(env(safe-area-inset-top, 0px) + 24px, 36px)' }}
             />
             {/* 1. TOP BAR (auto-hides) */}
             <div
-              className={`absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-3.5 py-2.5 bg-black/85 backdrop-blur border-b border-white/10 transition-all duration-300 ${
+              className={`absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-3.5 pb-2.5 bg-black/85 backdrop-blur border-b border-white/10 transition-all duration-300 ${
                 topBarVisible ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0 pointer-events-none'
               }`}
+              style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 14px)' }}
               onClick={revealTopBar}
             >
               <button
@@ -2710,7 +2715,10 @@ export default function App() {
             )}
 
             {/* 2. UPPER SCREEN AREA: GAME VIEWPORT + COMBINABLE SHADERS */}
-            <div className={`flex-none p-2 pt-3 flex flex-col items-center justify-center ${theme.bezelBg}`}>
+            <div
+              className={`flex-none p-2 flex flex-col items-center justify-center ${theme.bezelBg}`}
+              style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 24px)' }}
+            >
               <div
                 className={`relative bg-black overflow-hidden border-2 border-zinc-800 shadow-inner ${
                   shaders.crtCurve ? 'rounded-2xl scale-[0.99]' : 'rounded-lg'
@@ -2797,7 +2805,11 @@ export default function App() {
             </div>
 
             {/* 3. CONTROL DECK: free-placement, resizable pad groups */}
-            <div ref={deckRef} className={`relative flex-1 min-h-0 border-t overflow-hidden ${theme.deckBg}`}>
+            <div
+              ref={deckRef}
+              className={`relative flex-1 min-h-0 border-t overflow-hidden ${theme.deckBg}`}
+              style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 14px)' }}
+            >
               <PadGroup id="transport" layout={padLayout} customizing={customizing} selected={customizing && selectedPad === 'transport'} onSelect={setSelectedPad} onMove={movePad} deckRef={deckRef}>
 <div className="grid grid-cols-3 gap-2 w-[300px]">
                 {/* Pause Toggle */}
