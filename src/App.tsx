@@ -779,6 +779,12 @@ function buildPlayerHtml(core, romUrl, title) {
     '  }catch(e){}' +
     '};' +
     'setInterval(function(){' +
+    '  try{' +
+    '    var el=document.querySelector(".ejs_virtualGamepad_parent");' +
+    '    if(el)el.remove();' +
+    '    if(window.EJS_emulator&&window.EJS_emulator.virtualGamepad)window.EJS_emulator.virtualGamepad.style.display="none";' +
+    '  }catch(e){}' +
+    '},250);' + close +
     '<script src="https://cdn.emulatorjs.org/stable/data/loader.js">' + close + '</body></html>';
 }
 
