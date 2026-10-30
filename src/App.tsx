@@ -588,6 +588,64 @@ function createEmptySlotsForGame(gameId) {
 // ============================================================================
 // MAIN APPLICATION COMPONENT
 // ============================================================================
+const coreRatio = (core) => ({ gambatte: 10 / 9, mgba: 3 / 2, fceumm: 8 / 7, snes9x: 8 / 7 }[core] || 4 / 3);
+
+const DEFAULT_PAD_LAYOUT = {
+  transport: { x: 0.5, y: 0.1, s: 1 },
+  dpad: { x: 0.24, y: 0.42, s: 1 },
+  actions: { x: 0.76, y: 0.42, s: 1 },
+  system: { x: 0.5, y: 0.74, s: 1 }
+};
+const PAD_LABELS = { transport: 'Pause / Rewind / Speed', dpad: 'D-Pad', actions: 'A / B Buttons', system: 'Select / Start' };
+
+function loadPadLayout() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('retro_pad_layout') || 'null');
+    if (saved) return { ...DEFAULT_PAD_LAYOUT, ...saved };
+  } catch (e) {}
+  return DEFAULT_PAD_LAYOUT;
+}
+
+function PadGroup({ id, layout, customizing, selected, onSelect, onMove, deckRef, children }) {
+  const g = layout[id];
+  const dragging = useRef(false);
+  return (
+    <div
+      className="absolute"
+      style={{
+        left: `${g.x * 100}%`,
+        top: `${g.y * 100}%`,
+        transform: `translate(-50%, -50%) scale(${g.s})`,
+        zIndex: selected ? 30 : 10
+      }}
+    >
+      {children}
+      {customizing && (
+        <div
+          className={`absolute -inset-2 rounded-2xl border-2 border-dashed touch-none cursor-move ${
+            selected ? 'border-emerald-400 bg-emerald-400/15' : 'border-white/40 bg-white/5'
+          }`}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.currentTarget.setPointerCapture(e.pointerId);
+            dragging.current = true;
+            onSelect(id);
+          }}
+          onPointerMove={(e) => {
+            if (!dragging.current || !deckRef.current) return;
+            const r = deckRef.current.getBoundingClientRect();
+            const x = Math.min(0.97, Math.max(0.03, (e.clientX - r.left) / r.width));
+            const y = Math.min(0.97, Math.max(0.03, (e.clientY - r.top) / r.height));
+            onMove(id, x, y);
+          }}
+          onPointerUp={() => { dragging.current = false; }}
+          onPointerCancel={() => { dragging.current = false; }}
+        />
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   // Navigation View: 'home' (Netflix Library) | 'ingame' (Vertical Handheld)
   const [currentView, setCurrentView] = useState('home');
@@ -640,6 +698,15 @@ export default function App() {
   const [isRewinding, setIsRewinding] = useState(false);
   const [isFastForward, setIsFastForward] = useState(false);
   const [hidePad, setHidePad] = useState(false);
+  const [padLayout, setPadLayout] = useState(loadPadLayout);
+  const [customizing, setCustomizing] = useState(false);
+  const [selectedPad, setSelectedPad] = useState('dpad');
+  const deckRef = useRef(null);
+  useEffect(() => {
+    try { localStorage.setItem('retro_pad_layout', JSON.stringify(padLayout)); } catch (e) {}
+  }, [padLayout]);
+  const movePad = (id, x, y) => setPadLayout((l) => ({ ...l, [id]: { ...l[id], x, y } }));
+  const scalePad = (id, sc) => setPadLayout((l) => ({ ...l, [id]: { ...l[id], s: sc } }));
   const [isMuted, setIsMuted] = useState(false);
   const [fps, setFps] = useState(60);
   const [liveScore, setLiveScore] = useState(0);
@@ -2074,10 +2141,10 @@ export default function App() {
           (Top Settings Bar -> Upper Game Screen -> Lower Control Deck)
       ==================================================================== */}
       {currentView === 'ingame' && (
-        <div className="min-h-screen w-full flex flex-col items-center justify-between bg-zinc-950 py-1 sm:py-3 px-2">
+        <div className="fixed inset-0 w-full overflow-hidden bg-zinc-950" style={{ height: '100dvh' }}>
           {/* Vertical Handheld Shell Container */}
           <div
-            className={`relative w-full max-w-[440px] flex-1 flex flex-col justify-between rounded-3xl border-2 shadow-2xl overflow-hidden ${theme.shellBg}`}
+            className={`relative w-full h-full max-w-[560px] mx-auto flex flex-col overflow-hidden ${theme.shellBg}`}
           >
             {/* Tap zone at top: reveals the auto-hiding top bar */}
             <button
@@ -2175,6 +2242,19 @@ export default function App() {
                     <span>Load State Slots</span>
                   </button>
 
+                  <button
+                    onClick={() => {
+                      setInGameMenuOpen(false);
+                      setHidePad(false);
+                      setCustomizing(true);
+                      setSelectedPad('dpad');
+                    }}
+                    className="flex items-center gap-2 px-3 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 text-xs font-semibold transition"
+                  >
+                    <Sliders className="w-4 h-4 text-sky-400" />
+                    <span>Customize Controls</span>
+                  </button>
+
                   {/* Hide / Show Pad Toggle */}
                   <button
                     onClick={() => {
@@ -2243,13 +2323,14 @@ export default function App() {
             )}
 
             {/* 2. UPPER SCREEN AREA: GAME VIEWPORT + COMBINABLE SHADERS */}
-            <div className={`p-3 sm:p-4 flex flex-col items-center justify-center ${theme.bezelBg}`}>
+            <div className={`flex-none p-2 pt-3 flex flex-col items-center justify-center ${theme.bezelBg}`}>
               <div
-                className={`relative w-full bg-black overflow-hidden border-2 border-zinc-800 shadow-inner ${
+                className={`relative bg-black overflow-hidden border-2 border-zinc-800 shadow-inner ${
                   shaders.crtCurve ? 'rounded-2xl scale-[0.99]' : 'rounded-lg'
                 }`}
                 style={{
-                  aspectRatio: ({ gambatte: '10 / 9', mgba: '3 / 2', fceumm: '8 / 7', snes9x: '8 / 7' } as Record<string, string>)[activeGame.core] || '4 / 3',
+                  aspectRatio: String(coreRatio(activeGame.core)),
+                  width: `min(100%, ${(48 * coreRatio(activeGame.core)).toFixed(2)}dvh)`,
                   boxShadow: shaders.rgbBloom
                     ? `0 0 28px ${theme.hex}33, inset 0 0 18px rgba(0,0,0,0.75)`
                     : 'none',
@@ -2311,10 +2392,10 @@ export default function App() {
               </div>
             </div>
 
-            {/* 3. LOWER CONTROLS DECK (ONLY PAUSE, HOLD REWIND, 2X SPEED + VIRTUAL GAMEPAD) */}
-            <div className={`flex-1 flex flex-col justify-between p-4 border-t ${theme.deckBg}`}>
-              {/* Quick Emulation Speed & Transport Strip: ONLY Pause, Hold Rewind, 2x Speed */}
-              <div className="grid grid-cols-3 gap-2 mb-3">
+            {/* 3. CONTROL DECK: free-placement, resizable pad groups */}
+            <div ref={deckRef} className={`relative flex-1 min-h-0 border-t overflow-hidden ${theme.deckBg}`}>
+              <PadGroup id="transport" layout={padLayout} customizing={customizing} selected={customizing && selectedPad === 'transport'} onSelect={setSelectedPad} onMove={movePad} deckRef={deckRef}>
+<div className="grid grid-cols-3 gap-2 w-[300px]">
                 {/* Pause Toggle */}
                 <button
                   onClick={() => setIsPaused((p) => !p)}
@@ -2360,13 +2441,9 @@ export default function App() {
                   <span>2x Speed</span>
                 </button>
               </div>
-
-              {/* Tactile Handheld Virtual Controller (Hidden if user toggled "Hide Pad" in Top Settings) */}
-              {!hidePad ? (
-                <div className="flex flex-col justify-between gap-4 my-auto">
-                  <div className="flex items-center justify-between px-1 sm:px-3 py-2">
-                    {/* Left: Cross D-Pad */}
-                    <div className="relative w-32 h-32">
+</PadGroup>
+              {(!hidePad || customizing) && (<PadGroup id="dpad" layout={padLayout} customizing={customizing} selected={customizing && selectedPad === 'dpad'} onSelect={setSelectedPad} onMove={movePad} deckRef={deckRef}>
+<div className="relative w-32 h-32">
                       {/* Up */}
                       <button
                         {...bindPadButton('up')}
@@ -2404,9 +2481,10 @@ export default function App() {
                         <div className="w-4 h-4 rounded-full bg-zinc-800" />
                       </div>
                     </div>
-
-                    {/* Right: Diamond Action Buttons (Y, X, B, A) */}
-                    <div className="relative w-36 h-32">
+</PadGroup>
+              )}
+              {(!hidePad || customizing) && (<PadGroup id="actions" layout={padLayout} customizing={customizing} selected={customizing && selectedPad === 'actions'} onSelect={setSelectedPad} onMove={movePad} deckRef={deckRef}>
+<div className="relative w-36 h-32">
                       {/* X (Top) */}
                       <button
                         {...bindPadButton('actionB')}
@@ -2436,10 +2514,10 @@ export default function App() {
                         A
                       </button>
                     </div>
-                  </div>
-
-                  {/* SELECT / START Pill Buttons */}
-                  <div className="flex items-center justify-center gap-6 pt-1 pb-1">
+</PadGroup>
+              )}
+              {(!hidePad || customizing) && (<PadGroup id="system" layout={padLayout} customizing={customizing} selected={customizing && selectedPad === 'system'} onSelect={setSelectedPad} onMove={movePad} deckRef={deckRef}>
+<div className="flex items-center justify-center gap-6 pt-1 pb-1">
                     <button
                       onClick={() => setInGameSaveModalMode('load')}
                       className="flex flex-col items-center gap-1 group"
@@ -2460,10 +2538,37 @@ export default function App() {
                       </span>
                     </button>
                   </div>
-                </div>
-              ) : (
-                <div className="py-4 text-center text-xs text-zinc-500">
-                  Virtual Gamepad Hidden • Use keyboard (WASD / Arrows + Z/X) or re-enable in Top Menu.
+</PadGroup>
+              )}
+              {customizing && (
+                <div className="absolute left-2 right-2 bottom-2 z-40 rounded-2xl bg-zinc-950/95 border border-zinc-700 p-2.5 shadow-2xl space-y-2">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-bold text-emerald-300">{PAD_LABELS[selectedPad]}</span>
+                    <span className="text-zinc-400">Drag to move • slider to resize</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="range"
+                      min="0.5"
+                      max="1.8"
+                      step="0.05"
+                      value={padLayout[selectedPad].s}
+                      onChange={(e) => scalePad(selectedPad, parseFloat(e.target.value))}
+                      className="flex-1"
+                    />
+                    <button
+                      onClick={() => setPadLayout(DEFAULT_PAD_LAYOUT)}
+                      className="px-2.5 py-1.5 rounded-lg bg-zinc-800 text-zinc-200 text-xs font-bold"
+                    >
+                      Reset
+                    </button>
+                    <button
+                      onClick={() => { setCustomizing(false); showToast('Controls saved'); }}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-500 text-zinc-950 text-xs font-black"
+                    >
+                      Done
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
