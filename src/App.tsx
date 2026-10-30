@@ -934,13 +934,6 @@ export default function App() {
   const [globalSettingsOpen, setGlobalSettingsOpen] = useState(false);
   // inGameMenuOpen: opens the Top Settings Gear Menu while inside a game
   const [inGameMenuOpen, setInGameMenuOpen] = useState(false);
-  const [topBarVisible, setTopBarVisible] = useState(false);
-  const topBarTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const revealTopBar = () => {
-    setTopBarVisible(true);
-    if (topBarTimer.current) clearTimeout(topBarTimer.current);
-    topBarTimer.current = setTimeout(() => setTopBarVisible(false), 3000);
-  };
   // inGameSaveModalMode: null | 'save' | 'load' (opens Per-Game Save State Slots overlay inside a game)
   const [inGameSaveModalMode, setInGameSaveModalMode] = useState(null);
 
@@ -1030,6 +1023,22 @@ export default function App() {
 
   // In-Game Emulation Runtime State
   const [isPaused, setIsPaused] = useState(false);
+  const [topBarVisible, setTopBarVisible] = useState(false);
+  const topBarTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const revealTopBar = useCallback((customDuration?: number) => {
+    setTopBarVisible(true);
+    if (topBarTimer.current) clearTimeout(topBarTimer.current);
+    const duration = typeof customDuration === 'number' ? customDuration : (isPaused ? 10000 : 3000);
+    topBarTimer.current = setTimeout(() => setTopBarVisible(false), duration);
+  }, [isPaused]);
+
+  // When paused, automatically reveal the top bar for 10 seconds
+  useEffect(() => {
+    if (isPaused) {
+      revealTopBar(10000);
+    }
+  }, [isPaused, revealTopBar]);
   const [isRewinding, setIsRewinding] = useState(false);
   const [isFastForward, setIsFastForward] = useState(false);
   const [hidePad, setHidePad] = useState(false);
@@ -2654,19 +2663,19 @@ export default function App() {
             {/* Tap zone at top: reveals the auto-hiding top bar */}
             <button
               aria-label="Show top bar"
-              onClick={revealTopBar}
-              className="absolute top-0 left-0 right-0 z-20"
-              style={{ height: 'max(env(safe-area-inset-top, 0px) + 24px, 36px)' }}
+              onClick={() => revealTopBar()}
+              className="absolute top-0 left-0 right-0 z-30 cursor-pointer"
+              style={{ height: 'max(env(safe-area-inset-top, 0px) + 28px, 44px)' }}
             />
             {/* 1. TOP BAR (auto-hides) */}
             <div
-              className={`absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-3.5 pb-2.5 ${
-                shaders.amoled ? 'bg-black border-b border-zinc-900' : 'bg-black/85 backdrop-blur border-b border-white/10'
-              } transition-all duration-300 ${
-                topBarVisible ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0 pointer-events-none'
+              className={`absolute top-0 left-0 right-0 z-40 flex items-center justify-between px-3.5 pb-2.5 ${
+                shaders.amoled ? 'bg-black border-b border-zinc-900' : 'bg-black/90 backdrop-blur-md border-b border-white/10'
+              } transition-all duration-300 shadow-xl ${
+                topBarVisible ? 'translate-y-0 opacity-100 pointer-events-auto' : '-translate-y-full opacity-0 pointer-events-none'
               }`}
               style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 14px)' }}
-              onClick={revealTopBar}
+              onClick={() => revealTopBar()}
             >
               <button
                 onClick={() => {
@@ -2907,10 +2916,16 @@ export default function App() {
 
                 {/* Pause Overlay */}
                 {isPaused && (
-                  <div className="absolute inset-0 z-30 bg-black/70 backdrop-blur-xs flex flex-col items-center justify-center gap-2">
+                  <div
+                    onClick={() => revealTopBar(10000)}
+                    className="absolute inset-0 z-20 bg-black/70 backdrop-blur-xs flex flex-col items-center justify-center gap-2 cursor-pointer select-none"
+                  >
                     <Pause className="w-8 h-8 text-amber-400" />
                     <span className="font-mono font-black text-sm tracking-widest text-white">
                       EMULATION PAUSED
+                    </span>
+                    <span className="text-[10px] text-zinc-400 font-sans tracking-normal">
+                      Tap screen to show menu • Tap Resume to play
                     </span>
                   </div>
                 )}
@@ -2927,7 +2942,13 @@ export default function App() {
 <div className="grid grid-cols-3 gap-2 w-[300px]">
                 {/* Pause Toggle */}
                 <button
-                  onClick={() => setIsPaused((p) => !p)}
+                  onClick={() => {
+                    setIsPaused((p) => {
+                      const next = !p;
+                      if (next) revealTopBar(10000);
+                      return next;
+                    });
+                  }}
                   className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl font-bold text-xs border transition active:scale-95 ${
                     isPaused
                       ? 'bg-amber-500 text-zinc-950 border-amber-300 shadow-lg'
