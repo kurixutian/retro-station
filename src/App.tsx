@@ -609,22 +609,85 @@ const idbDelete = async (key) => {
 };
 
 const EJS_CORES = { gambatte: 'gb', mgba: 'gba', fceumm: 'nes', snes9x: 'snes', genesis_plus_gx: 'segaMD' };
+
+const EMU_INPUT_MAP = {
+  actionB: 0, // RetroArch B
+  actionY: 1, // RetroArch Y
+  select: 2,  // RetroArch Select
+  start: 3,   // RetroArch Start
+  up: 4,      // RetroArch Up
+  down: 5,    // RetroArch Down
+  left: 6,    // RetroArch Left
+  right: 7,   // RetroArch Right
+  actionA: 8, // RetroArch A
+  actionX: 9, // RetroArch X
+  btnL: 10,   // RetroArch L
+  btnR: 11    // RetroArch R
+};
+
 const PAD_KEYS = {
-  up: ['ArrowUp', 38], down: ['ArrowDown', 40], left: ['ArrowLeft', 37], right: ['ArrowRight', 39],
-  actionA: ['z', 90], actionB: ['x', 88], start: ['Enter', 13], select: ['v', 86]
+  up: ['ArrowUp', 38],
+  down: ['ArrowDown', 40],
+  left: ['ArrowLeft', 37],
+  right: ['ArrowRight', 39],
+  actionA: ['x', 88],
+  actionB: ['z', 90],
+  actionX: ['s', 83],
+  actionY: ['a', 65],
+  start: ['Enter', 13],
+  select: ['ShiftRight', 16],
+  btnL: ['q', 81],
+  btnR: ['w', 87]
 };
 
 function buildPlayerHtml(core, romUrl, title) {
   const close = '<' + '/script>';
   return '<!doctype html><html><head><meta charset="utf-8">' +
-    '<meta name="viewport" content="width=device-width,initial-scale=1">' +
-    '<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#game{width:100%;height:100%}' +
-    '.ejs_virtual_gamepad,.ejs_menu_bar,.ejs_context_menu{display:none!important}</style></head><body>' +
+    '<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">' +
+    '<style>' +
+    'html,body{margin:0;padding:0;width:100%;height:100%;background:#000;overflow:hidden;touch-action:none;user-select:none}' +
+    '#game{width:100%;height:100%}' +
+    '.ejs_virtualGamepad_parent,.ejs_virtualGamepad_parent *,' +
+    '.ejs_virtualGamepad_top,.ejs_virtualGamepad_bottom,.ejs_virtualGamepad_left,.ejs_virtualGamepad_right,' +
+    '.ejs_dpad_main,.ejs_dpad_vertical,.ejs_dpad_horizontal,' +
+    '.ejs_virtual_gamepad,.ejs_menu_bar,.ejs_context_menu,#ejs_menu_bar,' +
+    'div[class*="virtualGamepad"],div[class*="dpad"],div[class*="gamepad"],div[class*="touch"]{' +
+    'display:none!important;opacity:0!important;pointer-events:none!important;visibility:hidden!important;' +
+    'width:0!important;height:0!important;overflow:hidden!important}' +
+    '</style></head><body>' +
     '<div id="game"></div><script>' +
-    'EJS_player="#game";EJS_core=' + JSON.stringify(core) + ';EJS_gameUrl=' + JSON.stringify(romUrl) + ';' +
-    'EJS_gameName=' + JSON.stringify(title || 'game') + ';' +
-    'EJS_pathtodata="https://cdn.emulatorjs.org/stable/data/";EJS_startOnLoaded=true;' +
-    'EJS_onGameStart=function(){parent.postMessage({type:"ejs-ready"},"*")};' + close +
+    'window.EJS_player="#game";' +
+    'window.EJS_core=' + JSON.stringify(core) + ';' +
+    'window.EJS_gameUrl=' + JSON.stringify(romUrl) + ';' +
+    'window.EJS_gameName=' + JSON.stringify(title || 'game') + ';' +
+    'window.EJS_pathtodata="https://cdn.emulatorjs.org/stable/data/";' +
+    'window.EJS_startOnLoaded=true;' +
+    'window.EJS_VirtualGamepadSettings=[];' +
+    'window.EJS_defaultOptions={"virtual-gamepad":"disabled","settings.virtual-gamepad":"disabled"};' +
+    'window.simulateButton=function(name,down){' +
+    '  var map={actionb:0,b:0,actiony:1,y:1,select:2,start:3,up:4,down:5,left:6,right:7,actiona:8,a:8,actionx:9,x:9,btnl:10,l:10,btnr:11,r:11};' +
+    '  var idx=map[String(name).toLowerCase()];' +
+    '  if(idx!==undefined&&window.EJS_emulator&&window.EJS_emulator.gameManager){' +
+    '    window.EJS_emulator.gameManager.simulateInput(0,idx,down?1:0);' +
+    '  }' +
+    '};' +
+    'window.EJS_onGameStart=function(){' +
+    '  try{' +
+    '    if(window.EJS_emulator){' +
+    '      if(typeof window.EJS_emulator.toggleVirtualGamepad==="function")window.EJS_emulator.toggleVirtualGamepad(false);' +
+    '      if(window.EJS_emulator.virtualGamepad)window.EJS_emulator.virtualGamepad.remove();' +
+    '    }' +
+    '    var el=document.querySelector(".ejs_virtualGamepad_parent");if(el)el.remove();' +
+    '  }catch(e){}' +
+    '  parent.postMessage({type:"ejs-ready"},"*");' +
+    '};' +
+    'setInterval(function(){' +
+    '  try{' +
+    '    var el=document.querySelector(".ejs_virtualGamepad_parent");' +
+    '    if(el)el.remove();' +
+    '    if(window.EJS_emulator&&window.EJS_emulator.virtualGamepad)window.EJS_emulator.virtualGamepad.style.display="none";' +
+    '  }catch(e){}' +
+    '},250);' + close +
     '<script src="https://cdn.emulatorjs.org/stable/data/loader.js">' + close + '</body></html>';
 }
 
@@ -876,13 +939,42 @@ export default function App() {
   };
   const sendKey = (name, down) => {
     const win = emuFrameRef.current?.contentWindow;
+    if (!win) return;
+
+    // 1. Direct simulation into EmulatorJS / RetroArch core WASM
+    try {
+      if (typeof win.simulateButton === 'function') {
+        win.simulateButton(name, down);
+      } else {
+        const idx = EMU_INPUT_MAP[name];
+        if (idx !== undefined) {
+          const emu = win.EJS_emulator;
+          if (emu?.gameManager && typeof emu.gameManager.simulateInput === 'function') {
+            emu.gameManager.simulateInput(0, idx, down ? 1 : 0);
+          }
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    // 2. Synthetic keyboard event dispatch to #game and canvas
     const k = PAD_KEYS[name];
-    if (!win || !k) return;
-    const ev = new win.KeyboardEvent(down ? 'keydown' : 'keyup', { key: k[0], code: k[0], bubbles: true, cancelable: true });
-    Object.defineProperty(ev, 'keyCode', { get: () => k[1] });
-    Object.defineProperty(ev, 'which', { get: () => k[1] });
-    win.dispatchEvent(ev);
-    win.document.dispatchEvent(ev);
+    if (k) {
+      try {
+        const target = win.document.getElementById('game') || win.document.querySelector('canvas') || win;
+        const ev = new win.KeyboardEvent(down ? 'keydown' : 'keyup', {
+          key: k[0],
+          code: k[0],
+          bubbles: true,
+          cancelable: true
+        });
+        Object.defineProperty(ev, 'keyCode', { get: () => k[1] });
+        Object.defineProperty(ev, 'which', { get: () => k[1] });
+        target.dispatchEvent(ev);
+        win.dispatchEvent(ev);
+      } catch (e) {}
+    }
   };
   useEffect(() => {
     const onMsg = (e) => {
@@ -1408,12 +1500,16 @@ export default function App() {
         e.preventDefault();
       }
       const k = keysRef.current;
-      if (e.code === 'ArrowUp' || e.code === 'KeyW') k.up = true;
-      if (e.code === 'ArrowDown' || e.code === 'KeyS') k.down = true;
-      if (e.code === 'ArrowLeft' || e.code === 'KeyA') k.left = true;
-      if (e.code === 'ArrowRight' || e.code === 'KeyD') k.right = true;
-      if (e.code === 'KeyZ' || e.code === 'KeyJ' || e.code === 'Enter') k.actionA = true;
-      if (e.code === 'KeyX' || e.code === 'KeyK') k.actionB = true;
+      if (e.code === 'ArrowUp' || e.code === 'KeyW') { k.up = true; sendKey('up', true); }
+      if (e.code === 'ArrowDown' || e.code === 'KeyS') { k.down = true; sendKey('down', true); }
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') { k.left = true; sendKey('left', true); }
+      if (e.code === 'ArrowRight' || e.code === 'KeyD') { k.right = true; sendKey('right', true); }
+      if (e.code === 'KeyX' || e.code === 'KeyL') { k.actionA = true; sendKey('actionA', true); }
+      if (e.code === 'KeyZ' || e.code === 'KeyK') { k.actionB = true; sendKey('actionB', true); }
+      if (e.code === 'KeyS') { k.actionX = true; sendKey('actionX', true); }
+      if (e.code === 'KeyA') { k.actionY = true; sendKey('actionY', true); }
+      if (e.code === 'Enter') { k.start = true; sendKey('start', true); }
+      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'Space') { k.select = true; sendKey('select', true); }
       if (e.code === 'KeyP') setIsPaused((p) => !p);
       if (e.code === 'KeyR' || e.code === 'Backspace') setIsRewinding(true);
       if (e.code === 'KeyF') setIsFastForward((f) => !f);
@@ -1421,12 +1517,16 @@ export default function App() {
 
     const onKeyUp = (e) => {
       const k = keysRef.current;
-      if (e.code === 'ArrowUp' || e.code === 'KeyW') k.up = false;
-      if (e.code === 'ArrowDown' || e.code === 'KeyS') k.down = false;
-      if (e.code === 'ArrowLeft' || e.code === 'KeyA') k.left = false;
-      if (e.code === 'ArrowRight' || e.code === 'KeyD') k.right = false;
-      if (e.code === 'KeyZ' || e.code === 'KeyJ' || e.code === 'Enter') k.actionA = false;
-      if (e.code === 'KeyX' || e.code === 'KeyK') k.actionB = false;
+      if (e.code === 'ArrowUp' || e.code === 'KeyW') { k.up = false; sendKey('up', false); }
+      if (e.code === 'ArrowDown' || e.code === 'KeyS') { k.down = false; sendKey('down', false); }
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') { k.left = false; sendKey('left', false); }
+      if (e.code === 'ArrowRight' || e.code === 'KeyD') { k.right = false; sendKey('right', false); }
+      if (e.code === 'KeyX' || e.code === 'KeyL') { k.actionA = false; sendKey('actionA', false); }
+      if (e.code === 'KeyZ' || e.code === 'KeyK') { k.actionB = false; sendKey('actionB', false); }
+      if (e.code === 'KeyS') { k.actionX = false; sendKey('actionX', false); }
+      if (e.code === 'KeyA') { k.actionY = false; sendKey('actionY', false); }
+      if (e.code === 'Enter') { k.start = false; sendKey('start', false); }
+      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'Space') { k.select = false; sendKey('select', false); }
       if (e.code === 'KeyR' || e.code === 'Backspace') setIsRewinding(false);
     };
 
@@ -2176,19 +2276,20 @@ export default function App() {
   const bindPadButton = (keyName) => ({
     onPointerDown: (e) => {
       e.preventDefault();
+      e.stopPropagation();
+      try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch (err) {}
       keysRef.current[keyName] = true;
       sendKey(keyName, true);
     },
     onPointerUp: (e) => {
       e.preventDefault();
+      e.stopPropagation();
+      try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch (err) {}
       keysRef.current[keyName] = false;
       sendKey(keyName, false);
     },
-    onPointerLeave: () => {
-      if (keysRef.current[keyName]) sendKey(keyName, false);
-      keysRef.current[keyName] = false;
-    },
-    onPointerCancel: () => {
+    onPointerCancel: (e) => {
+      try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch (err) {}
       if (keysRef.current[keyName]) sendKey(keyName, false);
       keysRef.current[keyName] = false;
     }
@@ -2746,11 +2847,11 @@ export default function App() {
               </div>
 </PadGroup>
               {(!hidePad || customizing) && (<PadGroup id="dpad" layout={padLayout} customizing={customizing} selected={customizing && selectedPad === 'dpad'} onSelect={setSelectedPad} onMove={movePad} deckRef={deckRef}>
-<div className="relative w-32 h-32">
+<div className="relative w-32 h-32 select-none touch-none">
                       {/* Up */}
                       <button
                         {...bindPadButton('up')}
-                        className={`absolute top-0 left-10 w-11 h-11 rounded-t-xl border flex items-center justify-center shadow-md ${theme.dpadBg}`}
+                        className={`absolute top-0 left-10 w-11 h-11 rounded-t-xl border flex items-center justify-center shadow-md touch-none select-none ${theme.dpadBg}`}
                         aria-label="Up"
                       >
                         <ChevronUp className="w-6 h-6" />
@@ -2758,7 +2859,7 @@ export default function App() {
                       {/* Down */}
                       <button
                         {...bindPadButton('down')}
-                        className={`absolute bottom-0 left-10 w-11 h-11 rounded-b-xl border flex items-center justify-center shadow-md ${theme.dpadBg}`}
+                        className={`absolute bottom-0 left-10 w-11 h-11 rounded-b-xl border flex items-center justify-center shadow-md touch-none select-none ${theme.dpadBg}`}
                         aria-label="Down"
                       >
                         <ChevronDown className="w-6 h-6" />
@@ -2766,7 +2867,7 @@ export default function App() {
                       {/* Left */}
                       <button
                         {...bindPadButton('left')}
-                        className={`absolute top-10 left-0 w-11 h-11 rounded-l-xl border flex items-center justify-center shadow-md ${theme.dpadBg}`}
+                        className={`absolute top-10 left-0 w-11 h-11 rounded-l-xl border flex items-center justify-center shadow-md touch-none select-none ${theme.dpadBg}`}
                         aria-label="Left"
                       >
                         <ChevronLeft className="w-6 h-6" />
@@ -2774,45 +2875,45 @@ export default function App() {
                       {/* Right */}
                       <button
                         {...bindPadButton('right')}
-                        className={`absolute top-10 right-0 w-11 h-11 rounded-r-xl border flex items-center justify-center shadow-md ${theme.dpadBg}`}
+                        className={`absolute top-10 right-0 w-11 h-11 rounded-r-xl border flex items-center justify-center shadow-md touch-none select-none ${theme.dpadBg}`}
                         aria-label="Right"
                       >
                         <ChevronRight className="w-6 h-6" />
                       </button>
                       {/* Center Pivot */}
-                      <div className="absolute top-10 left-10 w-11 h-11 bg-zinc-900 border border-zinc-800 flex items-center justify-center">
+                      <div className="absolute top-10 left-10 w-11 h-11 bg-zinc-900 border border-zinc-800 flex items-center justify-center pointer-events-none">
                         <div className="w-4 h-4 rounded-full bg-zinc-800" />
                       </div>
                     </div>
 </PadGroup>
               )}
               {(!hidePad || customizing) && (<PadGroup id="actions" layout={padLayout} customizing={customizing} selected={customizing && selectedPad === 'actions'} onSelect={setSelectedPad} onMove={movePad} deckRef={deckRef}>
-<div className="relative w-36 h-32">
+<div className="relative w-36 h-32 select-none touch-none">
                       {/* X (Top) */}
                       <button
-                        {...bindPadButton('actionB')}
-                        className={`absolute top-0 left-12 w-12 h-12 rounded-full border-2 font-black text-sm shadow-lg flex items-center justify-center transition active:scale-90 ${theme.btnXY}`}
+                        {...bindPadButton('actionX')}
+                        className={`absolute top-0 left-12 w-12 h-12 rounded-full border-2 font-black text-sm shadow-lg flex items-center justify-center transition active:scale-90 touch-none select-none ${theme.btnXY}`}
                       >
                         X
                       </button>
                       {/* Y (Left) */}
                       <button
-                        {...bindPadButton('actionB')}
-                        className={`absolute top-10 left-1 w-12 h-12 rounded-full border-2 font-black text-sm shadow-lg flex items-center justify-center transition active:scale-90 ${theme.btnXY}`}
+                        {...bindPadButton('actionY')}
+                        className={`absolute top-10 left-1 w-12 h-12 rounded-full border-2 font-black text-sm shadow-lg flex items-center justify-center transition active:scale-90 touch-none select-none ${theme.btnXY}`}
                       >
                         Y
                       </button>
                       {/* B (Bottom) */}
                       <button
                         {...bindPadButton('actionB')}
-                        className={`absolute bottom-0 left-12 w-12 h-12 rounded-full border-2 font-black text-base shadow-xl flex items-center justify-center transition active:scale-90 ${theme.btnB}`}
+                        className={`absolute bottom-0 left-12 w-12 h-12 rounded-full border-2 font-black text-base shadow-xl flex items-center justify-center transition active:scale-90 touch-none select-none ${theme.btnB}`}
                       >
                         B
                       </button>
                       {/* A (Right) */}
                       <button
                         {...bindPadButton('actionA')}
-                        className={`absolute top-10 right-1 w-12 h-12 rounded-full border-2 font-black text-base shadow-xl flex items-center justify-center transition active:scale-90 ${theme.btnA}`}
+                        className={`absolute top-10 right-1 w-12 h-12 rounded-full border-2 font-black text-base shadow-xl flex items-center justify-center transition active:scale-90 touch-none select-none ${theme.btnA}`}
                       >
                         A
                       </button>
@@ -2820,10 +2921,10 @@ export default function App() {
 </PadGroup>
               )}
               {(!hidePad || customizing) && (<PadGroup id="system" layout={padLayout} customizing={customizing} selected={customizing && selectedPad === 'system'} onSelect={setSelectedPad} onMove={movePad} deckRef={deckRef}>
-<div className="flex items-center justify-center gap-6 pt-1 pb-1">
+<div className="flex items-center justify-center gap-6 pt-1 pb-1 select-none touch-none">
                     <button
                       {...bindPadButton('select')}
-                      className="flex flex-col items-center gap-1 group"
+                      className="flex flex-col items-center gap-1 group touch-none select-none"
                     >
                       <div className="w-12 h-3.5 rounded-full bg-zinc-800 group-active:bg-emerald-400 border border-zinc-600 shadow-inner -rotate-12 transition" />
                       <span className="text-[9px] font-black tracking-widest text-zinc-400 uppercase">
@@ -2833,7 +2934,7 @@ export default function App() {
 
                     <button
                       {...bindPadButton('start')}
-                      className="flex flex-col items-center gap-1 group"
+                      className="flex flex-col items-center gap-1 group touch-none select-none"
                     >
                       <div className="w-12 h-3.5 rounded-full bg-zinc-800 group-active:bg-emerald-400 border border-zinc-600 shadow-inner -rotate-12 transition" />
                       <span className="text-[9px] font-black tracking-widest text-zinc-400 uppercase">
