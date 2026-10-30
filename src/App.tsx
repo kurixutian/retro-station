@@ -4,7 +4,6 @@ import {
   Pause,
   RotateCcw,
   Download,
-  Upload,
   HardDrive,
   Tv,
   Volume2,
@@ -247,63 +246,6 @@ function downloadBinaryFile(uint8Array, fileName) {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
-}
-
-async function unwrapBatterySaveBytes(bytes) {
-  if (!bytes || bytes.length < 4) return bytes;
-  // 1. GZIP check (1F 8B)
-  if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
-    try {
-      const ds = new DecompressionStream('gzip');
-      const writer = ds.writable.getWriter();
-      writer.write(bytes);
-      writer.close();
-      return new Uint8Array(await new Response(ds.readable).arrayBuffer());
-    } catch (e) {}
-  }
-  // 2. ZLIB check (78 01, 78 9C, 78 DA)
-  if (bytes[0] === 0x78 && (bytes[1] === 0x01 || bytes[1] === 0x9c || bytes[1] === 0xda)) {
-    try {
-      const ds = new DecompressionStream('deflate');
-      const writer = ds.writable.getWriter();
-      writer.write(bytes);
-      writer.close();
-      return new Uint8Array(await new Response(ds.readable).arrayBuffer());
-    } catch (e) {}
-  }
-  // 3. RetroArch RZIPv1 container (#RZIPv1# -> 20-byte header + [4-byte chunk len + zlib stream]...)
-  if (bytes.length >= 24 && bytes[0] === 0x23 && bytes[1] === 0x52 && bytes[2] === 0x5a && bytes[3] === 0x49 && bytes[4] === 0x50) {
-    try {
-      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-      let pos = 20;
-      const chunks = [];
-      let totalLen = 0;
-      while (pos + 4 <= bytes.length) {
-        const compSize = view.getUint32(pos, true);
-        pos += 4;
-        if (compSize === 0 || pos + compSize > bytes.length) break;
-        const slice = bytes.subarray(pos, pos + compSize);
-        const ds = new DecompressionStream('deflate');
-        const writer = ds.writable.getWriter();
-        writer.write(slice);
-        writer.close();
-        const outArr = new Uint8Array(await new Response(ds.readable).arrayBuffer());
-        chunks.push(outArr);
-        totalLen += outArr.length;
-        pos += compSize;
-      }
-      if (totalLen > 0) {
-        const merged = new Uint8Array(totalLen);
-        let offset = 0;
-        for (const c of chunks) {
-          merged.set(c, offset);
-          offset += c.length;
-        }
-        return merged;
-      }
-    } catch (e) {}
-  }
-  return bytes;
 }
 
 // Generate an authentic pixel-art dataURL thumbnail for pre-populated Pokémon Gold save states
@@ -790,19 +732,23 @@ function buildPlayerHtml(core, romUrl, title) {
     '    return window.EJS_emulator.gameManager.getState();' +
     '  }catch(e){return null;}' +
     '};' +
-    'window.addEventListener("dragover",function(e){e.preventDefault();e.stopPropagation();},true);' +
-    'window.addEventListener("drop",function(e){' +
-    '  e.preventDefault();e.stopPropagation();' +
-    '  var files=e.dataTransfer&&e.dataTransfer.files;' +
-    '  if(!files||!files.length)return;' +
-    '  Array.from(files).forEach(function(f){' +
-    '    var r=new FileReader();' +
-    '    r.onload=function(){' +
-    '      parent.postMessage({type:"ejs-file-dropped",name:f.name,bytes:Array.from(new Uint8Array(r.result))},"*");' +
-    '    };' +
-    '    r.readAsArrayBuffer(f);' +
-    '  });' +
-    '},true);' +
+    'var _lastSrmHash=0;' +
+    'setInterval(function(){' +
+    '  try{' +
+    '    var srm=window.getSrmData&&window.getSrmData();' +
+    '    if(!srm||!srm.length)return;' +
+    '    var h=0,nonEmpty=false;' +
+    '    for(var i=0;i<srm.length;i+=4){' +
+    '      var b=srm[i];' +
+    '      if(b!==0&&b!==255)nonEmpty=true;' +
+    '      h=((h<<5)-h+b)|0;' +
+    '    }' +
+    '    if(nonEmpty&&h!==_lastSrmHash){' +
+    '      _lastSrmHash=h;' +
+    '      parent.postMessage({type:"ejs-srm-update",save:Array.from(srm)},"*");' +
+    '    }' +
+    '  }catch(e){}' +
+    '},3000);' +
     'window.EJS_onSaveUpdate=function(e){' +
     '  try{' +
     '    if(e&&e.save){' +
@@ -1192,10 +1138,8 @@ export default function App() {
   });
   const EdgeTapRef = useRef({ up: false, down: false, left: false, right: false, actionA: false, actionB: false });
 
-  // Hidden File Inputs
+  // Hidden File Input
   const romInputRef = useRef(null);
-  const batteryInputRef = useRef(null);
-  const batteryTargetGameIdRef = useRef(null);
 
   const theme = THEMES[themeId] || THEMES.midnight;
 
@@ -1348,10 +1292,18 @@ export default function App() {
     }
     setRomUrl(null);
     pendingStateRef.current = optionalStateData?.emuState || null;
-    idbGet(`srm:${game.id}`).then((b) => { if (b) pendingSrmRef.current = b; }).catch(() => {});
-    idbGet(`rtc:${game.id}`).then((b) => { if (b) pendingRtcRef.current = b; }).catch(() => {});
+    pendingSrmRef.current = null;
+    pendingRtcRef.current = null;
     if (game.real) {
-      idbGet(game.id).then((blob) => {
+      Promise.all([
+        idbGet(game.id).catch(() => null),
+        idbGet(`srm:${game.id}`).catch(() => null),
+        idbGet(`rtc:${game.id}`).catch(() => null),
+        optionalStateData?.emuState ? Promise.resolve(null) : idbGet(`autosave:${game.id}`).catch(() => null)
+      ]).then(([blob, srm, rtc, autoSt]) => {
+        if (srm) pendingSrmRef.current = srm;
+        if (rtc) pendingRtcRef.current = rtc;
+        if (!pendingStateRef.current && autoSt) pendingStateRef.current = autoSt;
         if (blob) setRomUrl(URL.createObjectURL(blob));
         else showToast('ROM data missing - please re-upload this game');
       });
@@ -1508,91 +1460,47 @@ export default function App() {
   }, [showToast]);
 
   // ============================================================================
-  // CARTRIDGE BATTERY SAVE (.SAV / .SRM / .RTC) IMPORT, DRAG-DROP & EXPORT
+  // AUTOMATIC OFFLINE PROGRESS PERSISTENCE & BATTERY SAVE (.SAV / .SRM) EXPORT
   // ============================================================================
-  const importBatteryPayloads = useCallback(async (items, explicitGameId = null) => {
-    const targetGameId = explicitGameId || batteryTargetGameIdRef.current || detailGame?.id || activeGame?.id;
-    if (!targetGameId || !items || items.length === 0) return;
-
-    let srmBytes = null;
-    let rtcBytes = null;
-    const names = [];
-
-    for (const item of items) {
-      const lower = (item.name || '').toLowerCase();
-      if (lower.endsWith('.rtc')) {
-        rtcBytes = item.bytes instanceof Uint8Array ? item.bytes : new Uint8Array(item.bytes);
-        await idbPut(`rtc:${targetGameId}`, rtcBytes);
-        pendingRtcRef.current = rtcBytes;
-        names.push('.rtc');
-      } else if (lower.endsWith('.srm') || lower.endsWith('.sav') || item.bytes) {
-        const raw = item.bytes instanceof Uint8Array ? item.bytes : new Uint8Array(item.bytes);
-        srmBytes = await unwrapBatterySaveBytes(raw);
-        await idbPut(`srm:${targetGameId}`, srmBytes);
-        pendingSrmRef.current = srmBytes;
-        names.push(`${(srmBytes.length / 1024).toFixed(0)}KB Battery`);
-      }
-    }
-
-    if (!srmBytes && !rtcBytes) return;
-
-    if (currentView === 'ingame' && activeGame?.id === targetGameId) {
-      const win = emuFrameRef.current?.contentWindow;
-      win?.loadSrmData?.(srmBytes, rtcBytes);
-      setInGameMenuOpen(false);
-      setIsPaused(false);
-      soundFX.coin();
-      showToast(`Battery Save Loaded (${names.join(' + ')}) • Game Restarted — Select CONTINUE`);
-    } else {
-      soundFX.coin();
-      showToast(`Battery Save Stored (${names.join(' + ')}) • Launch game & select CONTINUE`);
-    }
-  }, [activeGame?.id, currentView, detailGame?.id, showToast]);
-
-  const handleBatteryInputChange = async (e) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
+  const flushLiveProgress = useCallback(() => {
+    if (currentView !== 'ingame' || !activeGame?.id || !activeGame?.real) return;
+    const win = emuFrameRef.current?.contentWindow;
+    if (!win) return;
     try {
-      const payloads = await Promise.all(
-        files.map(async (f) => ({
-          name: f.name,
-          bytes: new Uint8Array(await f.arrayBuffer())
-        }))
-      );
-      await importBatteryPayloads(payloads, batteryTargetGameIdRef.current);
-    } catch (err) {
-      showToast(`Battery Import Error: ${err.message}`);
-    } finally {
-      e.target.value = '';
-    }
-  };
-
-  const handleScreenDrop = async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const files = Array.from(e.dataTransfer?.files || []);
-    if (files.length === 0) return;
-    const payloads = await Promise.all(
-      files.map(async (f) => ({
-        name: f.name,
-        bytes: new Uint8Array(await f.arrayBuffer())
-      }))
-    );
-    await importBatteryPayloads(payloads, activeGame?.id);
-  };
+      const srm = win.getSrmData?.();
+      if (srm && srm.length > 0) {
+        let nonEmpty = false;
+        for (let i = 0; i < srm.length; i += 4) {
+          if (srm[i] !== 0 && srm[i] !== 255) { nonEmpty = true; break; }
+        }
+        if (nonEmpty) idbPut(`srm:${activeGame.id}`, srm).catch(() => {});
+      }
+      const rtc = win.getRtcData?.();
+      if (rtc && rtc.length > 0) {
+        idbPut(`rtc:${activeGame.id}`, rtc).catch(() => {});
+      }
+      const st = win.getStateData?.();
+      if (st && st.length > 0) {
+        const stArr = st instanceof Uint8Array ? st : new Uint8Array(st);
+        idbPut(`autosave:${activeGame.id}`, stArr).catch(() => {});
+      }
+    } catch (e) {}
+  }, [activeGame?.id, activeGame?.real, currentView]);
 
   useEffect(() => {
-    const onDropMsg = (e) => {
-      if (e.data?.type === 'ejs-file-dropped' && e.data?.bytes) {
-        importBatteryPayloads(
-          [{ name: e.data.name || 'save.srm', bytes: new Uint8Array(e.data.bytes) }],
-          activeGame?.id
-        );
-      }
+    if (currentView !== 'ingame' || !activeGame?.id || !activeGame?.real) return;
+    const timer = setInterval(flushLiveProgress, 8000);
+    const onHide = () => flushLiveProgress();
+    document.addEventListener('visibilitychange', onHide);
+    window.addEventListener('pagehide', onHide);
+    window.addEventListener('beforeunload', onHide);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onHide);
+      window.removeEventListener('pagehide', onHide);
+      window.removeEventListener('beforeunload', onHide);
     };
-    window.addEventListener('message', onDropMsg);
-    return () => window.removeEventListener('message', onDropMsg);
-  }, [activeGame?.id, importBatteryPayloads]);
+  }, [activeGame?.id, activeGame?.real, currentView, flushLiveProgress]);
 
   const exportBatterySave = useCallback(async (game, ext = 'sav') => {
     if (!game) return;
@@ -2432,20 +2340,12 @@ export default function App() {
 
   return (
     <div className={`min-h-screen w-full ${theme.appBg} font-sans select-none overflow-x-hidden`}>
-      {/* Hidden File Inputs for ROMs & Battery Saves (.sav / .srm / .rtc) */}
+      {/* Hidden File Input for ROMs */}
       <input
         ref={romInputRef}
         type="file"
         accept=".gb,.gbc,.gba,.nes,.sfc,.smc,.md,.gen,.smd,.bin,.zip"
         onChange={handleRomUpload}
-        className="hidden"
-      />
-      <input
-        ref={batteryInputRef}
-        type="file"
-        multiple
-        accept=".sav,.srm,.rtc,*/*"
-        onChange={handleBatteryInputChange}
         className="hidden"
       />
 
@@ -2684,12 +2584,7 @@ export default function App() {
           (Top Settings Bar -> Upper Game Screen -> Lower Control Deck)
       ==================================================================== */}
       {currentView === 'ingame' && (
-        <div
-          className="fixed inset-0 w-full overflow-hidden bg-zinc-950"
-          style={{ height: '100dvh' }}
-          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-          onDrop={handleScreenDrop}
-        >
+        <div className="fixed inset-0 w-full overflow-hidden bg-zinc-950" style={{ height: '100dvh' }}>
           {/* Vertical Handheld Shell Container */}
           <div
             className={`relative w-full h-full max-w-[560px] mx-auto flex flex-col overflow-hidden ${theme.shellBg}`}
@@ -2711,6 +2606,7 @@ export default function App() {
             >
               <button
                 onClick={() => {
+                  flushLiveProgress();
                   setInGameMenuOpen(false);
                   setCurrentView('home');
                 }}
@@ -2825,24 +2721,13 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* Cartridge Battery Save (.SAV / .SRM) Bridge */}
+                {/* Cartridge Battery Save (.SAV / .SRM) Export */}
                 <div className="pt-2 border-t border-zinc-800/80 space-y-1.5">
                   <div className="flex items-center justify-between text-[10px] text-zinc-400">
-                    <span className="font-bold uppercase tracking-wider text-amber-300/90">Cartridge Battery (.sav / .srm)</span>
-                    <span>Drag & drop onto screen</span>
+                    <span className="font-bold uppercase tracking-wider text-amber-300/90">Export Battery Save (.sav / .srm)</span>
+                    <span className="text-emerald-400">Auto-Saved Offline</span>
                   </div>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    <button
-                      onClick={() => {
-                        batteryTargetGameIdRef.current = activeGame.id;
-                        batteryInputRef.current?.click();
-                      }}
-                      className="flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-cyan-300 text-[11px] font-bold transition"
-                      title="Import .sav, .srm, or .rtc battery save file"
-                    >
-                      <Upload className="w-3.5 h-3.5" />
-                      <span>Import Save</span>
-                    </button>
+                  <div className="grid grid-cols-2 gap-1.5">
                     <button
                       onClick={() => exportBatterySave(activeGame, 'sav')}
                       className="flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 text-[11px] font-bold transition"
@@ -3204,18 +3089,6 @@ export default function App() {
                       <Play className="w-5 h-5 fill-current ml-0.5" />
                     </button>
                   )}
-
-                  <button
-                    onClick={() => {
-                      batteryTargetGameIdRef.current = targetGame.id;
-                      batteryInputRef.current?.click();
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-cyan-300 border border-cyan-500/30 text-xs font-bold transition"
-                    title="Import .sav, .srm, or .rtc battery save file"
-                  >
-                    <Upload className="w-3.5 h-3.5" />
-                    <span>Import Battery (.sav / .srm)</span>
-                  </button>
 
                   <button
                     onClick={() => exportBatterySave(targetGame, 'sav')}
