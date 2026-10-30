@@ -1,4 +1,4 @@
-const CACHE_NAME = 'retro-station-v2';
+const CACHE_NAME = 'retro-station-v3';
 const PRECACHE_ASSETS = [
   './',
   './index.html',
@@ -18,7 +18,7 @@ self.addEventListener('install', (event) => {
       .then((cache) =>
         Promise.allSettled(
           PRECACHE_ASSETS.map((url) =>
-            fetch(url, { mode: url.startsWith('http') ? 'cors' : 'same-origin' })
+            fetch(url, { mode: url.startsWith('http') ? 'cors' : 'same-origin', cache: 'reload' })
               .then((res) => (res && res.ok ? cache.put(url, res) : null))
               .catch(() => {})
           )
@@ -42,26 +42,43 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
-  event.respondWith(
-    caches.match(event.request, { ignoreVary: true }).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request)
-        .then((response) => {
-          if (
-            response &&
-            (response.status === 200 || response.type === 'opaque') &&
-            (response.type === 'basic' || response.type === 'cors' || response.type === 'opaque')
-          ) {
-            const clone = response.clone();
+  // 1. Navigation requests (HTML pages): NETWORK-FIRST strategy with offline fallback
+  // This ensures online users always get the newest app update, while offline users load from cache.
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .then((networkRes) => {
+          if (networkRes && networkRes.status === 200) {
+            const clone = networkRes.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
           }
-          return response;
+          return networkRes;
         })
         .catch(() => {
-          if (event.request.mode === 'navigate') {
-            return caches.match('./index.html');
+          return caches.match('./index.html').then((cached) => cached || caches.match('./'));
+        })
+    );
+    return;
+  }
+
+  // 2. Static Assets & CDN files: Cache-First / Stale-While-Revalidate strategy
+  event.respondWith(
+    caches.match(event.request, { ignoreVary: true }).then((cached) => {
+      const fetchPromise = fetch(event.request)
+        .then((networkRes) => {
+          if (
+            networkRes &&
+            (networkRes.status === 200 || networkRes.type === 'opaque') &&
+            (networkRes.type === 'basic' || networkRes.type === 'cors' || networkRes.type === 'opaque')
+          ) {
+            const clone = networkRes.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
           }
-        });
+          return networkRes;
+        })
+        .catch(() => null);
+
+      return cached || fetchPromise;
     })
   );
 });
