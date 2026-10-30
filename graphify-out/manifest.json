@@ -1,0 +1,44 @@
+{
+  "package.json": {
+    "mtime": 1793372560.5785787,
+    "seen": 1793372578.6374097,
+    "ast_hash": "55e216410959268ec1dc3850943bc66f",
+    "semantic_hash": "55e216410959268ec1dc3850943bc66f"
+  },
+  "postcss.config.js": {
+    "mtime": 1793372560.6002536,
+    "seen": 1793372578.6374152,
+    "ast_hash": "4e2a7538df334b5fb30651bd3a459a71",
+    "semantic_hash": "4e2a7538df334b5fb30651bd3a459a71"
+  },
+  "src/App.tsx": {
+    "mtime": 1793372304.8133423,
+    "seen": 1793372578.6374178,
+    "ast_hash": "f5915dc0fab979625c290d3b904ccf84",
+    "semantic_hash": "f5915dc0fab979625c290d3b904ccf84"
+  },
+  "src/main.tsx": {
+    "mtime": 1793372560.5945787,
+    "seen": 1793372578.6374192,
+    "ast_hash": "c121af07e9e3af233527c37e671061a0",
+    "semantic_hash": "c121af07e9e3af233527c37e671061a0"
+  },
+  "tailwind.config.js": {
+    "mtime": 1793372560.6002536,
+    "seen": 1793372578.637421,
+    "ast_hash": "65d44e00b9d2c2d72dfe0fbb5e082b11",
+    "semantic_hash": "65d44e00b9d2c2d72dfe0fbb5e082b11"
+  },
+  "tsconfig.json": {
+    "mtime": 1793372560.6002536,
+    "seen": 1793372578.637422,
+    "ast_hash": "cd2ba64145061a9d1ca16a49fab87da4",
+    "semantic_hash": "cd2ba64145061a9d1ca16a49fab87da4"
+  },
+  "vite.config.js": {
+    "mtime": 1793372560.6002536,
+    "seen": 1793372578.6374233,
+    "ast_hash": "dc9dc59f85c12714d9220fa859d3ef2e",
+    "semantic_hash": "dc9dc59f85c12714d9220fa859d3ef2e"
+  }
+}
