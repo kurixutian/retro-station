@@ -2675,6 +2675,10 @@ export default function App() {
             {inGameMenuOpen && (
               <div
                 className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+                style={{
+                  paddingTop: 'max(env(safe-area-inset-top, 0px) + 20px, 36px)',
+                  paddingBottom: 'max(env(safe-area-inset-bottom, 0px) + 20px, 36px)'
+                }}
                 onClick={() => setInGameMenuOpen(false)}
               >
               <div
@@ -3087,10 +3091,18 @@ export default function App() {
         const gameSlots = savesByGameId[targetGame.id] || createEmptySlotsForGame(targetGame.id);
 
         return (
-          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
-            <div className="w-full max-w-2xl rounded-3xl bg-zinc-950 border border-zinc-800 shadow-2xl overflow-hidden my-auto">
+          <div
+            className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
+            style={{
+              paddingTop: 'max(env(safe-area-inset-top, 0px) + 20px, 36px)',
+              paddingBottom: 'max(env(safe-area-inset-bottom, 0px) + 20px, 36px)',
+              paddingLeft: 'max(env(safe-area-inset-left, 0px) + 12px, 16px)',
+              paddingRight: 'max(env(safe-area-inset-right, 0px) + 12px, 16px)'
+            }}
+          >
+            <div className="w-full max-w-2xl max-h-[88vh] flex flex-col rounded-3xl bg-zinc-950 border border-zinc-800 shadow-2xl overflow-hidden my-auto">
               {/* Dialog Header Banner */}
-              <div className={`relative p-5 bg-gradient-to-r ${targetGame.coverGradient}`}>
+              <div className={`relative p-5 bg-gradient-to-r ${targetGame.coverGradient} flex-none`}>
                 <div className="absolute inset-0 bg-zinc-950/65" />
                 <div className="relative z-10 flex items-start justify-between gap-3">
                   <div className="space-y-1">
@@ -3158,7 +3170,7 @@ export default function App() {
               </div>
 
               {/* Per-Game Save State Slots Grid (4 Isolated Slots per Game) */}
-              <div className="p-5 space-y-3">
+              <div className="p-5 space-y-3 flex-1 overflow-y-auto">
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="text-sm font-extrabold text-zinc-100 flex items-center gap-2">
@@ -3268,9 +3280,17 @@ export default function App() {
           MODAL 2: GLOBAL SETTINGS (CRT + GAME BOY GRID SHADERS & THEMES)
       ==================================================================== */}
       {globalSettingsOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
-          <div className="w-full max-w-xl rounded-3xl bg-zinc-950 border border-zinc-800 shadow-2xl overflow-hidden my-auto">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
+          style={{
+            paddingTop: 'max(env(safe-area-inset-top, 0px) + 20px, 36px)',
+            paddingBottom: 'max(env(safe-area-inset-bottom, 0px) + 20px, 36px)',
+            paddingLeft: 'max(env(safe-area-inset-left, 0px) + 12px, 16px)',
+            paddingRight: 'max(env(safe-area-inset-right, 0px) + 12px, 16px)'
+          }}
+        >
+          <div className="w-full max-w-xl max-h-[88vh] flex flex-col rounded-3xl bg-zinc-950 border border-zinc-800 shadow-2xl overflow-hidden my-auto">
+            <div className="flex-none flex items-center justify-between px-5 py-4 border-b border-zinc-800 bg-zinc-950">
               <div className="flex items-center gap-2.5">
                 <Sliders className={`w-5 h-5 ${theme.accentText}`} />
                 <h2 className="text-base font-black text-white">Appearance</h2>
@@ -3283,7 +3303,7 @@ export default function App() {
               </button>
             </div>
 
-            <div className="p-5 space-y-6">
+            <div className="flex-1 overflow-y-auto p-5 space-y-6">
               {/* AMOLED Battery Saver Dedicated Toggle Card */}
               <div
                 onClick={() => toggleShader('amoled')}
