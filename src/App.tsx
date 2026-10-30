@@ -271,6 +271,49 @@ function decodeSaveStateBinary(arrayBuffer) {
   return JSON.parse(decoder.decode(bytes));
 }
 
+async function decompressIfCompressed(bytes) {
+  if (!bytes || bytes.length < 4) return bytes;
+  // 1. GZIP check (1F 8B)
+  if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
+    try {
+      const ds = new DecompressionStream('gzip');
+      const writer = ds.writable.getWriter();
+      writer.write(bytes);
+      writer.close();
+      const res = await new Response(ds.readable).arrayBuffer();
+      return new Uint8Array(res);
+    } catch (e) {}
+  }
+  // 2. ZLIB check (78 01, 78 9C, 78 DA)
+  if (bytes[0] === 0x78 && (bytes[1] === 0x01 || bytes[1] === 0x9c || bytes[1] === 0xda)) {
+    try {
+      const ds = new DecompressionStream('deflate');
+      const writer = ds.writable.getWriter();
+      writer.write(bytes);
+      writer.close();
+      const res = await new Response(ds.readable).arrayBuffer();
+      return new Uint8Array(res);
+    } catch (e) {}
+  }
+  // 3. RetroArch RZIP check (#RZIP)
+  if (bytes.length >= 8 && bytes[0] === 0x23 && bytes[1] === 0x52 && bytes[2] === 0x5a && bytes[3] === 0x49 && bytes[4] === 0x50) {
+    for (const offset of [8, 12, 16, 20, 24]) {
+      if (bytes.length <= offset) break;
+      for (const format of ['deflate', 'deflate-raw']) {
+        try {
+          const ds = new DecompressionStream(format);
+          const writer = ds.writable.getWriter();
+          writer.write(bytes.slice(offset));
+          writer.close();
+          const res = await new Response(ds.readable).arrayBuffer();
+          if (res && res.byteLength > 0) return new Uint8Array(res);
+        } catch (e) {}
+      }
+    }
+  }
+  return bytes;
+}
+
 function buildSrmBuffer(game, gameSlots, currentEngineState) {
   const srm = new Uint8Array(32768);
   srm.fill(0xFF);
@@ -662,6 +705,7 @@ function buildPlayerHtml(core, romUrl, title) {
     'window.EJS_gameName=' + JSON.stringify(title || 'game') + ';' +
     'window.EJS_pathtodata="https://cdn.emulatorjs.org/stable/data/";' +
     'window.EJS_startOnLoaded=true;' +
+    'window.EJS_fixedSaveInterval=10000;' +
     'window.EJS_VirtualGamepadSettings=[];' +
     'window.EJS_defaultOptions={"virtual-gamepad":"disabled","settings.virtual-gamepad":"disabled"};' +
     'window.simulateButton=function(name,down){' +
@@ -670,6 +714,73 @@ function buildPlayerHtml(core, romUrl, title) {
     '  if(idx!==undefined&&window.EJS_emulator&&window.EJS_emulator.gameManager){' +
     '    window.EJS_emulator.gameManager.simulateInput(0,idx,down?1:0);' +
     '  }' +
+    '};' +
+    'window.loadSrmData=function(srmBytes,rtcBytes){' +
+    '  try{' +
+    '    if(!window.EJS_emulator||!window.EJS_emulator.gameManager)return false;' +
+    '    var gm=window.EJS_emulator.gameManager;' +
+    '    var fs=gm.FS||(window.EJS_emulator.Module&&window.EJS_emulator.Module.FS);' +
+    '    if(!fs)return false;' +
+    '    try{fs.mkdir("/data");}catch(e){}' +
+    '    try{fs.mkdir("/data/saves");}catch(e){}' +
+    '    var srmArr=srmBytes?(srmBytes instanceof Uint8Array?srmBytes:new Uint8Array(srmBytes)):null;' +
+    '    var rtcArr=rtcBytes?(rtcBytes instanceof Uint8Array?rtcBytes:new Uint8Array(rtcBytes)):null;' +
+    '    var paths=[];' +
+    '    if(typeof gm.getSaveFilePath==="function"){try{paths.push(gm.getSaveFilePath());}catch(e){}}' +
+    '    if(gm.savePath)paths.push(gm.savePath);' +
+    '    if(window.EJS_gameName)paths.push("/data/saves/"+window.EJS_gameName+".srm");' +
+    '    paths.forEach(function(p){' +
+    '      if(!p)return;' +
+    '      if(srmArr){try{fs.writeFile(p,srmArr);}catch(e){}}' +
+    '      if(rtcArr){var r=p.replace(/\\.[^/.]+$/,".rtc");try{fs.writeFile(r,rtcArr);}catch(e){}}' +
+    '    });' +
+    '    if(typeof gm.loadSaveFiles==="function"){gm.loadSaveFiles();}' +
+    '    else if(typeof gm.restart==="function"){gm.restart();}' +
+    '    return true;' +
+    '  }catch(e){console.error("loadSrmData err",e);return false;}' +
+    '};' +
+    'window.getSrmData=function(){' +
+    '  try{' +
+    '    if(!window.EJS_emulator||!window.EJS_emulator.gameManager)return null;' +
+    '    var gm=window.EJS_emulator.gameManager;' +
+    '    if(typeof gm.getSaveFile==="function"){return gm.getSaveFile(false);}' +
+    '    var fs=gm.FS||(window.EJS_emulator.Module&&window.EJS_emulator.Module.FS);' +
+    '    var p=typeof gm.getSaveFilePath==="function"?gm.getSaveFilePath():("/data/saves/"+window.EJS_gameName+".srm");' +
+    '    if(fs&&fs.readFile){return fs.readFile(p);}' +
+    '  }catch(e){}' +
+    '  return null;' +
+    '};' +
+    'window.getRtcData=function(){' +
+    '  try{' +
+    '    if(!window.EJS_emulator||!window.EJS_emulator.gameManager)return null;' +
+    '    var gm=window.EJS_emulator.gameManager;' +
+    '    var fs=gm.FS||(window.EJS_emulator.Module&&window.EJS_emulator.Module.FS);' +
+    '    var p=typeof gm.getSaveFilePath==="function"?gm.getSaveFilePath():("/data/saves/"+window.EJS_gameName+".srm");' +
+    '    var r=p.replace(/\\.[^/.]+$/,".rtc");' +
+    '    if(fs&&fs.readFile){return fs.readFile(r);}' +
+    '  }catch(e){}' +
+    '  return null;' +
+    '};' +
+    'window.loadStateData=function(bytes){' +
+    '  try{' +
+    '    if(!window.EJS_emulator||!window.EJS_emulator.gameManager)return false;' +
+    '    var arr=bytes instanceof Uint8Array?bytes:new Uint8Array(bytes);' +
+    '    window.EJS_emulator.gameManager.loadState(arr);' +
+    '    return true;' +
+    '  }catch(e){console.error("loadStateData err",e);return false;}' +
+    '};' +
+    'window.getStateData=function(){' +
+    '  try{' +
+    '    if(!window.EJS_emulator||!window.EJS_emulator.gameManager)return null;' +
+    '    return window.EJS_emulator.gameManager.getState();' +
+    '  }catch(e){return null;}' +
+    '};' +
+    'window.EJS_onSaveUpdate=function(e){' +
+    '  try{' +
+    '    if(e&&e.save){' +
+    '      parent.postMessage({type:"ejs-srm-update",save:Array.from(e.save instanceof Uint8Array?e.save:new Uint8Array(e.save))},"*");' +
+    '    }' +
+    '  }catch(e){}' +
     '};' +
     'window.EJS_onGameStart=function(){' +
     '  try{' +
@@ -803,6 +914,8 @@ export default function App() {
   const [activeGame, setActiveGame] = useState(STUB_GAME);
   const emuFrameRef = useRef(null);
   const pendingStateRef = useRef(null);
+  const pendingSrmRef = useRef(null);
+  const pendingRtcRef = useRef(null);
   const [romUrl, setRomUrl] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [systemFilter, setSystemFilter] = useState('ALL');
@@ -978,7 +1091,30 @@ export default function App() {
   };
   useEffect(() => {
     const onMsg = (e) => {
+      if (e.data?.type === 'ejs-srm-update') {
+        if (activeGame?.id && e.data?.save) {
+          const srmArr = new Uint8Array(e.data.save);
+          idbPut(`srm:${activeGame.id}`, srmArr).catch(() => {});
+        }
+        return;
+      }
       if (e.data?.type !== 'ejs-ready') return;
+      const win = emuFrameRef.current?.contentWindow;
+
+      // 1. Inject any pending battery save (.srm) or RTC (.rtc)
+      if (pendingSrmRef.current || pendingRtcRef.current) {
+        const srm = pendingSrmRef.current;
+        const rtc = pendingRtcRef.current;
+        pendingSrmRef.current = null;
+        pendingRtcRef.current = null;
+        try {
+          win?.loadSrmData?.(srm, rtc);
+        } catch (err) {
+          console.error('Failed to load pending SRM/RTC:', err);
+        }
+      }
+
+      // 2. Inject any pending save state (.state)
       const st = pendingStateRef.current;
       if (st) {
         pendingStateRef.current = null;
@@ -988,14 +1124,20 @@ export default function App() {
             if (stateToLoad && !(stateToLoad instanceof Uint8Array)) {
               stateToLoad = new Uint8Array(Object.values(stateToLoad));
             }
-            getEmu()?.gameManager.loadState(stateToLoad);
-          } catch (err) {}
+            if (win?.loadStateData) {
+              win.loadStateData(stateToLoad);
+            } else {
+              getEmu()?.gameManager.loadState(stateToLoad);
+            }
+          } catch (err) {
+            console.error('Failed to load pending state:', err);
+          }
         }, 800);
       }
     };
     window.addEventListener('message', onMsg);
     return () => window.removeEventListener('message', onMsg);
-  }, []);
+  }, [activeGame?.id]);
   const movePad = (id, x, y) => setPadLayout((l) => ({ ...l, [id]: { ...l[id], x, y } }));
   const scalePad = (id, sc) => setPadLayout((l) => ({ ...l, [id]: { ...l[id], s: sc } }));
   const [isMuted, setIsMuted] = useState(false);
@@ -1179,6 +1321,8 @@ export default function App() {
     }
     setRomUrl(null);
     pendingStateRef.current = optionalStateData?.emuState || null;
+    idbGet(`srm:${game.id}`).then((b) => { if (b) pendingSrmRef.current = b; }).catch(() => {});
+    idbGet(`rtc:${game.id}`).then((b) => { if (b) pendingRtcRef.current = b; }).catch(() => {});
     if (game.real) {
       idbGet(game.id).then((blob) => {
         if (blob) setRomUrl(URL.createObjectURL(blob));
@@ -1367,122 +1511,200 @@ export default function App() {
     showToast(`Exported ${fileName} (${(rawBytes.length / 1024).toFixed(1)} KB)`);
   }, [activeGame.id, currentView, showToast]);
 
-  const exportGameSrm = useCallback((game) => {
-    const slots = savesByGameId[game.id] || [];
-    const srmBytes = buildSrmBuffer(game, slots, engineStateRef.current);
-    const cleanName = game.fileName.replace(/\.[^/.]+$/, '');
+  const exportGameSrm = useCallback(async (game) => {
+    const win = emuFrameRef.current?.contentWindow;
+    let srmBytes = null;
+    if (currentView === 'ingame' && activeGame.id === game.id && win?.getSrmData) {
+      try {
+        srmBytes = win.getSrmData();
+      } catch (e) {}
+    }
+    if (!srmBytes) {
+      try {
+        const stored = await idbGet(`srm:${game.id}`);
+        if (stored) srmBytes = stored;
+      } catch (e) {}
+    }
+    if (!srmBytes) {
+      const slots = savesByGameId[game.id] || [];
+      srmBytes = buildSrmBuffer(game, slots, engineStateRef.current);
+    }
+    const cleanName = (game.fileName || game.title || 'game').replace(/\.[^/.]+$/, '');
     const fileName = `${cleanName}.srm`;
     downloadBinaryFile(srmBytes, fileName);
     soundFX.save();
-    showToast(`Exported 32KB Battery Save: ${fileName}`);
-  }, [savesByGameId, showToast]);
+    showToast(`Exported Battery Save: ${fileName}`);
+
+    // Also export RTC clock if available
+    let rtcBytes = null;
+    if (currentView === 'ingame' && activeGame.id === game.id && win?.getRtcData) {
+      try { rtcBytes = win.getRtcData(); } catch (e) {}
+    }
+    if (!rtcBytes) {
+      try {
+        const storedRtc = await idbGet(`rtc:${game.id}`);
+        if (storedRtc) rtcBytes = storedRtc;
+      } catch (e) {}
+    }
+    if (rtcBytes) {
+      const rtcFileName = `${cleanName}.rtc`;
+      downloadBinaryFile(rtcBytes, rtcFileName);
+      showToast(`Exported RTC Clock: ${rtcFileName}`);
+    }
+  }, [activeGame.id, currentView, savesByGameId, showToast]);
 
   const handleImportStateFile = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    const targetGameId = importTargetGameId || activeGame.id;
+    const slotNum = importTargetSlotNum || 1;
+    const win = emuFrameRef.current?.contentWindow;
+    const importedSummary = [];
+
     try {
-      const buffer = await file.arrayBuffer();
-      const rawBytes = new Uint8Array(buffer);
-      let emuStateBytes = null;
-      let decodedMeta = null;
+      for (const file of files) {
+        const buffer = await file.arrayBuffer();
+        let rawBytes = new Uint8Array(buffer);
+        const lowerName = file.name.toLowerCase();
 
-      // 1. Check if RASTATE1 header
-      let header = '';
-      if (rawBytes.length >= 8) {
-        for (let i = 0; i < 8; i++) header += String.fromCharCode(rawBytes[i]);
-      }
-
-      if (header === 'RASTATE1') {
-        try {
-          const jsonText = new TextDecoder().decode(rawBytes.slice(8));
-          const parsed = JSON.parse(jsonText);
-          decodedMeta = parsed;
-          if (parsed.emuState) {
-            emuStateBytes = parsed.emuState instanceof Uint8Array
-              ? parsed.emuState
-              : new Uint8Array(Object.values(parsed.emuState));
-          } else if (parsed.engineState) {
-            decodedMeta = parsed;
+        // 1. Check if Battery Save (.srm / .sav)
+        if (lowerName.endsWith('.srm') || lowerName.endsWith('.sav')) {
+          await idbPut(`srm:${targetGameId}`, rawBytes);
+          pendingSrmRef.current = rawBytes;
+          if (currentView === 'ingame' && activeGame.id === targetGameId) {
+            try {
+              win?.loadSrmData?.(rawBytes, null);
+            } catch (err) {
+              console.error(err);
+            }
           }
-        } catch (e) {}
-      }
+          importedSummary.push(`Battery Save (${(rawBytes.length / 1024).toFixed(1)} KB)`);
+          continue;
+        }
 
-      // 2. Check if JSON text
-      if (!emuStateBytes && !decodedMeta?.engineState) {
-        try {
-          const text = new TextDecoder().decode(rawBytes);
-          if (text.trim().startsWith('{')) {
-            const parsed = JSON.parse(text);
+        // 2. Check if Real Time Clock data (.rtc)
+        if (lowerName.endsWith('.rtc')) {
+          await idbPut(`rtc:${targetGameId}`, rawBytes);
+          pendingRtcRef.current = rawBytes;
+          if (currentView === 'ingame' && activeGame.id === targetGameId) {
+            try {
+              win?.loadSrmData?.(null, rawBytes);
+            } catch (err) {
+              console.error(err);
+            }
+          }
+          importedSummary.push(`RTC Clock`);
+          continue;
+        }
+
+        // 3. Decompress if file is GZIP / ZLIB / RZIP compressed RetroArch state
+        rawBytes = await decompressIfCompressed(rawBytes);
+
+        let emuStateBytes = null;
+        let decodedMeta = null;
+
+        // Check if RASTATE1 header
+        let header = '';
+        if (rawBytes.length >= 8) {
+          for (let i = 0; i < 8; i++) header += String.fromCharCode(rawBytes[i]);
+        }
+
+        if (header === 'RASTATE1') {
+          try {
+            const jsonText = new TextDecoder().decode(rawBytes.slice(8));
+            const parsed = JSON.parse(jsonText);
             decodedMeta = parsed;
             if (parsed.emuState) {
               emuStateBytes = parsed.emuState instanceof Uint8Array
                 ? parsed.emuState
                 : new Uint8Array(Object.values(parsed.emuState));
+            } else if (parsed.engineState) {
+              decodedMeta = parsed;
             }
-          }
-        } catch (e) {}
-      }
-
-      // 3. Otherwise treat as raw EmulatorJS / RetroArch state dump
-      if (!emuStateBytes && !decodedMeta?.engineState) {
-        emuStateBytes = rawBytes;
-      }
-
-      const targetGameId = importTargetGameId || activeGame.id;
-      const slotNum = importTargetSlotNum || 1;
-      const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-      const newSlot = {
-        slot: slotNum,
-        empty: false,
-        label: `Imported (${file.name.slice(0, 16)})`,
-        timestamp: timeStr,
-        score: decodedMeta?.score || 0,
-        frame: decodedMeta?.frame || 0,
-        screenshot: createPrepopulatedThumbnail('overworld'),
-        stateData: {
-          version: 'EJS_STATE',
-          gameId: targetGameId,
-          timestamp: timeStr,
-          emuState: emuStateBytes || rawBytes,
-          engineState: decodedMeta?.engineState || null
+          } catch (err) {}
         }
-      };
 
-      setSavesByGameId((prev) => {
-        const list = prev[targetGameId] || createEmptySlotsForGame(targetGameId);
-        return {
-          ...prev,
-          [targetGameId]: list.map((s) => (s.slot === slotNum ? newSlot : s))
-        };
-      });
-
-      idbPut(`state:${targetGameId}:${slotNum}`, {
-        slot: slotNum,
-        label: newSlot.label,
-        timestamp: timeStr,
-        screenshot: newSlot.screenshot,
-        emuState: emuStateBytes || rawBytes
-      }).catch(console.error);
-
-      if (currentView === 'ingame' && activeGame.id === targetGameId) {
-        if (emuStateBytes) {
+        // Check if JSON text
+        if (!emuStateBytes && !decodedMeta?.engineState) {
           try {
-            getEmu()?.gameManager.loadState(emuStateBytes);
-          } catch (err) {
-            console.error(err);
-          }
-        } else if (decodedMeta?.engineState) {
-          engineStateRef.current = JSON.parse(JSON.stringify(decodedMeta.engineState));
-          setLiveScore(engineStateRef.current.score || 0);
-          setLiveFrame(engineStateRef.current.frame || 0);
+            const text = new TextDecoder().decode(rawBytes);
+            if (text.trim().startsWith('{')) {
+              const parsed = JSON.parse(text);
+              decodedMeta = parsed;
+              if (parsed.emuState) {
+                emuStateBytes = parsed.emuState instanceof Uint8Array
+                  ? parsed.emuState
+                  : new Uint8Array(Object.values(parsed.emuState));
+              }
+            }
+          } catch (err) {}
         }
-        showToast(`Loaded "${file.name}" into emulator & Slot #${slotNum}`);
-      } else {
-        showToast(`Imported "${file.name}" into Slot #${slotNum}`);
+
+        // Raw EmulatorJS / RetroArch state dump
+        if (!emuStateBytes && !decodedMeta?.engineState) {
+          emuStateBytes = rawBytes;
+        }
+
+        const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        const newSlot = {
+          slot: slotNum,
+          empty: false,
+          label: `Imported (${file.name.slice(0, 16)})`,
+          timestamp: timeStr,
+          score: decodedMeta?.score || 0,
+          frame: decodedMeta?.frame || 0,
+          screenshot: createPrepopulatedThumbnail('overworld'),
+          stateData: {
+            version: 'EJS_STATE',
+            gameId: targetGameId,
+            timestamp: timeStr,
+            emuState: emuStateBytes || rawBytes,
+            engineState: decodedMeta?.engineState || null
+          }
+        };
+
+        setSavesByGameId((prev) => {
+          const list = prev[targetGameId] || createEmptySlotsForGame(targetGameId);
+          return {
+            ...prev,
+            [targetGameId]: list.map((s) => (s.slot === slotNum ? newSlot : s))
+          };
+        });
+
+        await idbPut(`state:${targetGameId}:${slotNum}`, {
+          slot: slotNum,
+          label: newSlot.label,
+          timestamp: timeStr,
+          screenshot: newSlot.screenshot,
+          emuState: emuStateBytes || rawBytes
+        }).catch(console.error);
+
+        if (currentView === 'ingame' && activeGame.id === targetGameId) {
+          if (emuStateBytes) {
+            try {
+              if (win?.loadStateData) {
+                win.loadStateData(emuStateBytes);
+              } else {
+                getEmu()?.gameManager.loadState(emuStateBytes);
+              }
+            } catch (err) {
+              console.error(err);
+            }
+          } else if (decodedMeta?.engineState) {
+            engineStateRef.current = JSON.parse(JSON.stringify(decodedMeta.engineState));
+            setLiveScore(engineStateRef.current.score || 0);
+            setLiveFrame(engineStateRef.current.frame || 0);
+          }
+        }
+
+        importedSummary.push(`Slot #${slotNum} State`);
       }
 
-      soundFX.coin();
+      if (importedSummary.length > 0) {
+        soundFX.coin();
+        showToast(`Imported: ${importedSummary.join(', ')}`);
+      }
     } catch (err) {
       showToast(`Import Error: ${err.message}`);
     } finally {
@@ -2311,7 +2533,8 @@ export default function App() {
       <input
         ref={stateImportInputRef}
         type="file"
-        accept=".state,.sav,.json"
+        multiple
+        accept=".state,.state1,.state2,.state3,.state4,.state5,.srm,.rtc,.sav,.json,*/*"
         onChange={handleImportStateFile}
         className="hidden"
       />
@@ -3054,9 +3277,10 @@ export default function App() {
                       stateImportInputRef.current?.click();
                     }}
                     className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-cyan-300 border border-cyan-500/30 text-xs font-bold transition"
+                    title="Import .srm, .rtc, or .state files"
                   >
                     <Upload className="w-3.5 h-3.5" />
-                    <span>Import .state File</span>
+                    <span>Import Save / State</span>
                   </button>
 
                   <button
@@ -3160,16 +3384,31 @@ export default function App() {
                           </button>
                         )}
 
-                        {/* Export Slot (.state) */}
-                        {!slotObj.empty && (
-                          <button
-                            onClick={() => exportSlotFile(targetGame, slotObj)}
-                            className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-amber-300"
-                            title="Export .state binary file"
-                          >
-                            <Download className="w-3.5 h-3.5" />
-                          </button>
-                        )}
+                        {/* Export Slot / Live State (.state) */}
+                        <button
+                          disabled={slotObj.empty && !(currentView === 'ingame' && activeGame.id === targetGame.id)}
+                          onClick={() => {
+                            if (!slotObj.empty) {
+                              exportSlotFile(targetGame, slotObj);
+                            } else if (currentView === 'ingame' && activeGame.id === targetGame.id) {
+                              exportSlotFile(targetGame, null);
+                            }
+                          }}
+                          className={`p-1.5 rounded-lg transition ${
+                            slotObj.empty && !(currentView === 'ingame' && activeGame.id === targetGame.id)
+                              ? 'bg-zinc-800/40 text-zinc-600 cursor-not-allowed'
+                              : 'bg-zinc-800 hover:bg-zinc-700 text-amber-300'
+                          }`}
+                          title={
+                            !slotObj.empty
+                              ? `Export Slot #${slotObj.slot} .state file`
+                              : currentView === 'ingame' && activeGame.id === targetGame.id
+                              ? 'Export current live state as .state file'
+                              : 'Slot is empty (save or play first to export)'
+                          }
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </button>
 
                         {/* Import into this Slot */}
                         <button
@@ -3178,8 +3417,8 @@ export default function App() {
                             setImportTargetSlotNum(slotObj.slot);
                             stateImportInputRef.current?.click();
                           }}
-                          className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-cyan-300"
-                          title="Import .state file into this slot"
+                          className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-cyan-300 transition"
+                          title="Import .state, .srm, or .rtc file into this slot"
                         >
                           <Upload className="w-3.5 h-3.5" />
                         </button>
