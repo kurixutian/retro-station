@@ -766,13 +766,19 @@ function buildPlayerHtml(core, romUrl, title) {
     '  }catch(e){}' +
     '  parent.postMessage({type:"ejs-ready"},"*");' +
     '};' +
-    'setInterval(function(){' +
+    'window.setAudioMuted=function(m){' +
     '  try{' +
-    '    var el=document.querySelector(".ejs_virtualGamepad_parent");' +
-    '    if(el)el.remove();' +
-    '    if(window.EJS_emulator&&window.EJS_emulator.virtualGamepad)window.EJS_emulator.virtualGamepad.style.display="none";' +
+    '    if(window.EJS_emulator){' +
+    '      if(typeof window.EJS_emulator.setVolume==="function")window.EJS_emulator.setVolume(m?0:1);' +
+    '      if(window.EJS_emulator.gameManager&&typeof window.EJS_emulator.gameManager.setVolume==="function")window.EJS_emulator.gameManager.setVolume(m?0:1);' +
+    '    }' +
     '  }catch(e){}' +
-    '},250);' + close +
+    '  try{' +
+    '    var audios=document.querySelectorAll("audio,video");' +
+    '    for(var i=0;i<audios.length;i++){audios[i].muted=m;}' +
+    '  }catch(e){}' +
+    '};' +
+    'setInterval(function(){' +
     '<script src="https://cdn.emulatorjs.org/stable/data/loader.js">' + close + '</body></html>';
 }
 
@@ -938,6 +944,7 @@ export default function App() {
       bezelVignette: true,
       crtCurve: true,
       gbGrid: false,
+      amoled: false,
     };
     try {
       const saved = localStorage.getItem('retro_shaders');
@@ -1074,6 +1081,7 @@ export default function App() {
       }
       if (e.data?.type !== 'ejs-ready') return;
       const win = emuFrameRef.current?.contentWindow;
+      try { win?.setAudioMuted?.(isMuted); } catch (e) {}
 
       // 1. Inject any pending battery save (.srm) or RTC (.rtc)
       if (pendingSrmRef.current || pendingRtcRef.current) {
@@ -1164,8 +1172,27 @@ export default function App() {
     setShaders((prev) => {
       const next = { ...prev, [key]: !prev[key] };
       try { localStorage.setItem('retro_shaders', JSON.stringify(next)); } catch (e) {}
+      if (key === 'amoled') {
+        showToast(next.amoled ? 'AMOLED Battery Saver Activated (Pure Black)' : 'AMOLED Mode Disabled');
+      }
       return next;
     });
+  };
+
+  const toggleAudio = () => {
+    const next = !isMuted;
+    setIsMuted(next);
+    soundFX.muted = next;
+    try {
+      const win = emuFrameRef.current?.contentWindow;
+      win?.setAudioMuted?.(next);
+      const emu = getEmu();
+      if (emu) {
+        if (typeof emu.setVolume === 'function') emu.setVolume(next ? 0 : 1);
+        if (emu.gameManager && typeof emu.gameManager.setVolume === 'function') emu.gameManager.setVolume(next ? 0 : 1);
+      }
+    } catch (e) {}
+    showToast(next ? 'Game Audio Muted' : 'Game Audio On');
   };
 
   const deleteRom = useCallback(async (gameId) => {
@@ -2339,7 +2366,7 @@ export default function App() {
   const activeShaderCount = Object.values(shaders).filter(Boolean).length;
 
   return (
-    <div className={`min-h-screen w-full ${theme.appBg} font-sans select-none overflow-x-hidden`}>
+    <div className={`min-h-screen w-full ${shaders.amoled ? 'bg-black text-zinc-100' : theme.appBg} font-sans select-none overflow-x-hidden`}>
       {/* Hidden File Input for ROMs */}
       <input
         ref={romInputRef}
@@ -2584,10 +2611,10 @@ export default function App() {
           (Top Settings Bar -> Upper Game Screen -> Lower Control Deck)
       ==================================================================== */}
       {currentView === 'ingame' && (
-        <div className="fixed inset-0 w-full overflow-hidden bg-zinc-950" style={{ height: '100dvh' }}>
+        <div className={`fixed inset-0 w-full overflow-hidden ${shaders.amoled ? 'bg-black' : 'bg-zinc-950'}`} style={{ height: '100dvh' }}>
           {/* Vertical Handheld Shell Container */}
           <div
-            className={`relative w-full h-full max-w-[560px] mx-auto flex flex-col overflow-hidden ${theme.shellBg}`}
+            className={`relative w-full h-full max-w-[560px] mx-auto flex flex-col overflow-hidden ${shaders.amoled ? 'bg-black border-zinc-900' : theme.shellBg}`}
           >
             {/* Tap zone at top: reveals the auto-hiding top bar */}
             <button
@@ -2598,7 +2625,9 @@ export default function App() {
             />
             {/* 1. TOP BAR (auto-hides) */}
             <div
-              className={`absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-3.5 pb-2.5 bg-black/85 backdrop-blur border-b border-white/10 transition-all duration-300 ${
+              className={`absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-3.5 pb-2.5 ${
+                shaders.amoled ? 'bg-black border-b border-zinc-900' : 'bg-black/85 backdrop-blur border-b border-white/10'
+              } transition-all duration-300 ${
                 topBarVisible ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0 pointer-events-none'
               }`}
               style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 14px)' }}
@@ -2696,18 +2725,6 @@ export default function App() {
                     <span>Customize Controls</span>
                   </button>
 
-                  {/* Hide / Show Pad Toggle */}
-                  <button
-                    onClick={() => {
-                      setHidePad((h) => !h);
-                      showToast(!hidePad ? 'On-Screen Controller Hidden' : 'On-Screen Controller Visible');
-                    }}
-                    className="flex items-center gap-2 px-3 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 text-xs font-semibold transition"
-                  >
-                    {hidePad ? <Eye className="w-4 h-4 text-emerald-400" /> : <EyeOff className="w-4 h-4 text-amber-400" />}
-                    <span>{hidePad ? 'Show Pad' : 'Hide Pad'}</span>
-                  </button>
-
                   {/* CRT & Game Boy LCD Grid Shader Settings */}
                   <button
                     onClick={() => {
@@ -2747,17 +2764,20 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Audio Mute Row */}
+                {/* Audio Toggle Row (Mutes/Unmutes emulator and sound FX) */}
                 <div className="flex items-center justify-between pt-1 border-t border-zinc-800/80 text-xs">
-                  <span className="text-zinc-400">Synthesizer Audio</span>
+                  <div className="flex items-center gap-1.5 text-zinc-300 font-bold">
+                    {isMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
+                    <span>Game Audio</span>
+                  </div>
                   <button
-                    onClick={() => {
-                      soundFX.muted = !isMuted;
-                      setIsMuted(!isMuted);
-                    }}
-                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-200"
+                    onClick={toggleAudio}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold transition active:scale-95 ${
+                      isMuted
+                        ? 'bg-rose-500/15 border-rose-500/40 text-rose-300 hover:bg-rose-500/25'
+                        : 'bg-zinc-900 border-zinc-800 text-zinc-200 hover:bg-zinc-800'
+                    }`}
                   >
-                    {isMuted ? <VolumeX className="w-3.5 h-3.5 text-rose-400" /> : <Volume2 className="w-3.5 h-3.5 text-emerald-400" />}
                     <span>{isMuted ? 'Muted' : 'Audio On'}</span>
                   </button>
                 </div>
@@ -2767,20 +2787,22 @@ export default function App() {
 
             {/* 2. UPPER SCREEN AREA: GAME VIEWPORT + COMBINABLE SHADERS */}
             <div
-              className={`flex-none p-2 flex flex-col items-center justify-center ${theme.bezelBg}`}
+              className={`flex-none p-2 flex flex-col items-center justify-center ${shaders.amoled ? 'bg-black border-b border-zinc-900' : theme.bezelBg}`}
               style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 24px)' }}
             >
               <div
-                className={`relative bg-black overflow-hidden border-2 border-zinc-800 shadow-inner ${
+                className={`relative bg-black overflow-hidden border-2 ${
+                  shaders.amoled ? 'border-zinc-900 shadow-none' : 'border-zinc-800 shadow-inner'
+                } ${
                   shaders.crtCurve ? 'rounded-2xl scale-[0.99]' : 'rounded-lg'
                 }`}
                 style={{
                   aspectRatio: String(coreRatio(activeGame.core)),
                   width: `min(100%, ${(48 * coreRatio(activeGame.core)).toFixed(2)}dvh)`,
-                  boxShadow: shaders.rgbBloom
+                  boxShadow: !shaders.amoled && shaders.rgbBloom
                     ? `0 0 28px ${theme.hex}33, inset 0 0 18px rgba(0,0,0,0.75)`
                     : 'none',
-                  filter: shaders.rgbBloom ? 'contrast(1.08) saturate(1.18) brightness(1.04)' : 'none'
+                  filter: !shaders.amoled && shaders.rgbBloom ? 'contrast(1.08) saturate(1.18) brightness(1.04)' : 'none'
                 }}
               >
                 {activeGame.real ? (
@@ -2825,8 +2847,9 @@ export default function App() {
                   <div
                     className="absolute inset-0 pointer-events-none z-10"
                     style={{
-                      backgroundImage:
-                        'linear-gradient(to right, rgba(15, 23, 42, 0.35) 1px, transparent 1px), linear-gradient(to bottom, rgba(15, 23, 42, 0.35) 1px, transparent 1px)',
+                      backgroundImage: shaders.amoled
+                        ? 'linear-gradient(to right, #000000 1.2px, transparent 1.2px), linear-gradient(to bottom, #000000 1.2px, transparent 1.2px)'
+                        : 'linear-gradient(to right, rgba(15, 23, 42, 0.35) 1px, transparent 1px), linear-gradient(to bottom, rgba(15, 23, 42, 0.35) 1px, transparent 1px)',
                       backgroundSize: '4px 4px'
                     }}
                   />
@@ -2858,7 +2881,7 @@ export default function App() {
             {/* 3. CONTROL DECK: free-placement, resizable pad groups */}
             <div
               ref={deckRef}
-              className={`relative flex-1 min-h-0 border-t overflow-hidden ${theme.deckBg}`}
+              className={`relative flex-1 min-h-0 border-t ${shaders.amoled ? 'bg-black border-zinc-900' : theme.deckBg} overflow-hidden`}
               style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 14px)' }}
             >
               <PadGroup id="transport" layout={padLayout} customizing={customizing} selected={customizing && selectedPad === 'transport'} onSelect={setSelectedPad} onMove={movePad} deckRef={deckRef}>
@@ -2869,7 +2892,9 @@ export default function App() {
                   className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl font-bold text-xs border transition active:scale-95 ${
                     isPaused
                       ? 'bg-amber-500 text-zinc-950 border-amber-300 shadow-lg'
-                      : 'bg-zinc-950/80 text-zinc-200 border-white/10 hover:bg-zinc-900'
+                      : shaders.amoled
+                        ? 'bg-black text-zinc-200 border-zinc-800 hover:bg-zinc-900'
+                        : 'bg-zinc-950/80 text-zinc-200 border-white/10 hover:bg-zinc-900'
                   }`}
                 >
                   {isPaused ? <Play className="w-3.5 h-3.5 fill-current" /> : <Pause className="w-3.5 h-3.5" />}
@@ -2888,7 +2913,9 @@ export default function App() {
                   className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl font-bold text-xs border transition active:scale-95 ${
                     isRewinding
                       ? 'bg-amber-400 text-zinc-950 border-amber-200 shadow-lg'
-                      : 'bg-zinc-950/80 text-zinc-200 border-white/10 hover:bg-zinc-900'
+                      : shaders.amoled
+                        ? 'bg-black text-zinc-200 border-zinc-800 hover:bg-zinc-900'
+                        : 'bg-zinc-950/80 text-zinc-200 border-white/10 hover:bg-zinc-900'
                   }`}
                 >
                   <Rewind className="w-3.5 h-3.5" />
@@ -2901,7 +2928,9 @@ export default function App() {
                   className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl font-bold text-xs border transition active:scale-95 ${
                     isFastForward
                       ? 'bg-sky-400 text-zinc-950 border-sky-200 shadow-lg'
-                      : 'bg-zinc-950/80 text-zinc-200 border-white/10 hover:bg-zinc-900'
+                      : shaders.amoled
+                        ? 'bg-black text-zinc-200 border-zinc-800 hover:bg-zinc-900'
+                        : 'bg-zinc-950/80 text-zinc-200 border-white/10 hover:bg-zinc-900'
                   }`}
                 >
                   <FastForward className="w-3.5 h-3.5" />
@@ -2944,8 +2973,8 @@ export default function App() {
                         <ChevronRight className="w-6 h-6" />
                       </button>
                       {/* Center Pivot */}
-                      <div className="absolute top-10 left-10 w-11 h-11 bg-zinc-900 border border-zinc-800 flex items-center justify-center pointer-events-none">
-                        <div className="w-4 h-4 rounded-full bg-zinc-800" />
+                      <div className={`absolute top-10 left-10 w-11 h-11 ${shaders.amoled ? 'bg-black border-black' : 'bg-zinc-900 border-zinc-800'} flex items-center justify-center pointer-events-none`}>
+                        <div className={`w-4 h-4 rounded-full ${shaders.amoled ? 'bg-zinc-900' : 'bg-zinc-800'}`} />
                       </div>
                     </div>
 </PadGroup>
@@ -2989,7 +3018,7 @@ export default function App() {
                       {...bindPadButton('select')}
                       className="flex flex-col items-center gap-1 group touch-none select-none"
                     >
-                      <div className="w-12 h-3.5 rounded-full bg-zinc-800 group-active:bg-emerald-400 border border-zinc-600 shadow-inner -rotate-12 transition" />
+                      <div className={`w-12 h-3.5 rounded-full ${shaders.amoled ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-800 border-zinc-600'} group-active:bg-emerald-400 border shadow-inner -rotate-12 transition`} />
                       <span className="text-[9px] font-black tracking-widest text-zinc-400 uppercase">
                         SELECT
                       </span>
@@ -2999,7 +3028,7 @@ export default function App() {
                       {...bindPadButton('start')}
                       className="flex flex-col items-center gap-1 group touch-none select-none"
                     >
-                      <div className="w-12 h-3.5 rounded-full bg-zinc-800 group-active:bg-emerald-400 border border-zinc-600 shadow-inner -rotate-12 transition" />
+                      <div className={`w-12 h-3.5 rounded-full ${shaders.amoled ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-800 border-zinc-600'} group-active:bg-emerald-400 border shadow-inner -rotate-12 transition`} />
                       <span className="text-[9px] font-black tracking-widest text-zinc-400 uppercase">
                         START
                       </span>
@@ -3249,6 +3278,37 @@ export default function App() {
             </div>
 
             <div className="p-5 space-y-6">
+              {/* AMOLED Battery Saver Dedicated Toggle Card */}
+              <div
+                onClick={() => toggleShader('amoled')}
+                className={`p-4 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 ${
+                  shaders.amoled
+                    ? 'bg-emerald-500/15 border-emerald-500/50 text-white'
+                    : 'bg-zinc-900/70 border-zinc-800 text-zinc-300 hover:bg-zinc-900'
+                }`}
+              >
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2.5 h-2.5 rounded-full ${shaders.amoled ? 'bg-emerald-400' : 'bg-zinc-600'}`} />
+                    <span className="text-sm font-extrabold text-white">AMOLED Black Mode</span>
+                    <span className="px-2 py-0.5 rounded-md text-[9px] font-black tracking-wider uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      Battery Saver
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-400 leading-snug">
+                    Turns chassis & display pure pitch black (<span className="text-zinc-200 font-mono">#000000</span>) to physically power off OLED pixels, disables screen bloom, and turns grid lines true black.
+                  </p>
+                </div>
+
+                <div
+                  className={`shrink-0 w-12 h-6 rounded-full transition-colors p-0.5 flex items-center ${
+                    shaders.amoled ? 'bg-emerald-500 justify-end' : 'bg-zinc-800 border border-zinc-700 justify-start'
+                  }`}
+                >
+                  <div className="w-5 h-5 rounded-full bg-white shadow-md" />
+                </div>
+              </div>
+
               {/* Section 1: CRT & LCD SHADER FILTER */}
               <div className="space-y-2.5">
                 <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
@@ -3266,7 +3326,7 @@ export default function App() {
                     {
                       key: 'gbGrid',
                       title: 'Game Boy LCD Grid Lines',
-                      desc: 'Dot-matrix pixel grid overlay (combinable with CRT!)'
+                      desc: 'Dot-matrix pixel grid overlay (combines with AMOLED black!)'
                     },
                     {
                       key: 'rgbBloom',
@@ -3348,15 +3408,6 @@ export default function App() {
                     );
                   })}
                 </div>
-              </div>
-
-              <div className="flex justify-end pt-2 border-t border-zinc-800">
-                <button
-                  onClick={() => setGlobalSettingsOpen(false)}
-                  className={`px-5 py-2 rounded-xl font-bold text-xs ${theme.accentBg}`}
-                >
-                  Done
-                </button>
               </div>
             </div>
           </div>
