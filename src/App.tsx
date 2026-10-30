@@ -15,6 +15,7 @@ import {
   Layers,
   Sparkles,
   Camera,
+  Save,
   FastForward,
   Rewind,
   FileCode,
@@ -164,84 +165,11 @@ const THEMES = {
 // ============================================================================
 // 3. BUILT-IN GAMES & UPGRADED PLAYABLE CARTRIDGES
 // ============================================================================
-const INITIAL_GAMES = [
-  {
-    id: 'pokemon_gold',
-    title: 'Pokémon Gold Version',
-    subtitle: 'Johto RPG • New Bark Town & Route 29',
-    fileName: 'Pokemon_Gold_Version.gbc',
-    ext: 'gbc',
-    core: 'gambatte',
-    system: 'Game Boy Color',
-    shortSystem: 'GBC',
-    crc32: '0x608A4C9E',
-    size: '2.0 MB',
-    isDemo: false, // Featured in My Library + Playable RPG Engine
-    engineType: 'pokegold',
-    coverGradient: 'from-amber-500 via-yellow-600 to-orange-900',
-    accentColor: '#fbbf24',
-    year: '1999',
-    players: '1 Player',
-    description: 'Explore Johto Route 29! Walk into tall grass to trigger turn-based Wild Pokémon battles, use Ember & Tackle, throw PokéBalls to catch wild Pokémon, and level up your starter Cyndaquil.',
-  },
-  {
-    id: 'cyberrun_dx',
-    title: "CyberRun '89 DX",
-    subtitle: 'Sector 7 Neon Action Platformer',
-    fileName: 'CyberRun_89_DX.nes',
-    ext: 'nes',
-    core: 'fceumm',
-    system: 'Nintendo Entertainment System',
-    shortSystem: 'NES',
-    crc32: '0x8F4A2C19',
-    size: '512 KB',
-    isDemo: true,
-    engineType: 'cyberrun',
-    coverGradient: 'from-cyan-500 via-blue-700 to-slate-900',
-    accentColor: '#22d3ee',
-    year: '1989',
-    players: '1 Player',
-    description: 'Upgraded DX Edition! Double-jump over security drones, slide under laser barriers, rapid-fire plasma bolts with B, and build your combo multiplier.',
-  },
-  {
-    id: 'starblade_dx',
-    title: 'StarBlade Super DX',
-    subtitle: '16-Bit Deep Space Squadron Shmup',
-    fileName: 'StarBlade_Super_DX.sfc',
-    ext: 'sfc',
-    core: 'snes9x',
-    system: 'Super Nintendo (SNES)',
-    shortSystem: 'SNES',
-    crc32: '0x4E91B07D',
-    size: '2.5 MB',
-    isDemo: true,
-    engineType: 'starblade',
-    coverGradient: 'from-fuchsia-600 via-purple-800 to-indigo-950',
-    accentColor: '#e879f9',
-    year: '1993',
-    players: '1 Player',
-    description: 'Pilot the RX-92 Starfighter with upgradable Spread-Shot weapons, deflect asteroid waves, and engage Alien Dreadnought bosses.',
-  },
-  {
-    id: 'neondrift_adv',
-    title: 'Neon Drift Advance',
-    subtitle: '32-Bit Synthwave Highway Outrun',
-    fileName: 'Neon_Drift_Advance.gba',
-    ext: 'gba',
-    core: 'mgba',
-    system: 'Game Boy Advance',
-    shortSystem: 'GBA',
-    crc32: '0xA73D99E2',
-    size: '4.0 MB',
-    isDemo: true,
-    engineType: 'neondrift',
-    coverGradient: 'from-rose-500 via-pink-700 to-purple-950',
-    accentColor: '#f43f5e',
-    year: '2002',
-    players: '1 Player',
-    description: 'High-speed pseudo-3D highway racing! Steer around rival supercars, hold A for Nitro Turbo Boost, and set the fastest lap in Neo-Tokyo.',
-  }
-];
+const INITIAL_GAMES = [];
+
+const STUB_GAME = {
+  id: "none", title: "", fileName: "", core: "gambatte", system: "", shortSystem: "", engineType: "pokegold", real: false
+};
 
 // ============================================================================
 // 4. RETRO WEB AUDIO SYNTHESIZER
@@ -646,21 +574,183 @@ function PadGroup({ id, layout, customizing, selected, onSelect, onMove, deckRef
   );
 }
 
+// ---------------- ROM storage (IndexedDB) + EmulatorJS player ----------------
+const idbOpen = () => new Promise((res, rej) => {
+  const r = indexedDB.open('retro_station', 1);
+  r.onupgradeneeded = () => r.result.createObjectStore('roms');
+  r.onsuccess = () => res(r.result);
+  r.onerror = () => rej(r.error);
+});
+const idbPut = async (key, blob) => {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const tx = db.transaction('roms', 'readwrite');
+    tx.objectStore('roms').put(blob, key);
+    tx.oncomplete = () => res(true);
+    tx.onerror = () => rej(tx.error);
+  });
+};
+const idbGet = async (key) => {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const q = db.transaction('roms').objectStore('roms').get(key);
+    q.onsuccess = () => res(q.result);
+    q.onerror = () => rej(q.error);
+  });
+};
+const idbDelete = async (key) => {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const tx = db.transaction('roms', 'readwrite');
+    tx.objectStore('roms').delete(key);
+    tx.oncomplete = () => res(true);
+    tx.onerror = () => rej(tx.error);
+  });
+};
+
+const EJS_CORES = { gambatte: 'gb', mgba: 'gba', fceumm: 'nes', snes9x: 'snes', genesis_plus_gx: 'segaMD' };
+const PAD_KEYS = {
+  up: ['ArrowUp', 38], down: ['ArrowDown', 40], left: ['ArrowLeft', 37], right: ['ArrowRight', 39],
+  actionA: ['z', 90], actionB: ['x', 88], start: ['Enter', 13], select: ['v', 86]
+};
+
+function buildPlayerHtml(core, romUrl, title) {
+  const close = '<' + '/script>';
+  return '<!doctype html><html><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+    '<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#game{width:100%;height:100%}' +
+    '.ejs_virtual_gamepad,.ejs_menu_bar,.ejs_context_menu{display:none!important}</style></head><body>' +
+    '<div id="game"></div><script>' +
+    'EJS_player="#game";EJS_core=' + JSON.stringify(core) + ';EJS_gameUrl=' + JSON.stringify(romUrl) + ';' +
+    'EJS_gameName=' + JSON.stringify(title || 'game') + ';' +
+    'EJS_pathtodata="https://cdn.emulatorjs.org/stable/data/";EJS_startOnLoaded=true;' +
+    'EJS_onGameStart=function(){parent.postMessage({type:"ejs-ready"},"*")};' + close +
+    '<script src="https://cdn.emulatorjs.org/stable/data/loader.js">' + close + '</body></html>';
+}
+
+const LIBRETRO_SYSTEM_MAP = {
+  gb: 'Nintendo - Game Boy',
+  gbc: 'Nintendo - Game Boy Color',
+  gba: 'Nintendo - Game Boy Advance',
+  nes: 'Nintendo - Nintendo Entertainment System',
+  sfc: 'Nintendo - Super Nintendo Entertainment System',
+  smc: 'Nintendo - Super Nintendo Entertainment System',
+  md: 'Sega - Mega Drive - Genesis',
+  gen: 'Sega - Mega Drive - Genesis',
+  smd: 'Sega - Mega Drive - Genesis',
+  bin: 'Sega - Mega Drive - Genesis'
+};
+
+function formatGameTitle(rawTitle) {
+  if (!rawTitle) return '';
+  return rawTitle
+    .replace(/\.[a-zA-Z0-9]+$/, '')
+    .replace(/\([^)]*\)/g, '')
+    .replace(/\[[^\]]*\]/g, '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim() || rawTitle;
+}
+
+function getBoxartUrls(game) {
+  if (!game) return [];
+  const urls = [];
+  if (game.coverUrl) urls.push(game.coverUrl);
+
+  const ext = game.ext || (game.fileName ? game.fileName.split('.').pop().toLowerCase() : '');
+  const libSystem = LIBRETRO_SYSTEM_MAP[ext] || (game.shortSystem === 'GBC' ? 'Nintendo - Game Boy Color' : null);
+
+  if (libSystem && game.fileName) {
+    const rawBase = game.fileName.replace(/\.[^/.]+$/, '');
+    urls.push(`https://thumbnails.libretro.com/${encodeURIComponent(libSystem)}/Named_Boxarts/${encodeURIComponent(rawBase)}.png`);
+  }
+  if (libSystem && game.title) {
+    urls.push(`https://thumbnails.libretro.com/${encodeURIComponent(libSystem)}/Named_Boxarts/${encodeURIComponent(game.title)}.png`);
+    const clean = formatGameTitle(game.title);
+    if (clean !== game.title) {
+      urls.push(`https://thumbnails.libretro.com/${encodeURIComponent(libSystem)}/Named_Boxarts/${encodeURIComponent(clean)}.png`);
+    }
+  }
+  return urls;
+}
+
+const GameCoverImage = ({ game, className = '', imgClassName = '', showBadge = false }) => {
+  const [srcIndex, setSrcIndex] = useState(0);
+  const [failedAll, setFailedAll] = useState(false);
+  const urls = useMemo(() => getBoxartUrls(game), [game]);
+
+  const currentUrl = urls[srcIndex];
+
+  if (!currentUrl || failedAll) {
+    return (
+      <div className={`relative w-full h-full bg-gradient-to-br ${game?.coverGradient || 'from-zinc-800 to-zinc-950'} flex flex-col justify-between p-3 overflow-hidden ${className}`}>
+        {showBadge && (
+          <span className="self-start px-2 py-0.5 rounded-md text-[10px] font-black bg-black/60 text-white backdrop-blur-sm border border-white/15">
+            {game?.shortSystem || 'ROM'}
+          </span>
+        )}
+        <div className="my-auto flex items-center justify-center">
+          <Gamepad2 className="w-10 h-10 text-white/40" />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`relative w-full h-full overflow-hidden flex items-center justify-center bg-zinc-950 ${className}`}>
+      <img
+        src={currentUrl}
+        alt={formatGameTitle(game?.title || '')}
+        onError={() => {
+          if (srcIndex + 1 < urls.length) {
+            setSrcIndex((i) => i + 1);
+          } else {
+            setFailedAll(true);
+          }
+        }}
+        className={`w-full h-full object-cover object-center ${imgClassName}`}
+        loading="lazy"
+      />
+      {showBadge && (
+        <span className="absolute top-2 left-2 px-2 py-0.5 rounded-md text-[10px] font-black bg-black/60 text-white backdrop-blur-sm border border-white/15">
+          {game?.shortSystem || 'ROM'}
+        </span>
+      )}
+    </div>
+  );
+};
+
 export default function App() {
   // Navigation View: 'home' (Netflix Library) | 'ingame' (Vertical Handheld)
   const [currentView, setCurrentView] = useState('home');
 
   // Games Library & Filter State
-  const [games, setGames] = useState(INITIAL_GAMES);
-  const [activeGame, setActiveGame] = useState(INITIAL_GAMES[0]);
+  const [games, setGames] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('retro_games') || 'null');
+      if (Array.isArray(saved)) {
+        return saved.map((g) => ({
+          ...g,
+          subtitle: (g.subtitle || g.system || '').replace(/\s*•\s*Auto-Detected Core/i, '')
+        }));
+      }
+    } catch (e) {}
+    return INITIAL_GAMES;
+  });
+  const [activeGame, setActiveGame] = useState(STUB_GAME);
+  const emuFrameRef = useRef(null);
+  const pendingStateRef = useRef(null);
+  const [romUrl, setRomUrl] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [systemFilter, setSystemFilter] = useState('ALL');
-  const [showDemos, setShowDemos] = useState(true);
+  const [showSearch, setShowSearch] = useState(false);
 
   // Per-Game Isolated Save State Slots Dictionary: { [gameId]: [Slot1, Slot2, Slot3, Slot4] }
   const [savesByGameId, setSavesByGameId] = useState(() => {
     const initialMap = {};
-    INITIAL_GAMES.forEach((g) => {
+    let games = [];
+    try { games = JSON.parse(localStorage.getItem('retro_games') || '[]') || []; } catch (e) {}
+    games.forEach((g) => {
       initialMap[g.id] = createEmptySlotsForGame(g.id);
     });
     return initialMap;
@@ -683,15 +773,88 @@ export default function App() {
   // inGameSaveModalMode: null | 'save' | 'load' (opens Per-Game Save State Slots overlay inside a game)
   const [inGameSaveModalMode, setInGameSaveModalMode] = useState(null);
 
-  // Theme & Combinable Shader Pipeline State
-  const [themeId, setThemeId] = useState('midnight');
-  const [shaders, setShaders] = useState({
-    scanlines: true,
-    rgbBloom: true,
-    bezelVignette: true,
-    crtCurve: true,
-    gbGrid: false, // Game Boy Dot-Matrix LCD Grid Lines (combinable!)
+  // Theme & Combinable Shader Pipeline State (Auto-saved to localStorage)
+  const [themeId, setThemeId] = useState(() => {
+    try {
+      return localStorage.getItem('retro_theme') || 'midnight';
+    } catch (e) {
+      return 'midnight';
+    }
   });
+  const [shaders, setShaders] = useState(() => {
+    const defaultShaders = {
+      scanlines: true,
+      rgbBloom: true,
+      bezelVignette: true,
+      crtCurve: true,
+      gbGrid: false,
+    };
+    try {
+      const saved = localStorage.getItem('retro_shaders');
+      return saved ? { ...defaultShaders, ...JSON.parse(saved) } : defaultShaders;
+    } catch (e) {
+      return defaultShaders;
+    }
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem('retro_theme', themeId); } catch (e) {}
+  }, [themeId]);
+  useEffect(() => {
+    try { localStorage.setItem('retro_shaders', JSON.stringify(shaders)); } catch (e) {}
+  }, [shaders]);
+
+  // Restore saved slots from IndexedDB on startup
+  useEffect(() => {
+    (async () => {
+      try {
+        const db = await idbOpen();
+        const tx = db.transaction('roms', 'readonly');
+        const store = tx.objectStore('roms');
+        const req = store.openCursor();
+        req.onsuccess = (e) => {
+          const cursor = (e.target as IDBRequest).result;
+          if (cursor) {
+            const key = String(cursor.key);
+            if (key.startsWith('state:')) {
+              const parts = key.split(':');
+              const gId = parts[1];
+              const slotN = parseInt(parts[2], 10);
+              const val = cursor.value;
+              if (val && gId && slotN) {
+                setSavesByGameId((prev) => {
+                  const list = prev[gId] || createEmptySlotsForGame(gId);
+                  return {
+                    ...prev,
+                    [gId]: list.map((s) =>
+                      s.slot === slotN
+                        ? {
+                            slot: slotN,
+                            empty: false,
+                            label: val.label || `Slot #${slotN}`,
+                            timestamp: val.timestamp || '',
+                            score: 0,
+                            frame: 0,
+                            screenshot: val.screenshot || null,
+                            stateData: {
+                              version: 'EJS_STATE',
+                              gameId: gId,
+                              timestamp: val.timestamp,
+                              emuState: val.emuState
+                            }
+                          }
+                        : s
+                    )
+                  };
+                });
+              }
+            }
+            cursor.continue();
+          }
+        };
+      } catch (err) {}
+    })();
+  }, []);
 
   // In-Game Emulation Runtime State
   const [isPaused, setIsPaused] = useState(false);
@@ -705,6 +868,42 @@ export default function App() {
   useEffect(() => {
     try { localStorage.setItem('retro_pad_layout', JSON.stringify(padLayout)); } catch (e) {}
   }, [padLayout]);
+  useEffect(() => {
+    try { localStorage.setItem('retro_games', JSON.stringify(games)); } catch (e) {}
+  }, [games]);
+  const getEmu = () => {
+    try { return emuFrameRef.current?.contentWindow?.EJS_emulator || null; } catch (e) { return null; }
+  };
+  const sendKey = (name, down) => {
+    const win = emuFrameRef.current?.contentWindow;
+    const k = PAD_KEYS[name];
+    if (!win || !k) return;
+    const ev = new win.KeyboardEvent(down ? 'keydown' : 'keyup', { key: k[0], code: k[0], bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'keyCode', { get: () => k[1] });
+    Object.defineProperty(ev, 'which', { get: () => k[1] });
+    win.dispatchEvent(ev);
+    win.document.dispatchEvent(ev);
+  };
+  useEffect(() => {
+    const onMsg = (e) => {
+      if (e.data?.type !== 'ejs-ready') return;
+      const st = pendingStateRef.current;
+      if (st) {
+        pendingStateRef.current = null;
+        setTimeout(() => {
+          try {
+            let stateToLoad = st;
+            if (stateToLoad && !(stateToLoad instanceof Uint8Array)) {
+              stateToLoad = new Uint8Array(Object.values(stateToLoad));
+            }
+            getEmu()?.gameManager.loadState(stateToLoad);
+          } catch (err) {}
+        }, 800);
+      }
+    };
+    window.addEventListener('message', onMsg);
+    return () => window.removeEventListener('message', onMsg);
+  }, []);
   const movePad = (id, x, y) => setPadLayout((l) => ({ ...l, [id]: { ...l[id], x, y } }));
   const scalePad = (id, sc) => setPadLayout((l) => ({ ...l, [id]: { ...l[id], s: sc } }));
   const [isMuted, setIsMuted] = useState(false);
@@ -750,9 +949,40 @@ export default function App() {
     return () => clearTimeout(t);
   }, [toastMessage]);
 
-  const toggleShader = (key) => {
-    setShaders((prev) => ({ ...prev, [key]: !prev[key] }));
+  const applyTheme = (id) => {
+    setThemeId(id);
+    try { localStorage.setItem('retro_theme', id); } catch (e) {}
+    showToast(`Theme Applied: ${THEMES[id]?.name || id}`);
   };
+
+  const toggleShader = (key) => {
+    setShaders((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      try { localStorage.setItem('retro_shaders', JSON.stringify(next)); } catch (e) {}
+      return next;
+    });
+  };
+
+  const deleteRom = useCallback(async (gameId) => {
+    try {
+      await idbDelete(gameId);
+    } catch (e) {}
+    setGames((prev) => prev.filter((g) => g.id !== gameId));
+    setSavesByGameId((prev) => {
+      const next = { ...prev };
+      delete next[gameId];
+      return next;
+    });
+    setDetailGame((d) => (d?.id === gameId ? null : d));
+    setActiveGame((a) => {
+      if (a?.id === gameId) {
+        setCurrentView('home');
+        return STUB_GAME;
+      }
+      return a;
+    });
+    showToast('ROM deleted from library');
+  }, [showToast]);
 
   // ============================================================================
   // AUTOMATIC ROM FILE LOADER & CORE DETECTOR
@@ -805,7 +1035,7 @@ export default function App() {
     const newGame = {
       id: `rom_${Date.now()}`,
       title: cleanTitle,
-      subtitle: `${detected.system} • Auto-Detected Core`,
+      subtitle: detected.system,
       fileName: file.name,
       ext,
       core: detected.core,
@@ -814,14 +1044,20 @@ export default function App() {
       crc32: crcHex,
       size: `${Math.max(1, Math.round(file.size / 1024))} KB`,
       isDemo: false,
+      real: true,
       engineType,
       coverGradient,
       accentColor: '#10b981',
       year: 'USER ROM',
       players: '1 Player',
-      description: `Loaded from local device (${file.size.toLocaleString()} bytes). Automatically routed to Libretro core "${detected.core}" (${detected.system}).`,
+      description: `Loaded from local device (${file.size.toLocaleString()} bytes). Runs on EmulatorJS core "${detected.core}" (${detected.system}).`,
     };
 
+    try {
+      await idbPut(newGame.id, file);
+    } catch (err) {
+      showToast('Could not store ROM for offline use');
+    }
     setGames((prev) => [newGame, ...prev]);
     setSavesByGameId((prev) => ({
       ...prev,
@@ -849,6 +1085,14 @@ export default function App() {
       setLiveFrame(0);
       showToast(`Launching ${game.title} [${game.core}]`);
     }
+    setRomUrl(null);
+    pendingStateRef.current = optionalStateData?.emuState || null;
+    if (game.real) {
+      idbGet(game.id).then((blob) => {
+        if (blob) setRomUrl(URL.createObjectURL(blob));
+        else showToast('ROM data missing - please re-upload this game');
+      });
+    }
     rewindBufferRef.current = [];
     setIsPaused(false);
     setIsRewinding(false);
@@ -864,6 +1108,39 @@ export default function App() {
   // PER-GAME SAVE STATE CAPTURE, LOAD, EXPORT (.state) & BATTERY (.srm)
   // ============================================================================
   const saveStateToGameSlot = useCallback((game, slotNumber) => {
+    if (game.real) {
+      const emu = getEmu();
+      let emuState = null;
+      try { emuState = emu?.gameManager.getState(); } catch (e) {}
+      if (!emuState) { showToast('Emulator not ready yet'); return; }
+      let shot = null;
+      try {
+        shot = emuFrameRef.current.contentDocument.querySelector('canvas').toDataURL('image/png');
+      } catch (e) {}
+      const timeStr0 = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      setSavesByGameId((prev) => {
+        const existing = prev[game.id] || createEmptySlotsForGame(game.id);
+        return {
+          ...prev,
+          [game.id]: existing.map((sl) =>
+            sl.slot === slotNumber
+              ? { slot: slotNumber, empty: false, label: `Saved ${timeStr0}`, timestamp: timeStr0, score: 0, frame: 0, screenshot: shot,
+                  stateData: { version: 'EJS_STATE', gameId: game.id, timestamp: timeStr0, emuState } }
+              : sl
+          )
+        };
+      });
+      idbPut(`state:${game.id}:${slotNumber}`, {
+        slot: slotNumber,
+        label: `Saved ${timeStr0}`,
+        timestamp: timeStr0,
+        screenshot: shot,
+        emuState
+      }).catch(console.error);
+      soundFX.save();
+      showToast(`Saved ${game.title} → Slot #${slotNumber}`);
+      return;
+    }
     const canvas = canvasRef.current;
     const screenshot = canvas ? canvas.toDataURL('image/png') : createPrepopulatedThumbnail('overworld');
     const clonedEngine = JSON.parse(JSON.stringify(engineStateRef.current));
@@ -923,6 +1200,23 @@ export default function App() {
       launchGame(game, targetSlot.stateData);
       return;
     }
+    if (game.real) {
+      try {
+        let stateToLoad = targetSlot.stateData.emuState;
+        if (stateToLoad && !(stateToLoad instanceof Uint8Array)) {
+          stateToLoad = new Uint8Array(Object.values(stateToLoad));
+        }
+        getEmu()?.gameManager.loadState(stateToLoad);
+      } catch (e) {
+        console.error(e);
+      }
+      setIsPaused(false);
+      setInGameSaveModalMode(null);
+      setInGameMenuOpen(false);
+      soundFX.coin();
+      showToast(`Loaded ${game.title} • Slot #${slotNumber}`);
+      return;
+    }
 
     engineStateRef.current = JSON.parse(JSON.stringify(targetSlot.stateData.engineState));
     setLiveScore(engineStateRef.current.score || 0);
@@ -946,32 +1240,40 @@ export default function App() {
         )
       };
     });
+    idbDelete(`state:${gameId}:${slotNumber}`).catch(console.error);
     showToast(`Cleared Slot #${slotNumber}`);
   }, [showToast]);
 
   const exportSlotFile = useCallback((game, slotObj) => {
-    let payload = slotObj?.stateData;
-    if (!payload) {
-      const cloned = JSON.parse(JSON.stringify(engineStateRef.current));
-      payload = {
-        version: 'RETRO_POCKET_V2',
-        gameId: game.id,
-        romFileName: game.fileName,
-        core: game.core,
-        timestamp: new Date().toLocaleTimeString(),
-        score: cloned.score,
-        frame: cloned.frame,
-        engineState: cloned
-      };
+    let rawBytes = null;
+    if (slotObj?.stateData?.emuState) {
+      const st = slotObj.stateData.emuState;
+      rawBytes = st instanceof Uint8Array ? st : new Uint8Array(Object.values(st));
+    } else if (currentView === 'ingame' && activeGame.id === game.id) {
+      try {
+        const emu = getEmu();
+        const st = emu?.gameManager.getState();
+        if (st) rawBytes = st instanceof Uint8Array ? st : new Uint8Array(Object.values(st));
+      } catch (e) {}
+    } else if (slotObj?.stateData) {
+      rawBytes = encodeSaveStateBinary(slotObj.stateData);
     }
-    const bytes = encodeSaveStateBinary(payload);
-    const cleanName = game.fileName.replace(/\.[^/.]+$/, '');
+
+    if (!rawBytes) {
+      showToast(`Slot #${slotObj?.slot || 1} is empty - save the game first`);
+      return;
+    }
+
+    const cleanName = (game.title || game.fileName || 'game')
+      .replace(/[^a-zA-Z0-9_-]/g, '_')
+      .replace(/_+/g, '_');
     const slotSuffix = slotObj ? `slot${slotObj.slot}` : 'live';
     const fileName = `${cleanName}-${slotSuffix}.state`;
-    downloadBinaryFile(bytes, fileName);
+
+    downloadBinaryFile(rawBytes, fileName);
     soundFX.save();
-    showToast(`Exported ${fileName} (${bytes.length} bytes)`);
-  }, [showToast]);
+    showToast(`Exported ${fileName} (${(rawBytes.length / 1024).toFixed(1)} KB)`);
+  }, [activeGame.id, currentView, showToast]);
 
   const exportGameSrm = useCallback((game) => {
     const slots = savesByGameId[game.id] || [];
@@ -988,43 +1290,107 @@ export default function App() {
     if (!file) return;
     try {
       const buffer = await file.arrayBuffer();
-      const decoded = decodeSaveStateBinary(buffer);
-      if (!decoded || !decoded.engineState) {
-        throw new Error('Invalid .state structure');
+      const rawBytes = new Uint8Array(buffer);
+      let emuStateBytes = null;
+      let decodedMeta = null;
+
+      // 1. Check if RASTATE1 header
+      let header = '';
+      if (rawBytes.length >= 8) {
+        for (let i = 0; i < 8; i++) header += String.fromCharCode(rawBytes[i]);
       }
+
+      if (header === 'RASTATE1') {
+        try {
+          const jsonText = new TextDecoder().decode(rawBytes.slice(8));
+          const parsed = JSON.parse(jsonText);
+          decodedMeta = parsed;
+          if (parsed.emuState) {
+            emuStateBytes = parsed.emuState instanceof Uint8Array
+              ? parsed.emuState
+              : new Uint8Array(Object.values(parsed.emuState));
+          } else if (parsed.engineState) {
+            decodedMeta = parsed;
+          }
+        } catch (e) {}
+      }
+
+      // 2. Check if JSON text
+      if (!emuStateBytes && !decodedMeta?.engineState) {
+        try {
+          const text = new TextDecoder().decode(rawBytes);
+          if (text.trim().startsWith('{')) {
+            const parsed = JSON.parse(text);
+            decodedMeta = parsed;
+            if (parsed.emuState) {
+              emuStateBytes = parsed.emuState instanceof Uint8Array
+                ? parsed.emuState
+                : new Uint8Array(Object.values(parsed.emuState));
+            }
+          }
+        } catch (e) {}
+      }
+
+      // 3. Otherwise treat as raw EmulatorJS / RetroArch state dump
+      if (!emuStateBytes && !decodedMeta?.engineState) {
+        emuStateBytes = rawBytes;
+      }
+
       const targetGameId = importTargetGameId || activeGame.id;
       const slotNum = importTargetSlotNum || 1;
-      const timeStr = decoded.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+      const newSlot = {
+        slot: slotNum,
+        empty: false,
+        label: `Imported (${file.name.slice(0, 16)})`,
+        timestamp: timeStr,
+        score: decodedMeta?.score || 0,
+        frame: decodedMeta?.frame || 0,
+        screenshot: createPrepopulatedThumbnail('overworld'),
+        stateData: {
+          version: 'EJS_STATE',
+          gameId: targetGameId,
+          timestamp: timeStr,
+          emuState: emuStateBytes || rawBytes,
+          engineState: decodedMeta?.engineState || null
+        }
+      };
 
       setSavesByGameId((prev) => {
         const list = prev[targetGameId] || createEmptySlotsForGame(targetGameId);
         return {
           ...prev,
-          [targetGameId]: list.map((s) =>
-            s.slot === slotNum
-              ? {
-                  slot: slotNum,
-                  empty: false,
-                  label: `Imported (${file.name.slice(0, 18)})`,
-                  timestamp: timeStr,
-                  score: decoded.score || 0,
-                  frame: decoded.frame || 0,
-                  screenshot: createPrepopulatedThumbnail('overworld'),
-                  stateData: decoded
-                }
-              : s
-          )
+          [targetGameId]: list.map((s) => (s.slot === slotNum ? newSlot : s))
         };
       });
 
+      idbPut(`state:${targetGameId}:${slotNum}`, {
+        slot: slotNum,
+        label: newSlot.label,
+        timestamp: timeStr,
+        screenshot: newSlot.screenshot,
+        emuState: emuStateBytes || rawBytes
+      }).catch(console.error);
+
       if (currentView === 'ingame' && activeGame.id === targetGameId) {
-        engineStateRef.current = JSON.parse(JSON.stringify(decoded.engineState));
-        setLiveScore(engineStateRef.current.score || 0);
-        setLiveFrame(engineStateRef.current.frame || 0);
+        if (emuStateBytes) {
+          try {
+            getEmu()?.gameManager.loadState(emuStateBytes);
+          } catch (err) {
+            console.error(err);
+          }
+        } else if (decodedMeta?.engineState) {
+          engineStateRef.current = JSON.parse(JSON.stringify(decodedMeta.engineState));
+          setLiveScore(engineStateRef.current.score || 0);
+          setLiveFrame(engineStateRef.current.frame || 0);
+        }
+        showToast(`Loaded "${file.name}" into emulator & Slot #${slotNum}`);
+      } else {
+        showToast(`Imported "${file.name}" into Slot #${slotNum}`);
       }
 
       soundFX.coin();
-      showToast(`Imported "${file.name}" into Slot #${slotNum}`);
     } catch (err) {
       showToast(`Import Error: ${err.message}`);
     } finally {
@@ -1769,14 +2135,31 @@ export default function App() {
       animId = requestAnimationFrame(loop);
     };
 
-    animId = requestAnimationFrame(loop);
+    if (!activeGame.real) animId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(animId);
   }, [currentView, activeGame, isPaused, isRewinding, isFastForward]);
 
-  // Filtered Games for Netflix-Style Rows
+  // Drive the real emulator from the pause / fast-forward / rewind controls
+  useEffect(() => {
+    if (!activeGame.real || !romUrl) return;
+    const t = setTimeout(() => {
+      const emu = getEmu();
+      try { isPaused ? emu?.pause() : emu?.play(); } catch (e) {}
+    }, 50);
+    return () => clearTimeout(t);
+  }, [isPaused, romUrl, activeGame]);
+  useEffect(() => {
+    if (!activeGame.real) return;
+    try { getEmu()?.gameManager.toggleFastForward(isFastForward ? 1 : 0); } catch (e) {}
+  }, [isFastForward]);
+  useEffect(() => {
+    if (!activeGame.real) return;
+    try { getEmu()?.gameManager.toggleRewind(isRewinding ? 1 : 0); } catch (e) {}
+  }, [isRewinding]);
+
+  // Filtered Games for Library
   const filteredGames = useMemo(() => {
     return games.filter((g) => {
-      if (!showDemos && g.isDemo) return false;
       if (systemFilter !== 'ALL' && g.shortSystem !== systemFilter) return false;
       if (
         searchQuery.trim() &&
@@ -1787,31 +2170,26 @@ export default function App() {
       }
       return true;
     });
-  }, [games, showDemos, systemFilter, searchQuery]);
-
-  const userAndFeaturedGames = useMemo(
-    () => filteredGames.filter((g) => !g.isDemo),
-    [filteredGames]
-  );
-  const demoGames = useMemo(
-    () => filteredGames.filter((g) => g.isDemo),
-    [filteredGames]
-  );
+  }, [games, systemFilter, searchQuery]);
 
   // Pointer helper for virtual touch buttons
   const bindPadButton = (keyName) => ({
     onPointerDown: (e) => {
       e.preventDefault();
       keysRef.current[keyName] = true;
+      sendKey(keyName, true);
     },
     onPointerUp: (e) => {
       e.preventDefault();
       keysRef.current[keyName] = false;
+      sendKey(keyName, false);
     },
     onPointerLeave: () => {
+      if (keysRef.current[keyName]) sendKey(keyName, false);
       keysRef.current[keyName] = false;
     },
     onPointerCancel: () => {
+      if (keysRef.current[keyName]) sendKey(keyName, false);
       keysRef.current[keyName] = false;
     }
   });
@@ -1860,8 +2238,8 @@ export default function App() {
                 </div>
                 <div>
                   <div className="flex items-center gap-1.5">
-                    <span className="font-black tracking-tight text-base sm:text-lg">RETRO</span>
-                    <span className={`font-black tracking-tight text-base sm:text-lg ${theme.accentText}`}>//POCKET</span>
+                    <span className="font-black tracking-tight text-base sm:text-lg text-zinc-100">RETRO</span>
+                    <span className={`font-black tracking-tight text-base sm:text-lg ${theme.accentText}`}>POCKET</span>
                   </div>
                   <p className="text-[10px] text-zinc-400 hidden sm:block">
                     Mobile & Web Libretro Frontend • Auto-Core & Per-Game State Slots
@@ -1869,269 +2247,197 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Search Input (Desktop & Tablet) */}
-              <div className="hidden md:flex items-center flex-1 max-w-xs relative">
-                <Search className="w-4 h-4 text-zinc-500 absolute left-3" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search ROMs, Pokémon, SNES..."
-                  className="w-full bg-zinc-900/90 border border-zinc-800 focus:border-emerald-500/60 rounded-full pl-9 pr-3 py-1.5 text-xs text-zinc-100 outline-none"
-                />
-              </div>
-
-              {/* Right Action Buttons: + Load ROM & Settings (Shaders + Theme) */}
+              {/* Right Action Buttons: Search Toggle, + Load ROM, Settings */}
               <div className="flex items-center gap-2">
                 <button
+                  onClick={() => setShowSearch((s) => !s)}
+                  className={`p-2.5 rounded-xl border transition active:scale-95 ${
+                    showSearch
+                      ? 'bg-zinc-800 border-zinc-700 text-zinc-100'
+                      : 'bg-zinc-900/90 hover:bg-zinc-800 border-zinc-800 text-zinc-300'
+                  }`}
+                  title="Search ROMs"
+                >
+                  <Search className="w-4 h-4" />
+                </button>
+
+                <button
                   onClick={() => romInputRef.current?.click()}
-                  className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold text-xs shadow-lg transition active:scale-95 ${theme.accentBg}`}
+                  className={`p-2.5 rounded-xl font-bold shadow-lg transition active:scale-95 ${theme.accentBg}`}
+                  title="Load ROM"
                 >
                   <Plus className="w-4 h-4 stroke-[2.5]" />
-                  <span>Load ROM</span>
                 </button>
 
                 <button
                   onClick={() => setGlobalSettingsOpen(true)}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 text-xs font-semibold transition active:scale-95"
-                  title="CRT & Game Boy Grid Shaders + Theme Settings"
+                  className="p-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 transition active:scale-95"
+                  title="Appearance"
                 >
                   <Settings className="w-4 h-4 text-emerald-400" />
-                  <span className="hidden sm:inline">Settings</span>
-                  <span className="px-1.5 py-0.5 text-[10px] rounded-md bg-zinc-800 text-emerald-300 font-mono">
-                    {activeShaderCount} FX
-                  </span>
                 </button>
               </div>
             </div>
 
-            {/* Mobile Search Bar */}
-            <div className="mt-2.5 md:hidden relative">
-              <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search loaded ROMs or systems..."
-                className="w-full bg-zinc-900/90 border border-zinc-800 rounded-xl pl-8 pr-3 py-2 text-xs text-zinc-100 outline-none"
-              />
-            </div>
+            {/* Collapsible Search Bar */}
+            {showSearch && (
+              <div className="mt-2.5 max-w-6xl mx-auto relative">
+                <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  autoFocus
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search loaded ROMs or systems..."
+                  className="w-full bg-zinc-900/90 border border-zinc-800 rounded-xl pl-8 pr-8 py-2 text-xs text-zinc-100 outline-none"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            )}
           </header>
 
           {/* Main Netflix-Style Content Container */}
           <main className="max-w-6xl mx-auto px-4 sm:px-6 pt-5 space-y-7">
-            {/* Hero Spotlight Banner (Pokémon Gold Version or Most Recent Loaded ROM) */}
+            {/* Hero Spotlight Banner (Most Recent Loaded ROM) */}
             {games[0] && (
               <div
-                className={`relative rounded-3xl overflow-hidden border border-zinc-800/90 bg-gradient-to-br ${games[0].coverGradient} p-5 sm:p-8 shadow-2xl`}
+                className="relative rounded-3xl overflow-hidden border border-zinc-800/90 shadow-2xl h-56 sm:h-64 flex items-end p-5 sm:p-8"
               >
-                <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/60 to-transparent" />
-                <div className="relative z-10 flex flex-col sm:flex-row sm:items-end justify-between gap-5">
-                  <div className="space-y-2.5 max-w-xl">
-                    <div className="flex flex-wrap items-center gap-2">
+                {/* Full Cover Image Background */}
+                <div className="absolute inset-0">
+                  <GameCoverImage game={games[0]} imgClassName="w-full h-full object-cover opacity-60" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/70 to-transparent" />
+                </div>
+
+                <div className="relative z-10 w-full flex items-end justify-between gap-4">
+                  <div className="space-y-1.5 max-w-xl">
+                    <div className="flex items-center gap-2">
                       <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-400 text-zinc-950">
                         Featured Cartridge
                       </span>
                       <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono bg-zinc-900/80 text-zinc-200 border border-white/15">
-                        {games[0].system} • Core: {games[0].core}
-                      </span>
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
-                        {(savesByGameId[games[0].id] || []).filter((s) => !s.empty).length}/4 Save Slots Used
+                        {games[0].system}
                       </span>
                     </div>
 
-                    <h1 className="text-2xl sm:text-4xl font-black tracking-tight text-white drop-shadow">
-                      {games[0].title}
+                    <h1 className="text-xl sm:text-3xl font-black tracking-tight text-white drop-shadow">
+                      {formatGameTitle(games[0].title)}
                     </h1>
-                    <p className="text-xs sm:text-sm text-zinc-200/90 leading-relaxed">
-                      {games[0].description}
-                    </p>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-                    <button
-                      onClick={() => launchGame(games[0])}
-                      className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-white text-zinc-950 font-black text-xs sm:text-sm shadow-xl hover:bg-zinc-100 transition active:scale-95"
-                    >
-                      <Play className="w-4 h-4 fill-current" />
-                      <span>Play Now</span>
-                    </button>
-                    <button
-                      onClick={() => setDetailGame(games[0])}
-                      className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-zinc-900/90 hover:bg-zinc-800 text-white border border-white/15 font-bold text-xs sm:text-sm backdrop-blur-md transition active:scale-95"
-                    >
-                      <Layers className="w-4 h-4 text-amber-400" />
-                      <span>Save State Slots</span>
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => launchGame(games[0])}
+                    className="w-12 h-12 rounded-full bg-white hover:bg-zinc-200 text-zinc-950 flex items-center justify-center shadow-2xl transition active:scale-95 shrink-0"
+                    title={`Play ${formatGameTitle(games[0].title)}`}
+                  >
+                    <Play className="w-5 h-5 fill-current ml-0.5" />
+                  </button>
                 </div>
               </div>
             )}
 
-            {/* Filter Bar: System Pills + Demo Visibility Toggle */}
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-                {['ALL', 'GBC', 'GBA', 'NES', 'SNES', 'GEN'].map((sys) => (
-                  <button
-                    key={sys}
-                    onClick={() => setSystemFilter(sys)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                      systemFilter === sys
-                        ? theme.accentBg
-                        : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200 border border-zinc-800'
-                    }`}
-                  >
-                    {sys}
-                  </button>
-                ))}
-              </div>
-
-              <div className="flex items-center gap-2">
+            {/* Filter Bar: System Pills */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+              {['ALL', 'GBC', 'GBA', 'NES', 'SNES', 'GEN'].map((sys) => (
                 <button
-                  onClick={() => setShowDemos((d) => !d)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${
-                    showDemos
-                      ? 'bg-zinc-900 border-zinc-700 text-zinc-200'
-                      : 'bg-zinc-900/40 border-zinc-800 text-zinc-500'
+                  key={sys}
+                  onClick={() => setSystemFilter(sys)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                    systemFilter === sys
+                      ? theme.accentBg
+                      : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200 border border-zinc-800'
                   }`}
                 >
-                  {showDemos ? <Eye className="w-3.5 h-3.5 text-emerald-400" /> : <EyeOff className="w-3.5 h-3.5" />}
-                  <span>{showDemos ? 'Demos Visible' : 'Demos Hidden'}</span>
+                  {sys}
                 </button>
-              </div>
+              ))}
             </div>
 
-            {/* ROW 1: MY ROM LIBRARY (Including Pokémon Gold + Any User-Uploaded ROMs) */}
+            {/* GAME LIBRARY */}
             <section className="space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <HardDrive className={`w-4 h-4 ${theme.accentText}`} />
                   <h2 className="text-sm sm:text-base font-extrabold tracking-tight">
-                    My Loaded ROMs & Game Library
+                    Game Library ({filteredGames.length})
                   </h2>
-                  <span className="text-xs font-mono text-zinc-500">({userAndFeaturedGames.length})</span>
                 </div>
                 <button
                   onClick={() => romInputRef.current?.click()}
                   className={`text-xs font-semibold flex items-center gap-1 ${theme.accentText} hover:underline`}
                 >
                   <FolderPlus className="w-3.5 h-3.5" />
-                  <span>Add Downloaded ROM</span>
+                  <span>Add ROM</span>
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3.5">
-                {userAndFeaturedGames.map((game) => {
-                  const usedSlots = (savesByGameId[game.id] || []).filter((s) => !s.empty).length;
-                  return (
+              {filteredGames.length === 0 && games.length === 0 ? (
+                <div className="py-16 flex flex-col items-center justify-center text-center space-y-4">
+                  <div className="w-16 h-16 rounded-3xl bg-zinc-900 border border-zinc-800 flex items-center justify-center">
+                    <Gamepad2 className="w-8 h-8 text-zinc-500" />
+                  </div>
+                  <div className="space-y-1">
+                    <h3 className="text-base font-bold text-zinc-200">No ROMs in Library</h3>
+                    <p className="text-xs text-zinc-500 max-w-xs">
+                      Load your own .gbc, .gba, .nes, .sfc, or .md ROM files to start playing.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => romInputRef.current?.click()}
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs shadow-lg transition active:scale-95 ${theme.accentBg}`}
+                  >
+                    <Plus className="w-4 h-4 stroke-[2.5]" />
+                    <span>Load ROM</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
+                  {filteredGames.map((game) => (
                     <div
                       key={game.id}
                       onClick={() => setDetailGame(game)}
                       className={`group cursor-pointer rounded-2xl overflow-hidden border transition-all duration-200 hover:-translate-y-1 shadow-lg ${theme.cardBg}`}
                     >
                       {/* Cartridge Cover Poster */}
-                      <div className={`relative h-36 sm:h-40 bg-gradient-to-br ${game.coverGradient} p-3.5 flex flex-col justify-between`}>
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-black/60 text-white backdrop-blur-sm border border-white/15">
-                            {game.shortSystem}
-                          </span>
-                          <span className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-black/60 text-emerald-300 backdrop-blur-sm">
-                            {game.core}
-                          </span>
-                        </div>
-
-                        <div className="my-auto flex items-center justify-center">
-                          <div className="w-12 h-12 rounded-2xl bg-black/35 border border-white/20 backdrop-blur-md flex items-center justify-center group-hover:scale-110 transition">
-                            <Play className="w-6 h-6 text-white fill-current ml-0.5" />
-                          </div>
-                        </div>
-
-                        <div className="flex items-center justify-between text-[10px] font-mono text-white/90 bg-black/45 px-2 py-1 rounded-lg backdrop-blur-sm">
-                          <span>{game.size}</span>
-                          <span className="text-amber-300">{usedSlots}/4 States</span>
-                        </div>
+                      <div className="relative h-44 sm:h-48 overflow-hidden rounded-t-xl bg-zinc-900">
+                        <GameCoverImage game={game} />
                       </div>
 
                       {/* Card Footer */}
                       <div className="p-3 space-y-1">
-                        <h3 className="font-bold text-xs sm:text-sm text-zinc-100 truncate">{game.title}</h3>
-                        <p className="text-[11px] text-zinc-400 truncate">{game.subtitle}</p>
+                        <h3 className="font-bold text-xs sm:text-sm text-zinc-100 truncate">
+                          {formatGameTitle(game.title)}
+                        </h3>
+                        <p className="text-[11px] text-zinc-400 truncate">
+                          {game.system || game.shortSystem}
+                        </p>
                       </div>
                     </div>
-                  );
-                })}
+                  ))}
 
-                {/* Quick "Add ROM" Netflix Card */}
-                <button
-                  onClick={() => romInputRef.current?.click()}
-                  className="rounded-2xl border-2 border-dashed border-zinc-800 hover:border-emerald-500/60 bg-zinc-900/40 hover:bg-zinc-900/80 p-4 flex flex-col items-center justify-center gap-2 min-h-[200px] transition group"
-                >
-                  <div className="w-11 h-11 rounded-2xl bg-zinc-800 group-hover:bg-emerald-500/20 flex items-center justify-center transition">
-                    <Plus className="w-6 h-6 text-zinc-400 group-hover:text-emerald-400" />
-                  </div>
-                  <span className="text-xs font-bold text-zinc-200">Load Downloaded ROM</span>
-                  <span className="text-[10px] text-zinc-500 text-center leading-tight">
-                    Auto-detects .gbc, .gba, .nes, .sfc, .md
-                  </span>
-                </button>
-              </div>
+                  {/* Quick "Add ROM" Card */}
+                  <button
+                    onClick={() => romInputRef.current?.click()}
+                    className="rounded-2xl border-2 border-dashed border-zinc-800 hover:border-emerald-500/60 bg-zinc-900/40 hover:bg-zinc-900/80 p-4 flex flex-col items-center justify-center gap-2 min-h-[200px] transition group"
+                  >
+                    <div className="w-11 h-11 rounded-2xl bg-zinc-800 group-hover:bg-emerald-500/20 flex items-center justify-center transition">
+                      <Plus className="w-6 h-6 text-zinc-400 group-hover:text-emerald-400" />
+                    </div>
+                    <span className="text-xs font-bold text-zinc-200">Load Downloaded ROM</span>
+                    <span className="text-[10px] text-zinc-500 text-center leading-tight">
+                      Auto-detects .gbc, .gba, .nes, .sfc, .md
+                    </span>
+                  </button>
+                </div>
+              )}
             </section>
-
-            {/* ROW 2: PLAYABLE DEMO CARTRIDGES (Can be toggled off anytime) */}
-            {showDemos && demoGames.length > 0 && (
-              <section className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-amber-400" />
-                    <h2 className="text-sm sm:text-base font-extrabold tracking-tight">
-                      Playable Arcade Demo Cartridges (Try Cores & Shaders)
-                    </h2>
-                  </div>
-                  <span className="text-[11px] text-zinc-400 hidden sm:inline">
-                    Tap any cartridge for Play & Per-Game Save Slots
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-                  {demoGames.map((game) => {
-                    const usedSlots = (savesByGameId[game.id] || []).filter((s) => !s.empty).length;
-                    return (
-                      <div
-                        key={game.id}
-                        onClick={() => setDetailGame(game)}
-                        className={`group cursor-pointer rounded-2xl overflow-hidden border transition-all duration-200 hover:-translate-y-1 shadow-lg ${theme.cardBg}`}
-                      >
-                        <div className={`relative h-32 bg-gradient-to-br ${game.coverGradient} p-3.5 flex flex-col justify-between`}>
-                          <div className="flex items-center justify-between">
-                            <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-black/60 text-amber-300 border border-amber-400/30">
-                              DEMO • {game.shortSystem}
-                            </span>
-                            <span className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-black/60 text-white">
-                              Core: {game.core}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center justify-between items-end">
-                            <div>
-                              <h3 className="font-black text-base text-white drop-shadow">{game.title}</h3>
-                              <p className="text-[11px] text-white/80">{game.subtitle}</p>
-                            </div>
-                            <div className="w-10 h-10 rounded-xl bg-white/95 text-zinc-950 flex items-center justify-center shadow-md group-hover:scale-105 transition">
-                              <Play className="w-5 h-5 fill-current ml-0.5" />
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="p-3 flex items-center justify-between text-[11px] text-zinc-400">
-                          <span>CRC32: {game.crc32}</span>
-                          <span className="font-mono text-emerald-400">{usedSlots}/4 Save Slots</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-            )}
           </main>
         </div>
       )}
@@ -2172,16 +2478,11 @@ export default function App() {
 
               <div className="flex flex-col items-center text-center truncate px-2">
                 <span className="text-xs font-extrabold text-zinc-100 truncate max-w-[180px]">
-                  {activeGame.title}
+                  {formatGameTitle(activeGame.title)}
                 </span>
-                <div className="flex items-center gap-1.5 text-[10px] font-mono text-zinc-400">
-                  <span className={theme.accentText}>{activeGame.core}</span>
-                  <span>•</span>
-                  <span>{fps} FPS</span>
-                </div>
               </div>
 
-              {/* Top Settings Gear Button (Contains Hide Pad, Save State, Load State, Reset ROM, Shaders) */}
+              {/* Top Settings Gear Button (Contains Hide Pad, Save State, Load State, Shaders) */}
               <button
                 onClick={() => setInGameMenuOpen((o) => !o)}
                 className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition active:scale-95 ${
@@ -2206,8 +2507,8 @@ export default function App() {
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
-                    In-Game System Menu ({activeGame.title})
+                  <span className="text-xs font-black uppercase tracking-wider text-zinc-300">
+                    MENU
                   </span>
                   <button
                     onClick={() => setInGameMenuOpen(false)}
@@ -2226,7 +2527,7 @@ export default function App() {
                     }}
                     className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 text-xs font-bold transition"
                   >
-                    <Camera className="w-4 h-4" />
+                    <Save className="w-4 h-4" />
                     <span>Save State Slots</span>
                   </button>
 
@@ -2287,21 +2588,6 @@ export default function App() {
                     <Download className="w-4 h-4 text-amber-400" />
                     <span>Export .SRM Save</span>
                   </button>
-
-                  {/* Reset ROM */}
-                  <button
-                    onClick={() => {
-                      engineStateRef.current = createInitialEngineState(activeGame.engineType);
-                      rewindBufferRef.current = [];
-                      setInGameMenuOpen(false);
-                      soundFX.hit();
-                      showToast(`Reset ${activeGame.title}`);
-                    }}
-                    className="flex items-center gap-2 px-3 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 text-xs font-semibold transition"
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                    <span>Reset ROM</span>
-                  </button>
                 </div>
 
                 {/* Audio Mute Row */}
@@ -2337,13 +2623,30 @@ export default function App() {
                   filter: shaders.rgbBloom ? 'contrast(1.08) saturate(1.18) brightness(1.04)' : 'none'
                 }}
               >
-                <canvas
-                  ref={canvasRef}
-                  width={320}
-                  height={240}
-                  className="w-full h-full object-fill block"
-                  style={{ imageRendering: 'pixelated' }}
-                />
+                {activeGame.real ? (
+                  romUrl ? (
+                    <iframe
+                      key={romUrl}
+                      ref={emuFrameRef}
+                      title="emulator"
+                      className="w-full h-full block border-0 pointer-events-none bg-black"
+                      allow="autoplay; gamepad"
+                      srcDoc={buildPlayerHtml(EJS_CORES[activeGame.core] || 'gb', romUrl, activeGame.title)}
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-xs font-mono text-zinc-400">
+                      Loading ROM...
+                    </div>
+                  )
+                ) : (
+                  <canvas
+                    ref={canvasRef}
+                    width={320}
+                    height={240}
+                    className="w-full h-full object-fill block"
+                    style={{ imageRendering: 'pixelated' }}
+                  />
+                )}
 
                 {/* Shader Layer 1: CRT Horizontal Scanlines */}
                 {shaders.scanlines && (
@@ -2425,7 +2728,7 @@ export default function App() {
                   }`}
                 >
                   <Rewind className="w-3.5 h-3.5" />
-                  <span>Hold Rewind</span>
+                  <span>Rewind</span>
                 </button>
 
                 {/* 2x Speed Turbo Toggle */}
@@ -2519,7 +2822,7 @@ export default function App() {
               {(!hidePad || customizing) && (<PadGroup id="system" layout={padLayout} customizing={customizing} selected={customizing && selectedPad === 'system'} onSelect={setSelectedPad} onMove={movePad} deckRef={deckRef}>
 <div className="flex items-center justify-center gap-6 pt-1 pb-1">
                     <button
-                      onClick={() => setInGameSaveModalMode('load')}
+                      {...bindPadButton('select')}
                       className="flex flex-col items-center gap-1 group"
                     >
                       <div className="w-12 h-3.5 rounded-full bg-zinc-800 group-active:bg-emerald-400 border border-zinc-600 shadow-inner -rotate-12 transition" />
@@ -2529,7 +2832,7 @@ export default function App() {
                     </button>
 
                     <button
-                      onClick={() => setIsPaused((p) => !p)}
+                      {...bindPadButton('start')}
                       className="flex flex-col items-center gap-1 group"
                     >
                       <div className="w-12 h-3.5 rounded-full bg-zinc-800 group-active:bg-emerald-400 border border-zinc-600 shadow-inner -rotate-12 transition" />
@@ -2596,12 +2899,8 @@ export default function App() {
                       <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-black/60 text-amber-300 border border-amber-400/30">
                         {targetGame.system}
                       </span>
-                      <span className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-black/60 text-emerald-300">
-                        Core: {targetGame.core}
-                      </span>
                     </div>
-                    <h2 className="text-xl sm:text-2xl font-black text-white">{targetGame.title}</h2>
-                    <p className="text-xs text-zinc-300">{targetGame.subtitle}</p>
+                    <h2 className="text-xl sm:text-2xl font-black text-white">{formatGameTitle(targetGame.title)}</h2>
                   </div>
 
                   <button
@@ -2620,10 +2919,10 @@ export default function App() {
                   {currentView === 'home' && (
                     <button
                       onClick={() => launchGame(targetGame)}
-                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-zinc-950 font-black text-xs sm:text-sm shadow-lg transition active:scale-95"
+                      className="p-2.5 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-zinc-950 font-black shadow-lg transition active:scale-95"
+                      title={`Play ${formatGameTitle(targetGame.title)}`}
                     >
-                      <Play className="w-4 h-4 fill-current" />
-                      <span>Play {targetGame.title}</span>
+                      <Play className="w-5 h-5 fill-current ml-0.5" />
                     </button>
                   )}
 
@@ -2646,6 +2945,18 @@ export default function App() {
                     <Upload className="w-3.5 h-3.5" />
                     <span>Import .state File</span>
                   </button>
+
+                  <button
+                    onClick={() => {
+                      if (window.confirm(`Delete "${formatGameTitle(targetGame.title)}" from library?`)) {
+                        deleteRom(targetGame.id);
+                      }
+                    }}
+                    className="p-2.5 rounded-xl bg-zinc-900/90 hover:bg-rose-900/30 text-zinc-400 hover:text-rose-400 border border-zinc-800 hover:border-rose-500/40 transition active:scale-95"
+                    title="Delete ROM"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
 
@@ -2655,7 +2966,7 @@ export default function App() {
                   <div>
                     <h3 className="text-sm font-extrabold text-zinc-100 flex items-center gap-2">
                       <Layers className="w-4 h-4 text-emerald-400" />
-                      <span>Save State Slots • {targetGame.title}</span>
+                      <span>Save State Slots • {formatGameTitle(targetGame.title)}</span>
                     </h3>
                     <p className="text-[11px] text-zinc-400">
                       Each game has its own dedicated save state slots. Load directly into a slot or export `.state` files.
@@ -2789,14 +3100,7 @@ export default function App() {
             <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
               <div className="flex items-center gap-2.5">
                 <Sliders className={`w-5 h-5 ${theme.accentText}`} />
-                <div>
-                  <h2 className="text-base font-black text-white">
-                    CRT & Game Boy Shader Pipeline + Themes
-                  </h2>
-                  <p className="text-[11px] text-zinc-400">
-                    Combine multiple display filters and customize your handheld shell
-                  </p>
-                </div>
+                <h2 className="text-base font-black text-white">Appearance</h2>
               </div>
               <button
                 onClick={() => setGlobalSettingsOpen(false)}
@@ -2807,11 +3111,11 @@ export default function App() {
             </div>
 
             <div className="p-5 space-y-6">
-              {/* Section 1: Combinable CRT & LCD Grid Shader Checkboxes */}
+              {/* Section 1: CRT & LCD SHADER FILTER */}
               <div className="space-y-2.5">
                 <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
                   <Tv className="w-4 h-4 text-emerald-400" />
-                  <span>Combinable CRT & LCD Shader Filters</span>
+                  <span>CRT & LCD SHADER FILTER</span>
                 </h3>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -2874,11 +3178,11 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Section 2: Personalized Hardware Shell & UI Theme */}
+              {/* Section 2: THEME */}
               <div className="space-y-2.5">
                 <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
                   <Palette className="w-4 h-4 text-amber-400" />
-                  <span>Handheld Shell & App Theme</span>
+                  <span>THEME</span>
                 </h3>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -2887,27 +3191,19 @@ export default function App() {
                     return (
                       <button
                         key={t.id}
-                        onClick={() => {
-                          setThemeId(t.id);
-                          showToast(`Theme Applied: ${t.name}`);
-                        }}
+                        onClick={() => applyTheme(t.id)}
                         className={`p-3 rounded-2xl border text-left transition flex items-center justify-between ${
                           active
                             ? 'bg-zinc-900 border-emerald-400 text-white shadow-lg'
                             : 'bg-zinc-900/50 border-zinc-800 text-zinc-300 hover:bg-zinc-900'
                         }`}
                       >
-                        <div className="pr-2">
-                          <div className="text-xs font-bold flex items-center gap-2">
-                            <span
-                              className="w-3 h-3 rounded-full inline-block"
-                              style={{ backgroundColor: t.hex }}
-                            />
-                            <span>{t.name}</span>
-                          </div>
-                          <div className="text-[10px] text-zinc-400 mt-0.5 line-clamp-1">
-                            {t.desc}
-                          </div>
+                        <div className="text-xs font-bold flex items-center gap-2">
+                          <span
+                            className="w-3.5 h-3.5 rounded-full inline-block border border-white/20"
+                            style={{ backgroundColor: t.hex }}
+                          />
+                          <span>{t.name}</span>
                         </div>
                         {active && <Check className="w-4 h-4 text-emerald-400 shrink-0" />}
                       </button>
