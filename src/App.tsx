@@ -619,13 +619,22 @@ function buildPlayerHtml(core, romUrl, title) {
     'window.EJS_startOnLoaded=true;' +
     'window.EJS_fixedSaveInterval=10000;' +
     'window.EJS_VirtualGamepadSettings=[];' +
-    'window.EJS_defaultOptions={"virtual-gamepad":"disabled","settings.virtual-gamepad":"disabled"};' +
+    'window.EJS_defaultOptions={"virtual-gamepad":"disabled","settings.virtual-gamepad":"disabled","settings.fast-forward-ratio":"2","fast-forward-ratio":"2"};' +
     'window.simulateButton=function(name,down){' +
     '  var map={actionb:0,b:0,actiony:1,y:1,select:2,start:3,up:4,down:5,left:6,right:7,actiona:8,a:8,actionx:9,x:9,btnl:10,l:10,btnr:11,r:11};' +
     '  var idx=map[String(name).toLowerCase()];' +
     '  if(idx!==undefined&&window.EJS_emulator&&window.EJS_emulator.gameManager){' +
-    '    window.EJS_emulator.gameManager.simulateInput(0,idx,down?1:0);' +
+    '    try{window.EJS_emulator.gameManager.simulateInput(0,idx,down?1:0);}catch(e){}' +
     '  }' +
+    '};' +
+    'window.setFastForward=function(active){' +
+    '  try{' +
+    '    if(window.EJS_emulator&&window.EJS_emulator.gameManager){' +
+    '      var gm=window.EJS_emulator.gameManager;' +
+    '      if(typeof gm.setFastForwardRatio==="function")gm.setFastForwardRatio(2);' +
+    '      if(typeof gm.toggleFastForward==="function")gm.toggleFastForward(active?1:0);' +
+    '    }' +
+    '  }catch(e){}' +
     '};' +
     'window.loadSrmData=function(srmBytes,rtcBytes){' +
     '  try{' +
@@ -1041,17 +1050,18 @@ export default function App() {
     const win = emuFrameRef.current?.contentWindow;
     if (!win) return;
 
-    // 1. Direct simulation into EmulatorJS / RetroArch core WASM
+    // 1. Direct simulation into EmulatorJS / RetroArch core WASM (Instant 0ms latency)
     try {
       if (typeof win.simulateButton === 'function') {
         win.simulateButton(name, down);
-      } else {
-        const idx = EMU_INPUT_MAP[name];
-        if (idx !== undefined) {
-          const emu = win.EJS_emulator;
-          if (emu?.gameManager && typeof emu.gameManager.simulateInput === 'function') {
-            emu.gameManager.simulateInput(0, idx, down ? 1 : 0);
-          }
+        return; // Direct WASM input succeeded; avoid redundant keyboard event overhead!
+      }
+      const idx = EMU_INPUT_MAP[name];
+      if (idx !== undefined) {
+        const emu = win.EJS_emulator;
+        if (emu?.gameManager && typeof emu.gameManager.simulateInput === 'function') {
+          emu.gameManager.simulateInput(0, idx, down ? 1 : 0);
+          return;
         }
       }
     } catch (e) {
@@ -2323,7 +2333,19 @@ export default function App() {
   }, [isPaused, romUrl, activeGame]);
   useEffect(() => {
     if (!activeGame.real) return;
-    try { getEmu()?.gameManager.toggleFastForward(isFastForward ? 1 : 0); } catch (e) {}
+    try {
+      const win = emuFrameRef.current?.contentWindow;
+      win?.setFastForward?.(isFastForward);
+      const emu = getEmu();
+      if (emu?.gameManager) {
+        if (typeof emu.gameManager.setFastForwardRatio === 'function') emu.gameManager.setFastForwardRatio(2);
+        if (typeof emu.gameManager.toggleFastForward === 'function') emu.gameManager.toggleFastForward(isFastForward ? 1 : 0);
+      }
+      // Re-synchronize currently held keys so inputs never stick or drop when toggling 2x
+      Object.entries(keysRef.current).forEach(([k, down]) => {
+        if (down) win?.simulateButton?.(k, true);
+      });
+    } catch (e) {}
   }, [isFastForward]);
   useEffect(() => {
     if (!activeGame.real) return;
@@ -2360,6 +2382,13 @@ export default function App() {
       try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch (err) {}
       keysRef.current[keyName] = false;
       sendKey(keyName, false);
+    },
+    onPointerLeave: (e) => {
+      if (keysRef.current[keyName]) {
+        try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch (err) {}
+        keysRef.current[keyName] = false;
+        sendKey(keyName, false);
+      }
     },
     onPointerCancel: (e) => {
       try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch (err) {}
@@ -2855,12 +2884,12 @@ export default function App() {
                 {/* Shader Layer 2: Game Boy Dot-Matrix LCD Grid Lines (Combinable!) */}
                 {shaders.gbGrid && (
                   <div
-                    className="absolute inset-0 pointer-events-none z-10"
+                    className="absolute inset-0 pointer-events-none z-10 opacity-70"
                     style={{
                       backgroundImage: shaders.amoled
-                        ? 'linear-gradient(to right, #000000 1.2px, transparent 1.2px), linear-gradient(to bottom, #000000 1.2px, transparent 1.2px)'
-                        : 'linear-gradient(to right, rgba(15, 23, 42, 0.35) 1px, transparent 1px), linear-gradient(to bottom, rgba(15, 23, 42, 0.35) 1px, transparent 1px)',
-                      backgroundSize: '4px 4px'
+                        ? 'linear-gradient(to right, rgba(0, 0, 0, 0.55) 0.5px, transparent 0.5px), linear-gradient(to bottom, rgba(0, 0, 0, 0.55) 0.5px, transparent 0.5px)'
+                        : 'linear-gradient(to right, rgba(15, 23, 42, 0.18) 0.5px, transparent 0.5px), linear-gradient(to bottom, rgba(15, 23, 42, 0.18) 0.5px, transparent 0.5px)',
+                      backgroundSize: '3px 3px'
                     }}
                   />
                 )}
