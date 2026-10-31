@@ -1,0 +1,67 @@
+import React, { useState, useMemo } from 'react';
+import { Gamepad2 } from 'lucide-react';
+import { getBoxartUrls, formatGameTitle } from '../../constants/cores';
+
+interface GameCoverImageProps {
+  game: any;
+  className?: string;
+  imgClassName?: string;
+  showBadge?: boolean;
+}
+
+export const GameCoverImage: React.FC<GameCoverImageProps> = ({
+  game,
+  className = '',
+  imgClassName = '',
+  showBadge = false
+}) => {
+  const [srcIndex, setSrcIndex] = useState(0);
+  const [failedAll, setFailedAll] = useState(false);
+  const urls = useMemo(() => getBoxartUrls(game), [game]);
+
+  const currentUrl = urls[srcIndex];
+
+  if (!currentUrl || failedAll) {
+    return (
+      <div
+        className={`relative w-full h-full bg-gradient-to-br ${
+          game?.coverGradient || 'from-zinc-800 to-zinc-950'
+        } flex flex-col justify-between p-3 overflow-hidden ${className}`}
+      >
+        {showBadge && (
+          <span className="self-start px-2 py-0.5 rounded-md text-[10px] font-black bg-black/60 text-white backdrop-blur-sm border border-white/15">
+            {game?.shortSystem || 'ROM'}
+          </span>
+        )}
+        <div className="my-auto flex items-center justify-center">
+          <Gamepad2 className="w-10 h-10 text-white/40" />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={`relative w-full h-full overflow-hidden flex items-center justify-center bg-zinc-950 ${className}`}
+    >
+      <img
+        src={currentUrl}
+        alt={formatGameTitle(game?.title || '')}
+        onError={() => {
+          if (srcIndex + 1 < urls.length) {
+            setSrcIndex((i) => i + 1);
+          } else {
+            setFailedAll(true);
+          }
+        }}
+        className={`w-full h-full object-cover object-center ${imgClassName}`}
+        loading="lazy"
+      />
+      {showBadge && (
+        <span className="absolute top-2 left-2 px-2 py-0.5 rounded-md text-[10px] font-black bg-black/60 text-white backdrop-blur-sm border border-white/15">
+          {game?.shortSystem || 'ROM'}
+        </span>
+      )}
+    </div>
+  );
+};
