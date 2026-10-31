@@ -3878,7 +3878,9 @@ export default function App() {
                                 ? 'Offline'
                                 : syncStatus.status === 'needs_reauth'
                                   ? 'Session Expired'
-                                  : 'Disconnected'}
+                                  : syncStatus.status === 'error'
+                                    ? 'Sync Error'
+                                    : 'Disconnected'}
                         </span>
                       </div>
                       {syncStatus.lastSyncTime && (
@@ -3890,15 +3892,29 @@ export default function App() {
                   </div>
 
                   {syncStatus.details && (
-                    <div className="text-[11px] text-zinc-400 bg-black/40 px-3 py-1.5 rounded-lg border border-white/5 flex items-center justify-between">
-                      <span>{syncStatus.details}</span>
-                      {syncStatus.status === 'needs_reauth' && (
-                        <button
-                          onClick={() => signInWithGoogle()}
-                          className="text-amber-400 hover:text-amber-300 font-bold ml-2 underline cursor-pointer"
+                    <div className="text-[11px] bg-black/40 px-3 py-2 rounded-lg border border-white/5 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className={syncStatus.status === 'error' ? 'text-rose-400 font-semibold' : 'text-zinc-400'}>
+                          {syncStatus.details}
+                        </span>
+                        {syncStatus.status === 'needs_reauth' && (
+                          <button
+                            onClick={() => signInWithGoogle()}
+                            className="text-amber-400 hover:text-amber-300 font-bold ml-2 underline cursor-pointer shrink-0"
+                          >
+                            Reconnect
+                          </button>
+                        )}
+                      </div>
+                      {syncStatus.status === 'error' && syncStatus.details.includes('Enable at console.developers.google.com') && (
+                        <a
+                          href="https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=812701015700"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-block text-[10px] text-sky-400 hover:text-sky-300 underline font-bold mt-1"
                         >
-                          Reconnect
-                        </button>
+                          👉 Click here to enable Google Drive API in Google Cloud Console
+                        </a>
                       )}
                     </div>
                   )}
@@ -3984,7 +4000,7 @@ export default function App() {
                     <span className="text-xs font-extrabold uppercase tracking-wider text-zinc-400">Google Drive AppData Storage</span>
                     <button
                       onClick={async () => {
-                        const files = await getCloudFilesSummary();
+                        const files = await getCloudFilesSummary(true);
                         setCloudFiles(files);
                         setShowCloudFiles((s) => !s);
                       }}
@@ -4001,7 +4017,13 @@ export default function App() {
                         <span className="text-[10px] text-zinc-500 font-mono">{cloudFiles.length} files</span>
                       </div>
                       {cloudFiles.length === 0 ? (
-                        <div className="text-[10px] text-zinc-500 py-2 text-center">No files in Google Drive yet. Tap "Sync Now" above to upload!</div>
+                        <div className="text-[10px] py-2 text-center">
+                          {syncStatus.status === 'error' ? (
+                            <span className="text-rose-400 font-medium">{syncStatus.details}</span>
+                          ) : (
+                            <span className="text-zinc-500">No files in Google Drive yet. Tap "Sync Now" above to upload!</span>
+                          )}
+                        </div>
                       ) : (
                         <div className="space-y-1.5 max-h-48 overflow-y-auto">
                           {cloudFiles.map((file, i) => (

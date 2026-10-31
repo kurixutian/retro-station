@@ -60,7 +60,37 @@ export function getOrCreateDeviceId(): string {
   }
 }
 
-// In-Memory Authentication State (Never stored in localStorage for security)
+// Authentication Token Persistence (lasts for standard 1-hour OAuth access lifetime)
+const TOKEN_STORAGE_KEY = 'retro_google_access_token';
+const TOKEN_EXPIRY_KEY = 'retro_google_token_expiry';
+
+function getStoredToken(): { token: string; expiresAt: number } | null {
+  try {
+    const token = sessionStorage.getItem(TOKEN_STORAGE_KEY) || localStorage.getItem(TOKEN_STORAGE_KEY);
+    const exp = Number(sessionStorage.getItem(TOKEN_EXPIRY_KEY) || localStorage.getItem(TOKEN_EXPIRY_KEY)) || 0;
+    if (token && Date.now() < exp - 60 * 1000) {
+      return { token, expiresAt: exp };
+    }
+  } catch (e) {}
+  return null;
+}
+
+function setStoredToken(token: string | null, expiresAt = 0) {
+  try {
+    if (token) {
+      sessionStorage.setItem(TOKEN_STORAGE_KEY, token);
+      sessionStorage.setItem(TOKEN_EXPIRY_KEY, String(expiresAt));
+      localStorage.setItem(TOKEN_STORAGE_KEY, token);
+      localStorage.setItem(TOKEN_EXPIRY_KEY, String(expiresAt));
+    } else {
+      sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+      sessionStorage.removeItem(TOKEN_EXPIRY_KEY);
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+      localStorage.removeItem(TOKEN_EXPIRY_KEY);
+    }
+  } catch (e) {}
+}
+
 let inMemoryAccessToken: string | null = null;
 let tokenExpiresAt = 0; // Timestamp (ms)
 let tokenClient: any = null;
@@ -189,6 +219,7 @@ async function initTokenClient(interactive = false): Promise<any> {
             inMemoryAccessToken = resp.access_token;
             const expiresInSec = Number(resp.expires_in) || 3599;
             tokenExpiresAt = Date.now() + (expiresInSec - 60) * 1000;
+            setStoredToken(resp.access_token, tokenExpiresAt);
             fetchUserProfile(resp.access_token).catch(() => {});
             setStatus('idle', 'Connected');
             resolve(tokenClient);
@@ -237,6 +268,14 @@ export async function ensureToken(interactive = false): Promise<string | null> {
     return inMemoryAccessToken;
   }
 
+  // Restore active session token across page reloads
+  const stored = getStoredToken();
+  if (stored) {
+    inMemoryAccessToken = stored.token;
+    tokenExpiresAt = stored.expiresAt;
+    return stored.token;
+  }
+
   // Need token client
   if (!tokenClient) {
     await initTokenClient(interactive);
@@ -261,6 +300,7 @@ export async function ensureToken(interactive = false): Promise<string | null> {
         inMemoryAccessToken = resp.access_token;
         const expiresInSec = Number(resp.expires_in) || 3599;
         tokenExpiresAt = Date.now() + (expiresInSec - 60) * 1000;
+        setStoredToken(resp.access_token, tokenExpiresAt);
         fetchUserProfile(resp.access_token).catch(() => {});
         setStatus('idle', 'Connected');
         resolve(resp.access_token);
@@ -293,13 +333,15 @@ export async function signInWithGoogle(): Promise<boolean> {
 
 // Sign Out & Revoke Token (Keeps local saves completely intact)
 export async function signOutGoogle(): Promise<void> {
-  if (inMemoryAccessToken && window.google?.accounts?.oauth2?.revoke) {
+  const currentToken = inMemoryAccessToken || getStoredToken()?.token;
+  if (currentToken && window.google?.accounts?.oauth2?.revoke) {
     try {
-      window.google.accounts.oauth2.revoke(inMemoryAccessToken, () => {});
+      window.google.accounts.oauth2.revoke(currentToken, () => {});
     } catch (e) {}
   }
   inMemoryAccessToken = null;
   tokenExpiresAt = 0;
+  setStoredToken(null);
   setCachedUserProfile(null);
   setStatus('unlinked', 'Signed out');
 }
@@ -329,6 +371,24 @@ interface DriveFileSummary {
   size?: string;
 }
 
+function parseDriveApiError(resStatus: number, txt: string): string {
+  try {
+    const parsed = JSON.parse(txt);
+    if (parsed.error?.message) {
+      const msg = parsed.error.message;
+      if (msg.includes('has not been used') || msg.includes('disabled') || msg.includes('PERMISSION_DENIED')) {
+        return 'Google Drive API is not enabled: Enable at console.developers.google.com for project 812701015700';
+      }
+      return msg;
+    }
+  } catch (e) {}
+  if (txt.includes('has not been used') || txt.includes('disabled')) {
+    return 'Google Drive API is not enabled: Enable at console.developers.google.com for project 812701015700';
+  }
+  if (resStatus === 403) return 'Google Drive permission denied (403)';
+  return `Google Drive request failed (${resStatus})`;
+}
+
 // Search file in appDataFolder
 async function searchAppDataFile(token: string, filename: string): Promise<DriveFileSummary | null> {
   const q = encodeURIComponent(`name='${filename.replace(/'/g, "\\'")}' and trashed=false`);
@@ -342,12 +402,15 @@ async function searchAppDataFile(token: string, filename: string): Promise<Drive
     inMemoryAccessToken = null;
     return null;
   }
-  if (res.status === 403) {
-    const txt = await res.text();
-    if (txt.includes('storageQuotaExceeded')) setStatus('quota_exceeded', 'Google Drive storage full');
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    if (txt.includes('storageQuotaExceeded')) {
+      setStatus('quota_exceeded', 'Google Drive storage full');
+    } else {
+      setStatus('error', parseDriveApiError(res.status, txt));
+    }
     return null;
   }
-  if (!res.ok) return null;
 
   const data = await res.json();
   return data.files && data.files.length > 0 ? data.files[0] : null;
@@ -386,17 +449,26 @@ export async function listAllAppDataFiles(token: string): Promise<DriveFileSumma
     const q = encodeURIComponent('trashed=false');
     const url = `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${q}&fields=files(id,name,modifiedTime,size)&pageSize=100`;
     const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-    if (!res.ok) return [];
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      if (res.status === 401) {
+        setStatus('needs_reauth', 'Session expired. Please reconnect.');
+        inMemoryAccessToken = null;
+      } else {
+        setStatus('error', parseDriveApiError(res.status, txt));
+      }
+      return [];
+    }
     const data = await res.json();
     return data.files || [];
-  } catch (e) {
+  } catch (e: any) {
     return [];
   }
 }
 
 // User-facing summary of all files stored in player's Google Drive
-export async function getCloudFilesSummary(): Promise<{ name: string; size: string; modifiedTime: string }[]> {
-  const token = await ensureToken(false);
+export async function getCloudFilesSummary(interactive = false): Promise<{ name: string; size: string; modifiedTime: string }[]> {
+  const token = await ensureToken(interactive);
   if (!token) return [];
   const files = await listAllAppDataFiles(token);
   return files
@@ -502,19 +574,16 @@ async function uploadToAppData(
     inMemoryAccessToken = null;
     return null;
   }
-  if (res.status === 403) {
-    const txt = await res.text();
-    if (txt.includes('storageQuotaExceeded')) {
-      setStatus('quota_exceeded', 'Google Drive storage is full');
-    } else {
-      setStatus('error', 'Drive API rate limit reached, will retry later');
-    }
-    return null;
-  }
   if (!res.ok) {
     if (res.status === 404 && existingFileId) {
       // File was deleted on remote; retry as new create
       return uploadToAppData(token, filename, payload, undefined);
+    }
+    const txt = await res.text().catch(() => '');
+    if (txt.includes('storageQuotaExceeded')) {
+      setStatus('quota_exceeded', 'Google Drive storage is full');
+    } else {
+      setStatus('error', parseDriveApiError(res.status, txt));
     }
     return null;
   }
@@ -791,8 +860,12 @@ export async function executeFullSync(store: SyncTargetStore, interactive = fals
       ]);
 
       const downloadedKeys: string[] = [];
+      let syncErrorCount = 0;
       for (const key of allKeysToSync) {
         const res = await syncSingleItem(token, store, key, remoteFilesMap.get(key));
+        if (!res.success) {
+          syncErrorCount++;
+        }
         if (res.downloaded) {
           downloadedKeys.push(key);
         }
@@ -800,6 +873,11 @@ export async function executeFullSync(store: SyncTargetStore, interactive = fals
 
       if (downloadedKeys.length > 0) {
         notifyDataUpdated(downloadedKeys);
+      }
+
+      if (syncErrorCount > 0) {
+        console.warn(`[CloudSync] Sync batch finished with ${syncErrorCount} failed item(s).`);
+        return false;
       }
 
       const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
