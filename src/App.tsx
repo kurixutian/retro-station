@@ -41,8 +41,31 @@ import {
   Clock,
   FolderPlus,
   Bookmark,
-  Palette
+  Palette,
+  Cloud,
+  CloudOff,
+  RefreshCw,
+  LogOut,
+  AlertCircle
 } from 'lucide-react';
+import {
+  CloudSyncStatus,
+  GoogleUserProfile,
+  ConflictBackupItem,
+  getSyncStatus,
+  subscribeSyncStatus,
+  signInWithGoogle,
+  signOutGoogle,
+  getGoogleClientId,
+  setGoogleClientId,
+  getCachedUserProfile,
+  executeFullSync,
+  markLocalSaveModified,
+  initGlobalSyncListeners,
+  listCloudConflictBackups,
+  deleteAllCloudSaves,
+  SyncTargetStore
+} from './cloudSync';
 
 // ============================================================================
 // 1. LIBRETRO CORE AUTO-DETECTION MATRIX
@@ -563,6 +586,21 @@ const idbDelete = async (key) => {
   });
 };
 
+const idbGetAllKeys = async (): Promise<string[]> => {
+  const db = (await idbOpen()) as IDBDatabase;
+  return new Promise((res, rej) => {
+    const q = db.transaction('roms', 'readonly').objectStore('roms').getAllKeys();
+    q.onsuccess = () => res(((q.result as any[]) || []).map(String));
+    q.onerror = () => rej(q.error);
+  });
+};
+
+const syncTargetStore: SyncTargetStore = {
+  getItem: (key) => idbGet(key),
+  setItem: (key, val) => idbPut(key, val),
+  getAllKeys: () => idbGetAllKeys(),
+};
+
 const EJS_CORES = { gambatte: 'gb', mgba: 'gba', fceumm: 'nes', snes9x: 'snes', genesis_plus_gx: 'segaMD' };
 
 const EMU_INPUT_MAP = {
@@ -936,6 +974,13 @@ export default function App() {
   const [inGameMenuOpen, setInGameMenuOpen] = useState(false);
   // inGameSaveModalMode: null | 'save' | 'load' (opens Per-Game Save State Slots overlay inside a game)
   const [inGameSaveModalMode, setInGameSaveModalMode] = useState(null);
+  // cloudModalOpen: opens Google Cloud Save & Sync settings dialog
+  const [cloudModalOpen, setCloudModalOpen] = useState(false);
+  const [syncStatus, setSyncStatus] = useState(() => getSyncStatus());
+  const [cachedUser, setCachedUser] = useState<GoogleUserProfile | null>(() => getCachedUserProfile());
+  const [clientIdInput, setClientIdInput] = useState(() => getGoogleClientId());
+  const [conflictBackups, setConflictBackups] = useState<ConflictBackupItem[]>([]);
+  const [showConflictsList, setShowConflictsList] = useState(false);
 
   // Theme & Combinable Shader Pipeline State (Auto-saved to localStorage)
   const [themeId, setThemeId] = useState(() => {
@@ -1019,6 +1064,19 @@ export default function App() {
         };
       } catch (err) {}
     })();
+  }, []);
+
+  // Cloud Sync Listener & Background Sync Initialization
+  useEffect(() => {
+    const unsub = subscribeSyncStatus(() => {
+      setSyncStatus(getSyncStatus());
+      setCachedUser(getCachedUserProfile());
+    });
+    const cleanupListeners = initGlobalSyncListeners(syncTargetStore);
+    return () => {
+      unsub();
+      cleanupListeners();
+    };
   }, []);
 
   // In-Game Emulation Runtime State
@@ -1410,6 +1468,7 @@ export default function App() {
         screenshot: shot,
         emuState
       }).catch(console.error);
+      markLocalSaveModified(syncTargetStore, `state:${game.id}:${slotNumber}`);
       soundFX.save();
       showToast(`Saved ${game.title} → Slot #${slotNumber}`);
       return;
@@ -1456,6 +1515,15 @@ export default function App() {
       );
       return { ...prev, [game.id]: updated };
     });
+
+    idbPut(`state:${game.id}:${slotNumber}`, {
+      slot: slotNumber,
+      label: customLabel,
+      timestamp: timeStr,
+      screenshot,
+      stateData: statePayload
+    }).catch(console.error);
+    markLocalSaveModified(syncTargetStore, `state:${game.id}:${slotNumber}`);
 
     soundFX.save();
     showToast(`Saved ${game.title} → Slot #${slotNumber}`);
@@ -1531,7 +1599,10 @@ export default function App() {
         for (let i = 0; i < srm.length; i += 4) {
           if (srm[i] !== 0 && srm[i] !== 255) { nonEmpty = true; break; }
         }
-        if (nonEmpty) idbPut(`srm:${activeGame.id}`, srm).catch(() => {});
+        if (nonEmpty) {
+          idbPut(`srm:${activeGame.id}`, srm).catch(() => {});
+          markLocalSaveModified(syncTargetStore, `srm:${activeGame.id}`);
+        }
       }
       const rtc = win.getRtcData?.();
       if (rtc && rtc.length > 0) {
@@ -2483,6 +2554,55 @@ export default function App() {
                   <Plus className="w-4 h-4 stroke-[2.5]" />
                 </button>
 
+                {/* Cloud Save Sync Button / User Avatar */}
+                <button
+                  onClick={() => setCloudModalOpen(true)}
+                  className={`px-2.5 py-2 rounded-xl border transition active:scale-95 flex items-center gap-1.5 cursor-pointer ${
+                    cachedUser
+                      ? 'bg-zinc-900 hover:bg-zinc-800 border-zinc-700 text-zinc-100'
+                      : 'bg-zinc-900/90 hover:bg-zinc-800 border-zinc-800 text-sky-400'
+                  }`}
+                  title={
+                    cachedUser
+                      ? `Google Cloud Save: ${cachedUser.email} (${syncStatus.status})`
+                      : 'Sign In to Google for Cloud Save'
+                  }
+                >
+                  {cachedUser ? (
+                    <div className="relative flex items-center justify-center">
+                      {cachedUser.picture ? (
+                        <img
+                          src={cachedUser.picture}
+                          alt={cachedUser.name || 'User'}
+                          className="w-5 h-5 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-5 h-5 rounded-full bg-sky-500 text-zinc-950 font-black text-[10px] flex items-center justify-center">
+                          {(cachedUser.name || cachedUser.email || 'G')[0].toUpperCase()}
+                        </div>
+                      )}
+                      <span
+                        className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-zinc-900 ${
+                          syncStatus.status === 'idle'
+                            ? 'bg-emerald-400'
+                            : syncStatus.status === 'syncing'
+                              ? 'bg-amber-400 animate-ping'
+                              : syncStatus.status === 'offline'
+                                ? 'bg-zinc-500'
+                                : syncStatus.status === 'needs_reauth'
+                                  ? 'bg-amber-400'
+                                  : 'bg-rose-400'
+                        }`}
+                      />
+                    </div>
+                  ) : (
+                    <Cloud className="w-4 h-4 text-sky-400" />
+                  )}
+                  <span className="hidden sm:inline text-xs font-bold">
+                    {cachedUser ? (cachedUser.name?.split(' ')[0] || 'Cloud') : 'Cloud Save'}
+                  </span>
+                </button>
+
                 <button
                   onClick={() => setGlobalSettingsOpen(true)}
                   className="p-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 transition active:scale-95"
@@ -2790,6 +2910,63 @@ export default function App() {
                     <Sliders className="w-4 h-4 text-purple-400" />
                     <span>Shaders & Theme</span>
                   </button>
+                </div>
+
+                {/* Google Cloud Save */}
+                <div className="pt-2 border-t border-zinc-800/80 space-y-1.5">
+                  <div className="flex items-center justify-between text-[10px]">
+                    <span className="font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1">
+                      <Cloud className="w-3.5 h-3.5 text-sky-400" />
+                      <span>Google Cloud Save</span>
+                    </span>
+                    <span
+                      className={`font-semibold ${
+                        syncStatus.status === 'idle'
+                          ? 'text-emerald-400'
+                          : syncStatus.status === 'syncing'
+                            ? 'text-amber-400 animate-pulse'
+                            : syncStatus.status === 'offline'
+                              ? 'text-zinc-400'
+                              : 'text-amber-300'
+                      }`}
+                    >
+                      {syncStatus.status === 'idle'
+                        ? 'Synced'
+                        : syncStatus.status === 'syncing'
+                          ? 'Syncing...'
+                          : syncStatus.status === 'offline'
+                            ? 'Offline'
+                            : syncStatus.status === 'needs_reauth'
+                              ? 'Reconnect'
+                              : 'Not Linked'}
+                    </span>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => {
+                        setInGameMenuOpen(false);
+                        setCloudModalOpen(true);
+                      }}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 text-xs font-semibold transition cursor-pointer"
+                    >
+                      <Cloud className="w-3.5 h-3.5 text-sky-400" />
+                      <span className="truncate max-w-[140px]">{cachedUser ? (cachedUser.email || 'Cloud Account') : 'Connect Account'}</span>
+                    </button>
+                    {cachedUser && (
+                      <button
+                        onClick={async () => {
+                          const ok = await executeFullSync(syncTargetStore, true);
+                          if (ok) showToast('Cloud Sync Complete!');
+                        }}
+                        disabled={syncStatus.status === 'syncing'}
+                        className="px-2.5 py-1.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/40 text-sky-300 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                        title="Sync now"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${syncStatus.status === 'syncing' ? 'animate-spin' : ''}`} />
+                        <span>Sync</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Cartridge Battery Save (.SAV / .SRM) Export */}
@@ -3496,6 +3673,274 @@ export default function App() {
                   })}
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ====================================================================
+          MODAL 3: GOOGLE DRIVE CLOUD SAVE & SYNC
+      ==================================================================== */}
+      {cloudModalOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
+          style={{
+            paddingTop: 'max(env(safe-area-inset-top, 0px) + 20px, 36px)',
+            paddingBottom: 'max(env(safe-area-inset-bottom, 0px) + 20px, 36px)',
+            paddingLeft: 'max(env(safe-area-inset-left, 0px) + 12px, 16px)',
+            paddingRight: 'max(env(safe-area-inset-right, 0px) + 12px, 16px)'
+          }}
+          onClick={() => setCloudModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-xl max-h-[88vh] flex flex-col rounded-3xl bg-zinc-950 border border-zinc-800 shadow-2xl overflow-hidden my-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex-none flex items-center justify-between px-5 py-4 border-b border-zinc-800 bg-zinc-950">
+              <div className="flex items-center gap-2.5">
+                <Cloud className="w-5 h-5 text-sky-400" />
+                <div>
+                  <h2 className="text-base font-black text-white flex items-center gap-2">
+                    Google Cloud Save
+                    <span className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                      Offline-First
+                    </span>
+                  </h2>
+                </div>
+              </div>
+              <button
+                onClick={() => setCloudModalOpen(false)}
+                className="p-2 rounded-full bg-zinc-900 hover:bg-zinc-800 text-zinc-300 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5 space-y-6">
+              {/* Account / Status Banner */}
+              {cachedUser ? (
+                <div className="p-4 rounded-2xl bg-zinc-900/90 border border-zinc-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      {cachedUser.picture ? (
+                        <img
+                          src={cachedUser.picture}
+                          alt={cachedUser.name || 'User'}
+                          className="w-10 h-10 rounded-full object-cover border border-white/20"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-sky-500 text-zinc-950 font-black text-sm flex items-center justify-center">
+                          {(cachedUser.name || cachedUser.email || 'G')[0].toUpperCase()}
+                        </div>
+                      )}
+                      <div>
+                        <div className="text-sm font-extrabold text-white">{cachedUser.name || 'Google Account'}</div>
+                        <div className="text-xs text-zinc-400 font-mono">{cachedUser.email}</div>
+                      </div>
+                    </div>
+
+                    <div className="text-right">
+                      <div className="flex items-center gap-1.5 justify-end">
+                        <span
+                          className={`w-2 h-2 rounded-full ${
+                            syncStatus.status === 'idle'
+                              ? 'bg-emerald-400'
+                              : syncStatus.status === 'syncing'
+                                ? 'bg-amber-400 animate-ping'
+                                : syncStatus.status === 'offline'
+                                  ? 'bg-zinc-500'
+                                  : syncStatus.status === 'needs_reauth'
+                                    ? 'bg-amber-400'
+                                    : 'bg-rose-400'
+                          }`}
+                        />
+                        <span className="text-xs font-bold text-zinc-200 capitalize">
+                          {syncStatus.status === 'idle'
+                            ? 'Synced'
+                            : syncStatus.status === 'syncing'
+                              ? 'Syncing'
+                              : syncStatus.status === 'offline'
+                                ? 'Offline'
+                                : syncStatus.status === 'needs_reauth'
+                                  ? 'Session Expired'
+                                  : 'Disconnected'}
+                        </span>
+                      </div>
+                      {syncStatus.lastSyncTime && (
+                        <div className="text-[10px] text-zinc-500 mt-0.5">
+                          Last: {syncStatus.lastSyncTime}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {syncStatus.details && (
+                    <div className="text-[11px] text-zinc-400 bg-black/40 px-3 py-1.5 rounded-lg border border-white/5 flex items-center justify-between">
+                      <span>{syncStatus.details}</span>
+                      {syncStatus.status === 'needs_reauth' && (
+                        <button
+                          onClick={() => signInWithGoogle()}
+                          className="text-amber-400 hover:text-amber-300 font-bold ml-2 underline cursor-pointer"
+                        >
+                          Reconnect
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      onClick={async () => {
+                        const ok = await executeFullSync(syncTargetStore, true);
+                        if (ok) showToast('Google Drive Cloud Sync Complete!');
+                      }}
+                      disabled={syncStatus.status === 'syncing'}
+                      className="flex-1 py-2.5 px-3 rounded-xl bg-sky-500 hover:bg-sky-400 text-zinc-950 font-extrabold text-xs flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50 cursor-pointer"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${syncStatus.status === 'syncing' ? 'animate-spin' : ''}`} />
+                      <span>{syncStatus.status === 'syncing' ? 'Syncing...' : 'Sync Now'}</span>
+                    </button>
+
+                    <button
+                      onClick={async () => {
+                        await signOutGoogle();
+                        showToast('Signed out of Google Cloud Save');
+                      }}
+                      className="py-2.5 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold text-xs flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>Sign Out</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-5 rounded-2xl bg-zinc-900/60 border border-zinc-800 space-y-4">
+                  <div className="space-y-1.5">
+                    <h3 className="text-sm font-extrabold text-white flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-sky-400" />
+                      <span>Cross-Device Cloud Saves</span>
+                    </h3>
+                    <p className="text-xs text-zinc-400 leading-relaxed">
+                      Connect your Google Account to automatically sync save states, battery saves (<span className="text-zinc-200 font-mono">.sav</span>), and progress across your phone, tablet, and PC.
+                    </p>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-black/40 border border-white/5 space-y-2 text-[11px] text-zinc-300">
+                    <div className="flex items-start gap-2">
+                      <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
+                      <span><strong className="text-white">Zero Server Cost:</strong> Saves directly to your private Google Drive app storage (<span className="text-zinc-400 font-mono">appDataFolder</span>).</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
+                      <span><strong className="text-white">Seamless Offline Play:</strong> Saves are always written instantly to your device. When Wi-Fi reconnects, changes automatically sync in the background.</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
+                      <span><strong className="text-white">Private & Isolated:</strong> Files are invisible in your standard Drive and only accessible by Retro Station.</span>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={async () => {
+                      const ok = await signInWithGoogle();
+                      if (ok) {
+                        showToast('Connected to Google Drive!');
+                        await executeFullSync(syncTargetStore, true);
+                      }
+                    }}
+                    className="w-full py-3 px-4 rounded-2xl bg-white hover:bg-zinc-100 text-zinc-950 font-black text-sm flex items-center justify-center gap-2.5 shadow-xl transition active:scale-95 cursor-pointer"
+                  >
+                    <svg className="w-4 h-4" viewBox="0 0 24 24">
+                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                    </svg>
+                    <span>Sign in with Google</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Advanced / Developer Settings: OAuth Client ID */}
+              <div className="space-y-2 pt-2 border-t border-zinc-900">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-extrabold uppercase tracking-wider text-zinc-400">Google OAuth Client ID</span>
+                  <span className="text-[10px] text-zinc-500 font-mono">Web Application</span>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={clientIdInput}
+                    onChange={(e) => setClientIdInput(e.target.value)}
+                    placeholder="e.g. 123456789-abcdef.apps.googleusercontent.com"
+                    className="flex-1 px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-zinc-200 font-mono focus:outline-none focus:border-sky-500"
+                  />
+                  <button
+                    onClick={() => {
+                      setGoogleClientId(clientIdInput);
+                      showToast('Google Client ID updated!');
+                    }}
+                    className="px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold transition active:scale-95 cursor-pointer"
+                  >
+                    Save
+                  </button>
+                </div>
+                <p className="text-[10px] text-zinc-500 leading-snug">
+                  To use your own Google Cloud project: create a free OAuth 2.0 Client ID in Google Cloud Console, add <span className="font-mono text-zinc-400">{typeof window !== 'undefined' ? window.location.origin : ''}</span> to Authorized JavaScript origins, and paste your Client ID above.
+                </p>
+              </div>
+
+              {/* Conflict Backups & Data Management */}
+              {cachedUser && (
+                <div className="space-y-2.5 pt-2 border-t border-zinc-900">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-extrabold uppercase tracking-wider text-zinc-400">Cloud Data Management</span>
+                    <button
+                      onClick={async () => {
+                        const list = await listCloudConflictBackups();
+                        setConflictBackups(list);
+                        setShowConflictsList((s) => !s);
+                      }}
+                      className="text-xs text-sky-400 hover:text-sky-300 font-bold cursor-pointer"
+                    >
+                      {showConflictsList ? 'Hide Backups' : 'View Conflict Backups'}
+                    </button>
+                  </div>
+
+                  {showConflictsList && (
+                    <div className="p-3 rounded-xl bg-zinc-900/80 border border-zinc-800 space-y-2">
+                      <div className="text-[11px] font-bold text-zinc-300">Conflict Safety Copies:</div>
+                      {conflictBackups.length === 0 ? (
+                        <div className="text-[10px] text-zinc-500 py-2 text-center">No conflicts detected. All saves are in sync!</div>
+                      ) : (
+                        <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                          {conflictBackups.map((bk, i) => (
+                            <div key={i} className="flex items-center justify-between p-2 rounded-lg bg-black/40 text-[10px] border border-white/5">
+                              <div>
+                                <div className="font-mono text-zinc-200 truncate max-w-[200px]">{bk.filename}</div>
+                                <div className="text-zinc-500">Device: {bk.deviceId} • {new Date(bk.timestamp).toLocaleString()}</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <button
+                    onClick={async () => {
+                      if (window.confirm('Are you sure you want to delete all cloud save files from your Google Drive appDataFolder? (Your local saves on this device will remain intact).')) {
+                        const ok = await deleteAllCloudSaves();
+                        if (ok) showToast('Cloud saves deleted from Google Drive');
+                      }
+                    }}
+                    className="w-full py-2 px-3 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete Cloud Saves from Google Drive</span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
