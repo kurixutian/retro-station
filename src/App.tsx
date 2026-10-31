@@ -565,7 +565,7 @@ export default function App() {
     rewindBufferRef.current = [];
     setIsPaused(false);
     setIsRewinding(false);
-    setIsFastForward(false);
+    setFfSpeed(0);
     setDetailGame(null);
     setInGameMenuOpen(false);
     setInGameSaveModalMode(null);
@@ -838,7 +838,7 @@ export default function App() {
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'Space') setButtonDown('select');
       if (e.code === 'KeyP') setIsPaused((p) => !p);
       if (e.code === 'KeyR' || e.code === 'Backspace') setIsRewinding(true);
-      if (e.code === 'KeyF') setIsFastForward((f) => !f);
+      if (e.code === 'KeyF') setFfSpeed((s) => s > 0 ? 0 : 2);
     };
 
     const onKeyUp = (e: KeyboardEvent) => {
