@@ -380,7 +380,55 @@ export async function listCloudConflictBackups(): Promise<ConflictBackupItem[]> 
   }
 }
 
-// Multipart Upload (Atomic Create / Update)
+// List all non-trashed files in appDataFolder for 2-way discovery
+export async function listAllAppDataFiles(token: string): Promise<DriveFileSummary[]> {
+  try {
+    const q = encodeURIComponent('trashed=false');
+    const url = `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${q}&fields=files(id,name,modifiedTime,size)&pageSize=100`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.files || [];
+  } catch (e) {
+    return [];
+  }
+}
+
+// Key to Google Drive Filename Converter
+export function keyToFilename(key: string): string {
+  if (key === 'library_games') return 'retro_library_games.json';
+  if (key.startsWith('rom:')) return `retro_rom__${key.slice(4)}.bin`;
+  // state:gameId:slot -> retro_state__gameId__slot.json
+  const safe = key.replace(/:/g, '__');
+  return `retro_${safe}.json`;
+}
+
+// Google Drive Filename to Local Key Converter
+export function filenameToKey(filename: string): string | null {
+  if (filename === 'retro_library_games.json') return 'library_games';
+  if (filename.startsWith('retro_rom__') && filename.endsWith('.bin')) {
+    const gameId = filename.slice('retro_rom__'.length, -'.bin'.length);
+    return `rom:${gameId}`;
+  }
+  if (filename.startsWith('retro_') && filename.endsWith('.json')) {
+    const raw = filename.slice('retro_'.length, -'.json'.length);
+    return raw.replace(/__/g, ':');
+  }
+  return null;
+}
+
+export function isSyncableKey(key: string): boolean {
+  return (
+    key === 'library_games' ||
+    key.startsWith('rom:') ||
+    key.startsWith('state:') ||
+    key.startsWith('srm:') ||
+    key.startsWith('rtc:') ||
+    key.startsWith('autosave:')
+  );
+}
+
+// Multipart Upload (Atomic Create / Update for both JSON and binary Blobs)
 async function uploadToAppData(
   token: string,
   filename: string,
@@ -388,22 +436,29 @@ async function uploadToAppData(
   existingFileId?: string
 ): Promise<{ id: string; modifiedTime: string } | null> {
   const boundary = '-------retro_station_' + Math.random().toString(36).substring(2);
-  const delimiter = `\r\n--${boundary}\r\n`;
-  const closeDelimiter = `\r\n--${boundary}--`;
-
   const metadata = existingFileId
     ? { name: filename }
     : { name: filename, parents: ['appDataFolder'] };
 
-  const content = typeof payload === 'string' ? payload : JSON.stringify(payload);
-  const multipartBody =
-    delimiter +
-    'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
-    JSON.stringify(metadata) +
-    delimiter +
-    'Content-Type: application/json\r\n\r\n' +
-    content +
-    closeDelimiter;
+  let bodyBlob: Blob;
+
+  if (payload instanceof Blob) {
+    const isJson = filename.endsWith('.json');
+    const mime = isJson ? 'application/json' : 'application/octet-stream';
+    const header = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: ${mime}\r\n\r\n`;
+    const footer = `\r\n--${boundary}--`;
+    bodyBlob = new Blob([header, payload, footer], { type: `multipart/related; boundary=${boundary}` });
+  } else if (payload instanceof Uint8Array || payload instanceof ArrayBuffer) {
+    const raw = payload instanceof Uint8Array ? payload : new Uint8Array(payload);
+    const header = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: application/octet-stream\r\n\r\n`;
+    const footer = `\r\n--${boundary}--`;
+    bodyBlob = new Blob([header, raw, footer], { type: `multipart/related; boundary=${boundary}` });
+  } else {
+    const content = typeof payload === 'string' ? payload : JSON.stringify(payload);
+    const fullText =
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${content}\r\n--${boundary}--`;
+    bodyBlob = new Blob([fullText], { type: `multipart/related; boundary=${boundary}` });
+  }
 
   const url = existingFileId
     ? `https://www.googleapis.com/upload/drive/v3/files/${existingFileId}?uploadType=multipart&fields=id,name,modifiedTime`
@@ -416,7 +471,7 @@ async function uploadToAppData(
       Authorization: `Bearer ${token}`,
       'Content-Type': `multipart/related; boundary=${boundary}`,
     },
-    body: multipartBody,
+    body: bodyBlob,
   });
 
   if (res.status === 401) {
@@ -444,12 +499,17 @@ async function uploadToAppData(
   return await res.json();
 }
 
-// Download file contents from appDataFolder
-async function downloadFromAppData(token: string, fileId: string): Promise<any | null> {
+// Download file contents from appDataFolder (Binary Blob or JSON)
+async function downloadFromAppData(token: string, fileId: string, filename = ''): Promise<any | null> {
   const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
     headers: { Authorization: `Bearer ${token}` }
   });
   if (!res.ok) return null;
+
+  if (filename.endsWith('.bin') || filename.includes('rom__')) {
+    return await res.blob();
+  }
+
   try {
     return await res.json();
   } catch (e) {
@@ -519,15 +579,31 @@ export async function markLocalSaveModified(store: SyncTargetStore, key: string)
   triggerDebouncedCloudSync(store);
 }
 
-// Execute 3-way sync for a single item
+// Listener for when remote saves/games are downloaded and updated locally
+const dataUpdateListeners = new Set<(updatedKeys: string[]) => void>();
+
+export function subscribeDataUpdated(listener: (updatedKeys: string[]) => void): () => void {
+  dataUpdateListeners.add(listener);
+  return () => dataUpdateListeners.delete(listener);
+}
+
+function notifyDataUpdated(updatedKeys: string[]) {
+  if (updatedKeys.length === 0) return;
+  dataUpdateListeners.forEach((fn) => {
+    try { fn(updatedKeys); } catch (e) {}
+  });
+}
+
+// Execute 3-way sync for a single item (supports pre-fetched remoteFile)
 async function syncSingleItem(
   token: string,
   store: SyncTargetStore,
-  itemKey: string
-): Promise<boolean> {
+  itemKey: string,
+  prefetchedRemoteFile?: DriveFileSummary | null
+): Promise<{ success: boolean; downloaded: boolean }> {
   const localVal = await store.getItem(itemKey);
   let meta = await getCloudMeta(store, itemKey);
-  const cloudFilename = `retro_${itemKey.replace(/[:/]/g, '_')}.json`;
+  const cloudFilename = keyToFilename(itemKey);
 
   if (!meta) {
     meta = {
@@ -536,14 +612,14 @@ async function syncSingleItem(
     };
   }
 
-  // 1. Fetch remote file summary
-  let remoteFile = meta.fileId ? await searchAppDataFile(token, cloudFilename) : null;
-  if (!remoteFile) {
+  // 1. Fetch remote file summary (use prefetched if provided, or search)
+  let remoteFile = prefetchedRemoteFile !== undefined ? prefetchedRemoteFile : (meta.fileId ? await searchAppDataFile(token, cloudFilename) : null);
+  if (prefetchedRemoteFile === undefined && !remoteFile) {
     remoteFile = await searchAppDataFile(token, cloudFilename);
   }
 
   // If item doesn't exist locally and doesn't exist on remote, nothing to sync
-  if (!localVal && !remoteFile) return true;
+  if (!localVal && !remoteFile) return { success: true, downloaded: false };
 
   // Case A: Exists only locally -> Upload
   if (localVal && !remoteFile) {
@@ -556,14 +632,14 @@ async function syncSingleItem(
         localUpdatedAt: meta.localUpdatedAt,
         pendingUpload: false,
       });
-      return true;
+      return { success: true, downloaded: false };
     }
-    return false;
+    return { success: false, downloaded: false };
   }
 
   // Case B: Exists only remotely -> Download to local
   if (!localVal && remoteFile) {
-    const downloaded = await downloadFromAppData(token, remoteFile.id);
+    const downloaded = await downloadFromAppData(token, remoteFile.id, cloudFilename);
     if (downloaded) {
       await store.setItem(itemKey, downloaded);
       await setCloudMeta(store, itemKey, {
@@ -573,9 +649,9 @@ async function syncSingleItem(
         localUpdatedAt: Date.now(),
         pendingUpload: false,
       });
-      return true;
+      return { success: true, downloaded: true };
     }
-    return false;
+    return { success: false, downloaded: false };
   }
 
   // Case C: Exists both locally and remotely -> Base Revision 3-Way Comparison
@@ -600,14 +676,14 @@ async function syncSingleItem(
           localUpdatedAt: meta.localUpdatedAt,
           pendingUpload: false,
         });
-        return true;
+        return { success: true, downloaded: false };
       }
-      return false;
+      return { success: false, downloaded: false };
     }
 
     if (!localChanged && remoteChanged) {
       // Remote is newer -> Download
-      const downloaded = await downloadFromAppData(token, remoteFile.id);
+      const downloaded = await downloadFromAppData(token, remoteFile.id, cloudFilename);
       if (downloaded) {
         await store.setItem(itemKey, downloaded);
         await setCloudMeta(store, itemKey, {
@@ -617,14 +693,14 @@ async function syncSingleItem(
           localUpdatedAt: Date.now(),
           pendingUpload: false,
         });
-        return true;
+        return { success: true, downloaded: true };
       }
-      return false;
+      return { success: false, downloaded: false };
     }
 
     if (!localChanged && !remoteChanged) {
       // Both match base revision -> Already in sync
-      return true;
+      return { success: true, downloaded: false };
     }
 
     // Case D: TRUE CONFLICT (Both modified independently while disconnected)
@@ -634,7 +710,7 @@ async function syncSingleItem(
     const conflictFilename = `${itemKey}.${deviceId}.${isoTimestamp}.conflict.bak`;
 
     // Download remote save and store as conflict backup locally and in Drive
-    const remoteData = await downloadFromAppData(token, remoteFile.id);
+    const remoteData = await downloadFromAppData(token, remoteFile.id, cloudFilename);
     if (remoteData) {
       await store.setItem(`conflict:${conflictFilename}`, remoteData);
       await uploadToAppData(token, conflictFilename, remoteData);
@@ -651,13 +727,13 @@ async function syncSingleItem(
         pendingUpload: false,
       });
     }
-    return true;
+    return { success: true, downloaded: true };
   }
 
-  return true;
+  return { success: true, downloaded: false };
 }
 
-// Full Sync Batch across all saves
+// Full Sync Batch across all saves & ROMs (Two-way discovery)
 export async function executeFullSync(store: SyncTargetStore, interactive = false): Promise<boolean> {
   const userProfile = getCachedUserProfile();
   if (!userProfile && !interactive) {
@@ -673,17 +749,34 @@ export async function executeFullSync(store: SyncTargetStore, interactive = fals
     setStatus('syncing', 'Syncing with Google Drive...');
 
     try {
-      const allKeys = await store.getAllKeys();
-      // Target syncable keys: state:*, srm:*, rtc:*, autosave:*
-      const syncKeys = allKeys.filter(
-        (k) =>
-          (k.startsWith('state:') || k.startsWith('srm:') || k.startsWith('rtc:') || k.startsWith('autosave:')) &&
-          !k.startsWith('cloud_meta:') &&
-          !k.startsWith('conflict:')
-      );
+      // 1. Fetch remote files in appDataFolder (Two-way reconciliation)
+      const remoteFiles = await listAllAppDataFiles(token);
+      const remoteFilesMap = new Map<string, DriveFileSummary>();
+      remoteFiles.forEach((f) => {
+        const k = filenameToKey(f.name);
+        if (k) remoteFilesMap.set(k, f);
+      });
 
-      for (const key of syncKeys) {
-        await syncSingleItem(token, store, key);
+      // 2. Fetch local syncable keys
+      const allLocalKeys = await store.getAllKeys();
+      const localSyncKeys = allLocalKeys.filter((k) => isSyncableKey(k));
+
+      // 3. Union of all keys present locally OR on Google Drive
+      const allKeysToSync = new Set([
+        ...localSyncKeys,
+        ...remoteFilesMap.keys(),
+      ]);
+
+      const downloadedKeys: string[] = [];
+      for (const key of allKeysToSync) {
+        const res = await syncSingleItem(token, store, key, remoteFilesMap.get(key));
+        if (res.downloaded) {
+          downloadedKeys.push(key);
+        }
+      }
+
+      if (downloadedKeys.length > 0) {
+        notifyDataUpdated(downloadedKeys);
       }
 
       const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });

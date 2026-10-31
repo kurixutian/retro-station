@@ -64,6 +64,7 @@ import {
   initGlobalSyncListeners,
   listCloudConflictBackups,
   deleteAllCloudSaves,
+  subscribeDataUpdated,
   SyncTargetStore
 } from './cloudSync';
 
@@ -590,14 +591,34 @@ const idbGetAllKeys = async (): Promise<string[]> => {
   const db = (await idbOpen()) as IDBDatabase;
   return new Promise((res, rej) => {
     const q = db.transaction('roms', 'readonly').objectStore('roms').getAllKeys();
-    q.onsuccess = () => res(((q.result as any[]) || []).map(String));
+    q.onsuccess = () => {
+      const keys = ((q.result as any[]) || []).map(String);
+      const expanded = new Set(keys);
+      keys.forEach((k) => {
+        if (k.startsWith('rom_')) expanded.add(`rom:${k}`);
+      });
+      res(Array.from(expanded));
+    };
     q.onerror = () => rej(q.error);
   });
 };
 
 const syncTargetStore: SyncTargetStore = {
-  getItem: (key) => idbGet(key),
-  setItem: (key, val) => idbPut(key, val),
+  getItem: async (key) => {
+    if (key.startsWith('rom:')) {
+      const realId = key.slice(4);
+      return (await idbGet(realId)) || (await idbGet(key));
+    }
+    return idbGet(key);
+  },
+  setItem: async (key, val) => {
+    if (key.startsWith('rom:')) {
+      const realId = key.slice(4);
+      await idbPut(realId, val);
+      return idbPut(key, val);
+    }
+    return idbPut(key, val);
+  },
   getAllKeys: () => idbGetAllKeys(),
 };
 
@@ -1072,9 +1093,87 @@ export default function App() {
       setCachedUser(getCachedUserProfile());
     });
     const cleanupListeners = initGlobalSyncListeners(syncTargetStore);
+
+    // Listen for incoming downloaded games, save states, and SRAM from Google Drive
+    const unsubData = subscribeDataUpdated(async (keys) => {
+      let libraryChanged = false;
+      if (keys.includes('library_games')) {
+        try {
+          const cloudGames = await idbGet('library_games');
+          if (Array.isArray(cloudGames) && cloudGames.length > 0) {
+            setGames((prev) => {
+              const currentIds = new Set(prev.map((g) => g.id));
+              const missing = cloudGames.filter((g) => !currentIds.has(g.id));
+              if (missing.length === 0) return prev;
+              libraryChanged = true;
+              const merged = [...missing, ...prev];
+              try { localStorage.setItem('retro_games', JSON.stringify(merged)); } catch (e) {}
+              return merged;
+            });
+          }
+        } catch (e) {}
+      }
+
+      // Refresh any incoming save states
+      const stateKeys = keys.filter((k) => k.startsWith('state:'));
+      if (stateKeys.length > 0) {
+        for (const k of stateKeys) {
+          const parts = k.split(':');
+          const gId = parts[1];
+          const slotN = parseInt(parts[2], 10);
+          const val = await idbGet(k);
+          if (val && gId && slotN) {
+            setSavesByGameId((prev) => {
+              const list = prev[gId] || createEmptySlotsForGame(gId);
+              return {
+                ...prev,
+                [gId]: list.map((s) =>
+                  s.slot === slotN
+                    ? {
+                        slot: slotN,
+                        empty: false,
+                        label: val.label || `Slot #${slotN}`,
+                        timestamp: val.timestamp || '',
+                        score: 0,
+                        frame: 0,
+                        screenshot: val.screenshot || null,
+                        stateData: val.stateData || {
+                          version: 'EJS_STATE',
+                          gameId: gId,
+                          timestamp: val.timestamp,
+                          emuState: val.emuState
+                        }
+                      }
+                    : s
+                )
+              };
+            });
+          }
+        }
+      }
+
+      if (libraryChanged || stateKeys.length > 0) {
+        showToast('Synced new library games & saves from Google Drive!');
+      }
+    });
+
+    // Ensure any previously uploaded ROMs on this device are queued to sync to Drive
+    const userImported = games.filter((g) => g.real && g.id !== 'pokemon_gold');
+    if (userImported.length > 0) {
+      idbPut('library_games', userImported).then(() => {
+        markLocalSaveModified(syncTargetStore, 'library_games');
+        userImported.forEach((g) => {
+          idbGet(g.id).then((blob) => {
+            if (blob) markLocalSaveModified(syncTargetStore, `rom:${g.id}`);
+          });
+        });
+      });
+    }
+
     return () => {
       unsub();
       cleanupListeners();
+      unsubData();
     };
   }, []);
 
@@ -1286,8 +1385,15 @@ export default function App() {
   const deleteRom = useCallback(async (gameId) => {
     try {
       await idbDelete(gameId);
+      await idbDelete(`rom:${gameId}`);
     } catch (e) {}
-    setGames((prev) => prev.filter((g) => g.id !== gameId));
+    setGames((prev) => {
+      const remaining = prev.filter((g) => g.id !== gameId);
+      const userImportedOnly = remaining.filter((g) => g.real && g.id !== 'pokemon_gold');
+      idbPut('library_games', userImportedOnly).catch(() => {});
+      markLocalSaveModified(syncTargetStore, 'library_games');
+      return remaining;
+    });
     setSavesByGameId((prev) => {
       const next = { ...prev };
       delete next[gameId];
@@ -1375,10 +1481,17 @@ export default function App() {
 
     try {
       await idbPut(newGame.id, file);
+      markLocalSaveModified(syncTargetStore, `rom:${newGame.id}`);
     } catch (err) {
       showToast('Could not store ROM for offline use');
     }
-    setGames((prev) => [newGame, ...prev]);
+    setGames((prev) => {
+      const nextGames = [newGame, ...prev.filter((g) => g.id !== newGame.id)];
+      const userImportedOnly = nextGames.filter((g) => g.real && g.id !== 'pokemon_gold');
+      idbPut('library_games', userImportedOnly).catch(() => {});
+      markLocalSaveModified(syncTargetStore, 'library_games');
+      return nextGames;
+    });
     setSavesByGameId((prev) => ({
       ...prev,
       [newGame.id]: createEmptySlotsForGame(newGame.id)
