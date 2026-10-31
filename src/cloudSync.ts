@@ -479,6 +479,8 @@ export async function getCloudFilesSummary(interactive = false): Promise<{ name:
       else if (f.name.startsWith('retro_rom__')) friendlyName = `ROM Binary (${f.name.replace('retro_rom__', '').replace('.bin', '')})`;
       else if (f.name.startsWith('retro_state__')) friendlyName = `Save State (${f.name.replace('retro_state__', '').replace('.json', '').replace(/__/g, ' • ')})`;
       else if (f.name.startsWith('retro_srm__')) friendlyName = `Cartridge Save (.sav/.srm) (${f.name.replace('retro_srm__', '').replace('.json', '')})`;
+      else if (f.name.startsWith('retro_autosave__')) friendlyName = `Auto-Resume State (${f.name.replace('retro_autosave__', '').replace('.json', '')})`;
+      else if (f.name.startsWith('retro_rtc__')) friendlyName = `Real-Time Clock (${f.name.replace('retro_rtc__', '').replace('.json', '')})`;
 
       const sizeKb = f.size ? (Number(f.size) / 1024).toFixed(1) : '1.0';
       return {
@@ -591,21 +593,50 @@ async function uploadToAppData(
   return await res.json();
 }
 
-// Download file contents from appDataFolder (Binary Blob or JSON)
+// Download file contents from appDataFolder (Binary Blob, Uint8Array, or JSON)
 async function downloadFromAppData(token: string, fileId: string, filename = ''): Promise<any | null> {
-  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-    headers: { Authorization: `Bearer ${token}` }
-  });
-  if (!res.ok) return null;
-
-  if (filename.endsWith('.bin') || filename.includes('rom__')) {
-    return await res.blob();
-  }
-
   try {
-    return await res.json();
-  } catch (e) {
-    return await res.text();
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!res.ok) return null;
+
+    // 1. ROM binaries -> Blob
+    if (filename.endsWith('.bin') || filename.includes('rom__')) {
+      return await res.blob();
+    }
+
+    // 2. Read raw ArrayBuffer once so body stream is never read twice
+    const buf = await res.arrayBuffer();
+
+    // 3. Binary emulator saves (.srm, .rtc, autosave) -> Uint8Array
+    if (
+      filename.startsWith('retro_srm__') ||
+      filename.startsWith('retro_rtc__') ||
+      filename.startsWith('retro_autosave__')
+    ) {
+      return new Uint8Array(buf);
+    }
+
+    // 4. JSON files (library_games, save states)
+    const text = new TextDecoder().decode(buf);
+    try {
+      const parsed = JSON.parse(text);
+      // Reconstruct Uint8Array if emuState was serialized into a plain object or array
+      if (parsed && typeof parsed === 'object' && parsed.emuState && !(parsed.emuState instanceof Uint8Array)) {
+        if (Array.isArray(parsed.emuState)) {
+          parsed.emuState = new Uint8Array(parsed.emuState);
+        } else if (typeof parsed.emuState === 'object') {
+          parsed.emuState = new Uint8Array(Object.values(parsed.emuState));
+        }
+      }
+      return parsed;
+    } catch (e) {
+      return new Uint8Array(buf);
+    }
+  } catch (err) {
+    console.error('[CloudSync] downloadFromAppData error:', filename, err);
+    return null;
   }
 }
 
@@ -862,18 +893,22 @@ export async function executeFullSync(store: SyncTargetStore, interactive = fals
       const downloadedKeys: string[] = [];
       let syncErrorCount = 0;
       for (const key of allKeysToSync) {
-        const res = await syncSingleItem(token, store, key, remoteFilesMap.get(key));
-        if (!res.success) {
+        try {
+          const res = await syncSingleItem(token, store, key, remoteFilesMap.get(key));
+          if (!res.success) {
+            syncErrorCount++;
+          }
+          if (res.downloaded) {
+            downloadedKeys.push(key);
+          }
+        } catch (itemErr) {
+          console.error(`[CloudSync] Item sync failed for ${key}:`, itemErr);
           syncErrorCount++;
-        }
-        if (res.downloaded) {
-          downloadedKeys.push(key);
         }
       }
 
-      if (downloadedKeys.length > 0) {
-        notifyDataUpdated(downloadedKeys);
-      }
+      // Always notify UI with all known sync keys so items downloaded in any prior run are reconciled into React state
+      notifyDataUpdated(Array.from(new Set([...downloadedKeys, ...allKeysToSync])));
 
       if (syncErrorCount > 0) {
         console.warn(`[CloudSync] Sync batch finished with ${syncErrorCount} failed item(s).`);

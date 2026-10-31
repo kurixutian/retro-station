@@ -1097,28 +1097,25 @@ export default function App() {
     });
     const cleanupListeners = initGlobalSyncListeners(syncTargetStore);
 
-    // Listen for incoming downloaded games, save states, and SRAM from Google Drive
-    const unsubData = subscribeDataUpdated(async (keys) => {
-      let libraryChanged = false;
-      if (keys.includes('library_games')) {
-        try {
-          const cloudGames = await idbGet('library_games');
-          if (Array.isArray(cloudGames) && cloudGames.length > 0) {
-            setGames((prev) => {
-              const currentIds = new Set(prev.map((g) => g.id));
-              const missing = cloudGames.filter((g) => !currentIds.has(g.id));
-              if (missing.length === 0) return prev;
-              libraryChanged = true;
-              const merged = [...missing, ...prev];
-              try { localStorage.setItem('retro_games', JSON.stringify(merged)); } catch (e) {}
-              return merged;
-            });
-          }
-        } catch (e) {}
-      }
+    // Reconcile any downloaded games, save states, and SRAM from IndexedDB into React state
+    const reconcileCloudDataFromIdb = async (keys?: string[]) => {
+      try {
+        const cloudGames = await idbGet('library_games');
+        if (Array.isArray(cloudGames) && cloudGames.length > 0) {
+          setGames((prev) => {
+            const currentIds = new Set(prev.map((g) => g.id));
+            const missing = cloudGames.filter((g) => g && g.id && !currentIds.has(g.id));
+            if (missing.length === 0) return prev;
+            const merged = [...missing, ...prev];
+            try { localStorage.setItem('retro_games', JSON.stringify(merged)); } catch (e) {}
+            return merged;
+          });
+        }
+      } catch (e) {}
 
       // Refresh any incoming save states
-      const stateKeys = keys.filter((k) => k.startsWith('state:'));
+      const targetKeys = keys || (await idbGetAllKeys().catch(() => []));
+      const stateKeys = targetKeys.filter((k) => k.startsWith('state:'));
       if (stateKeys.length > 0) {
         for (const k of stateKeys) {
           const parts = k.split(':');
@@ -1126,6 +1123,10 @@ export default function App() {
           const slotN = parseInt(parts[2], 10);
           const val = await idbGet(k);
           if (val && gId && slotN) {
+            let emuSt = val.emuState || val.stateData?.emuState;
+            if (emuSt && !(emuSt instanceof Uint8Array) && typeof emuSt === 'object') {
+              emuSt = new Uint8Array(Object.values(emuSt));
+            }
             setSavesByGameId((prev) => {
               const list = prev[gId] || createEmptySlotsForGame(gId);
               return {
@@ -1144,7 +1145,7 @@ export default function App() {
                           version: 'EJS_STATE',
                           gameId: gId,
                           timestamp: val.timestamp,
-                          emuState: val.emuState
+                          emuState: emuSt
                         }
                       }
                     : s
@@ -1154,10 +1155,11 @@ export default function App() {
           }
         }
       }
+    };
 
-      if (libraryChanged || stateKeys.length > 0) {
-        showToast('Synced new library games & saves from Google Drive!');
-      }
+    reconcileCloudDataFromIdb();
+    const unsubData = subscribeDataUpdated((keys) => {
+      reconcileCloudDataFromIdb(keys);
     });
 
     // Ensure any previously uploaded ROMs on this device are queued to sync to Drive
@@ -1266,6 +1268,7 @@ export default function App() {
         if (activeGame?.id && e.data?.save) {
           const srmArr = new Uint8Array(e.data.save);
           idbPut(`srm:${activeGame.id}`, srmArr).catch(() => {});
+          markLocalSaveModified(syncTargetStore, `srm:${activeGame.id}`);
         }
         return;
       }
@@ -1722,11 +1725,13 @@ export default function App() {
       const rtc = win.getRtcData?.();
       if (rtc && rtc.length > 0) {
         idbPut(`rtc:${activeGame.id}`, rtc).catch(() => {});
+        markLocalSaveModified(syncTargetStore, `rtc:${activeGame.id}`);
       }
       const st = win.getStateData?.();
       if (st && st.length > 0) {
         const stArr = st instanceof Uint8Array ? st : new Uint8Array(st);
         idbPut(`autosave:${activeGame.id}`, stArr).catch(() => {});
+        markLocalSaveModified(syncTargetStore, `autosave:${activeGame.id}`);
       }
     } catch (e) {}
   }, [activeGame?.id, activeGame?.real, currentView]);
@@ -3923,6 +3928,9 @@ export default function App() {
                     <button
                       onClick={async () => {
                         const ok = await executeFullSync(syncTargetStore, true);
+                        if (showCloudFiles) {
+                          getCloudFilesSummary(false).then(setCloudFiles);
+                        }
                         if (ok) showToast('Google Drive Cloud Sync Complete!');
                       }}
                       disabled={syncStatus.status === 'syncing'}
