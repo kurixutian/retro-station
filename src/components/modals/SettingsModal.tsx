@@ -1,7 +1,8 @@
 import React from 'react';
-import { Sliders, X, Tv, Palette, Check } from 'lucide-react';
+import { Sliders, X, Tv, Palette, Check, Vibrate } from 'lucide-react';
 import { THEMES } from '../../constants/themes';
 import { Theme } from '../../types';
+import { haptics } from '../../services/haptics';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -11,6 +12,8 @@ interface SettingsModalProps {
   applyTheme: (id: string) => void;
   shaders: Record<string, boolean>;
   toggleShader: (key: string) => void;
+  hapticsEnabled?: boolean;
+  setHapticsEnabled?: (val: boolean) => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -21,6 +24,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   applyTheme,
   shaders,
   toggleShader,
+  hapticsEnabled = true,
+  setHapticsEnabled,
 }) => {
   if (!isOpen) return null;
 
@@ -49,6 +54,41 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-6">
+          {/* Controls & Haptic Feedback Toggle Card */}
+          <div
+            onClick={() => {
+              const next = !hapticsEnabled;
+              setHapticsEnabled?.(next);
+              haptics.setEnabled(next);
+            }}
+            className={`p-4 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 ${
+              hapticsEnabled
+                ? 'bg-sky-500/15 border-sky-500/50 text-white'
+                : 'bg-zinc-900/70 border-zinc-800 text-zinc-300 hover:bg-zinc-900'
+            }`}
+          >
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <Vibrate className={`w-4 h-4 ${hapticsEnabled ? 'text-sky-400' : 'text-zinc-500'}`} />
+                <span className="text-sm font-extrabold text-white">Haptic Vibration</span>
+                <span className="px-2 py-0.5 rounded-md text-[9px] font-black tracking-wider uppercase bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                  Touchpad
+                </span>
+              </div>
+              <p className="text-xs text-zinc-400 leading-snug">
+                Crisp physical click vibrations on D-Pad and action buttons for authentic tactile controller response.
+              </p>
+            </div>
+
+            <div
+              className={`shrink-0 w-12 h-6 rounded-full transition-colors p-0.5 flex items-center ${
+                hapticsEnabled ? 'bg-sky-500 justify-end' : 'bg-zinc-800 border border-zinc-700 justify-start'
+              }`}
+            >
+              <div className="w-5 h-5 rounded-full bg-white shadow-md" />
+            </div>
+          </div>
+
           {/* AMOLED Battery Saver Dedicated Toggle Card */}
           <div
             onClick={() => toggleShader('amoled')}

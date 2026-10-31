@@ -7,6 +7,7 @@ import { THEMES } from './constants/themes';
 import { DEFAULT_PAD_LAYOUT, loadPadLayout, EMU_INPUT_MAP, PAD_KEYS } from './constants/controls';
 import { idbOpen, idbPut, idbGet, idbDelete } from './services/storage/idb';
 import { soundFX } from './services/audio/synth';
+import { haptics } from './services/haptics';
 import { createEmptySlotsForGame, createPrepopulatedThumbnail, downloadBinaryFile } from './services/storage/saveSlots';
 import { createInitialEngineState } from './demoEngines/engineState';
 import { stepGameFrame } from './demoEngines/gameLogic';
@@ -103,6 +104,8 @@ export default function App() {
       return defaultShaders;
     }
   });
+
+  const [hapticsEnabled, setHapticsEnabled] = useState(() => haptics.isEnabled());
 
   useEffect(() => {
     try { localStorage.setItem('retro_theme', themeId); } catch (e) {}
@@ -261,6 +264,11 @@ export default function App() {
     }
     pressStartTimesRef.current[name] = performance.now();
     keysRef.current[name] = true;
+    if (['up', 'down', 'left', 'right'].includes(name)) {
+      haptics.dpad();
+    } else {
+      haptics.tap();
+    }
     sendKey(name, true);
   }, [sendKey]);
 
@@ -1075,6 +1083,8 @@ export default function App() {
         applyTheme={applyTheme}
         shaders={shaders}
         toggleShader={toggleShader}
+        hapticsEnabled={hapticsEnabled}
+        setHapticsEnabled={setHapticsEnabled}
       />
     </div>
   );

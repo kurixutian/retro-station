@@ -22,6 +22,7 @@ import { Game, Theme, PadLayout, PadGroupId } from '../../types';
 import { coreRatio, formatGameTitle, EJS_CORES } from '../../constants/cores';
 import { DEFAULT_PAD_LAYOUT, PAD_LABELS } from '../../constants/controls';
 import { buildPlayerHtml } from '../../services/emulator/playerBridge';
+import { haptics } from '../../services/haptics';
 import { PadGroup } from '../controls/PadGroup';
 
 interface InGameViewProps {
@@ -480,6 +481,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 type="button"
                 onPointerDown={(e) => {
                   e.preventDefault();
+                  haptics.toggle();
                   setIsPaused((p) => {
                     const next = !p;
                     if (next) {
@@ -507,6 +509,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 type="button"
                 onPointerDown={(e) => {
                   e.preventDefault();
+                  haptics.toggle();
                   setIsRewinding(true);
                 }}
                 onPointerUp={() => setIsRewinding(false)}
@@ -529,6 +532,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 type="button"
                 onPointerDown={(e) => {
                   e.preventDefault();
+                  haptics.toggle();
                   setIsFastForward((f) => !f);
                 }}
                 className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl font-bold text-xs border transition active:scale-95 touch-none select-none ${
