@@ -24,17 +24,25 @@ export function stepGameFrame(
   // ======================================================================
   if (st.engineType === 'pokegold') {
     if (st.battle.active) {
-      if (st.battle.cooldown > 0) {
-        st.battle.cooldown -= 1;
-        return;
-      }
-      // Navigate 2x2 Battle Command Menu
+      // Menu navigation is immediately responsive at all times
       if (tap.right && st.battle.menuIndex % 2 === 0) st.battle.menuIndex += 1;
       if (tap.left && st.battle.menuIndex % 2 === 1) st.battle.menuIndex -= 1;
       if (tap.down && st.battle.menuIndex < 2) st.battle.menuIndex += 2;
       if (tap.up && st.battle.menuIndex >= 2) st.battle.menuIndex -= 2;
 
+      // Buffer Action A so taps during attack animation or turn transitions never get eaten
       if (tap.actionA) {
+        st.battle.bufferedA = true;
+      }
+
+      if (st.battle.cooldown > 0) {
+        st.battle.cooldown -= 1;
+        return;
+      }
+
+      const doActionA = tap.actionA || st.battle.bufferedA;
+      if (doActionA) {
+        st.battle.bufferedA = false;
         const cmd = st.battle.menuIndex;
         // 0: EMBER, 1: TACKLE, 2: POKéBALL, 3: RUN
         if (cmd === 0 || cmd === 1) {

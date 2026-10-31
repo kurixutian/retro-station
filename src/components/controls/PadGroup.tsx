@@ -27,12 +27,15 @@ export function PadGroup({
 
   return (
     <div
-      className="absolute"
+      className="absolute touch-none select-none"
       style={{
         left: `${g.x * 100}%`,
         top: `${g.y * 100}%`,
         transform: `translate(-50%, -50%) scale(${g.s})`,
-        zIndex: selected ? 30 : 10
+        zIndex: selected ? 30 : 10,
+        touchAction: 'none',
+        WebkitTouchCallout: 'none',
+        userSelect: 'none'
       }}
     >
       {children}

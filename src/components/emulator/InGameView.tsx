@@ -61,6 +61,8 @@ interface InGameViewProps {
   hidePad: boolean;
   setHidePad: (h: boolean) => void;
   bindPadButton: (name: string) => Record<string, any>;
+  setButtonDown?: (name: string) => void;
+  setButtonUp?: (name: string) => void;
   topBarTimer: React.MutableRefObject<any>;
 }
 
@@ -101,8 +103,57 @@ export const InGameView: React.FC<InGameViewProps> = ({
   hidePad,
   setHidePad,
   bindPadButton,
+  setButtonDown,
+  setButtonUp,
   topBarTimer,
 }) => {
+  const dpadContainerRef = React.useRef<HTMLDivElement | null>(null);
+  const activeDpadPointerId = React.useRef<number | null>(null);
+  const activeDpadDirs = React.useRef<Record<string, boolean>>({
+    up: false,
+    down: false,
+    left: false,
+    right: false,
+  });
+
+  const updateDpadByCoords = React.useCallback((clientX: number, clientY: number) => {
+    if (!dpadContainerRef.current || !setButtonDown || !setButtonUp) return;
+    const rect = dpadContainerRef.current.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const dx = clientX - cx;
+    const dy = clientY - cy;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    const deadzone = 12;
+    const nextDirs = {
+      up: dist > deadzone && dy < -8 && Math.abs(dy) > Math.abs(dx) * 0.45,
+      down: dist > deadzone && dy > 8 && Math.abs(dy) > Math.abs(dx) * 0.45,
+      left: dist > deadzone && dx < -8 && Math.abs(dx) > Math.abs(dy) * 0.45,
+      right: dist > deadzone && dx > 8 && Math.abs(dx) > Math.abs(dy) * 0.45,
+    };
+
+    (['up', 'down', 'left', 'right'] as const).forEach((dir) => {
+      if (nextDirs[dir] && !activeDpadDirs.current[dir]) {
+        activeDpadDirs.current[dir] = true;
+        setButtonDown(dir);
+      } else if (!nextDirs[dir] && activeDpadDirs.current[dir]) {
+        activeDpadDirs.current[dir] = false;
+        setButtonUp(dir);
+      }
+    });
+  }, [setButtonDown, setButtonUp]);
+
+  const releaseDpadAll = React.useCallback(() => {
+    activeDpadPointerId.current = null;
+    if (!setButtonUp) return;
+    (['up', 'down', 'left', 'right'] as const).forEach((dir) => {
+      if (activeDpadDirs.current[dir]) {
+        activeDpadDirs.current[dir] = false;
+        setButtonUp(dir);
+      }
+    });
+  }, [setButtonUp]);
   return (
     <div
       className={`fixed inset-0 w-full overflow-hidden ${shaders.amoled ? 'bg-black' : 'bg-zinc-950'}`}
@@ -405,8 +456,14 @@ export const InGameView: React.FC<InGameViewProps> = ({
           ref={deckRef}
           className={`relative flex-1 min-h-0 border-t ${
             shaders.amoled ? 'bg-black border-zinc-900' : theme.deckBg
-          } overflow-hidden`}
-          style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 14px)' }}
+          } overflow-hidden select-none touch-none`}
+          style={{
+            paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 14px)',
+            touchAction: 'none',
+            WebkitTouchCallout: 'none',
+            userSelect: 'none',
+          }}
+          onContextMenu={(e) => e.preventDefault()}
         >
           <PadGroup
             id="transport"
@@ -417,10 +474,12 @@ export const InGameView: React.FC<InGameViewProps> = ({
             onMove={movePad}
             deckRef={deckRef}
           >
-            <div className="grid grid-cols-3 gap-2 w-[300px]">
+            <div className="grid grid-cols-3 gap-2 w-[300px] select-none touch-none">
               {/* Pause Toggle */}
               <button
-                onClick={() => {
+                type="button"
+                onPointerDown={(e) => {
+                  e.preventDefault();
                   setIsPaused((p) => {
                     const next = !p;
                     if (next) {
@@ -431,7 +490,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                     return next;
                   });
                 }}
-                className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl font-bold text-xs border transition active:scale-95 ${
+                className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl font-bold text-xs border transition active:scale-95 touch-none select-none ${
                   isPaused
                     ? 'bg-amber-500 text-zinc-950 border-amber-300 shadow-lg'
                     : shaders.amoled
@@ -445,6 +504,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
 
               {/* Hold Rewind */}
               <button
+                type="button"
                 onPointerDown={(e) => {
                   e.preventDefault();
                   setIsRewinding(true);
@@ -452,7 +512,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 onPointerUp={() => setIsRewinding(false)}
                 onPointerLeave={() => setIsRewinding(false)}
                 onPointerCancel={() => setIsRewinding(false)}
-                className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl font-bold text-xs border transition active:scale-95 ${
+                className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl font-bold text-xs border transition active:scale-95 touch-none select-none ${
                   isRewinding
                     ? 'bg-amber-400 text-zinc-950 border-amber-200 shadow-lg'
                     : shaders.amoled
@@ -466,8 +526,12 @@ export const InGameView: React.FC<InGameViewProps> = ({
 
               {/* 2x Speed Turbo Toggle */}
               <button
-                onClick={() => setIsFastForward((f) => !f)}
-                className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl font-bold text-xs border transition active:scale-95 ${
+                type="button"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  setIsFastForward((f) => !f);
+                }}
+                className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl font-bold text-xs border transition active:scale-95 touch-none select-none ${
                   isFastForward
                     ? 'bg-sky-400 text-zinc-950 border-sky-200 shadow-lg'
                     : shaders.amoled
@@ -491,9 +555,33 @@ export const InGameView: React.FC<InGameViewProps> = ({
               onMove={movePad}
               deckRef={deckRef}
             >
-              <div className="relative w-32 h-32 select-none touch-none">
+              <div
+                ref={dpadContainerRef}
+                className="relative w-32 h-32 select-none touch-none"
+                style={{ touchAction: 'none', WebkitTouchCallout: 'none' }}
+                onPointerDown={(e) => {
+                  if (customizing) return;
+                  activeDpadPointerId.current = e.pointerId;
+                  try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch (err) {}
+                  updateDpadByCoords(e.clientX, e.clientY);
+                }}
+                onPointerMove={(e) => {
+                  if (customizing || activeDpadPointerId.current !== e.pointerId) return;
+                  updateDpadByCoords(e.clientX, e.clientY);
+                }}
+                onPointerUp={(e) => {
+                  if (customizing || activeDpadPointerId.current !== e.pointerId) return;
+                  try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch (err) {}
+                  releaseDpadAll();
+                }}
+                onPointerCancel={() => {
+                  if (customizing) return;
+                  releaseDpadAll();
+                }}
+              >
                 {/* Up */}
                 <button
+                  type="button"
                   {...bindPadButton('up')}
                   className={`absolute top-0 left-10 w-11 h-11 rounded-t-xl border flex items-center justify-center shadow-md touch-none select-none ${theme.dpadBg}`}
                   aria-label="Up"
@@ -502,6 +590,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 </button>
                 {/* Down */}
                 <button
+                  type="button"
                   {...bindPadButton('down')}
                   className={`absolute bottom-0 left-10 w-11 h-11 rounded-b-xl border flex items-center justify-center shadow-md touch-none select-none ${theme.dpadBg}`}
                   aria-label="Down"
@@ -510,6 +599,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 </button>
                 {/* Left */}
                 <button
+                  type="button"
                   {...bindPadButton('left')}
                   className={`absolute top-10 left-0 w-11 h-11 rounded-l-xl border flex items-center justify-center shadow-md touch-none select-none ${theme.dpadBg}`}
                   aria-label="Left"
@@ -518,6 +608,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 </button>
                 {/* Right */}
                 <button
+                  type="button"
                   {...bindPadButton('right')}
                   className={`absolute top-10 right-0 w-11 h-11 rounded-r-xl border flex items-center justify-center shadow-md touch-none select-none ${theme.dpadBg}`}
                   aria-label="Right"

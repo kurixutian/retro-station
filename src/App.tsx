@@ -211,7 +211,10 @@ export default function App() {
     try { return (emuFrameRef.current?.contentWindow as any)?.EJS_emulator || null; } catch (e) { return null; }
   };
 
-  const sendKey = (name: string, down: boolean) => {
+  const pressStartTimesRef = useRef<Record<string, number>>({});
+  const releaseTimersRef = useRef<Record<string, any>>({});
+
+  const sendKey = useCallback((name: string, down: boolean) => {
     if (down) hasUserInteractedRef.current = true;
     const win = emuFrameRef.current?.contentWindow as any;
     if (!win) return;
@@ -249,7 +252,35 @@ export default function App() {
         win.dispatchEvent(ev);
       } catch (e) {}
     }
-  };
+  }, []);
+
+  const setButtonDown = useCallback((name: string) => {
+    if (releaseTimersRef.current[name]) {
+      clearTimeout(releaseTimersRef.current[name]);
+      releaseTimersRef.current[name] = null;
+    }
+    pressStartTimesRef.current[name] = performance.now();
+    keysRef.current[name] = true;
+    sendKey(name, true);
+  }, [sendKey]);
+
+  const setButtonUp = useCallback((name: string) => {
+    const minHold = 75; // 75ms minimum hold ensures emulator core / Libretro VBlank polls the key press even at 2x speed
+    const elapsed = performance.now() - (pressStartTimesRef.current[name] || 0);
+
+    const performRelease = () => {
+      keysRef.current[name] = false;
+      sendKey(name, false);
+      releaseTimersRef.current[name] = null;
+    };
+
+    if (elapsed < minHold) {
+      if (releaseTimersRef.current[name]) clearTimeout(releaseTimersRef.current[name]);
+      releaseTimersRef.current[name] = setTimeout(performRelease, minHold - elapsed);
+    } else {
+      performRelease();
+    }
+  }, [sendKey]);
 
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
@@ -786,34 +817,32 @@ export default function App() {
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
         e.preventDefault();
       }
-      const k = keysRef.current;
-      if (e.code === 'ArrowUp' || e.code === 'KeyW') { k.up = true; sendKey('up', true); }
-      if (e.code === 'ArrowDown' || e.code === 'KeyS') { k.down = true; sendKey('down', true); }
-      if (e.code === 'ArrowLeft' || e.code === 'KeyA') { k.left = true; sendKey('left', true); }
-      if (e.code === 'ArrowRight' || e.code === 'KeyD') { k.right = true; sendKey('right', true); }
-      if (e.code === 'KeyX' || e.code === 'KeyL') { k.actionA = true; sendKey('actionA', true); }
-      if (e.code === 'KeyZ' || e.code === 'KeyK') { k.actionB = true; sendKey('actionB', true); }
-      if (e.code === 'KeyS') { k.actionX = true; sendKey('actionX', true); }
-      if (e.code === 'KeyA') { k.actionY = true; sendKey('actionY', true); }
-      if (e.code === 'Enter') { k.start = true; sendKey('start', true); }
-      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'Space') { k.select = true; sendKey('select', true); }
+      if (e.code === 'ArrowUp' || e.code === 'KeyW') setButtonDown('up');
+      if (e.code === 'ArrowDown' || e.code === 'KeyS') setButtonDown('down');
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') setButtonDown('left');
+      if (e.code === 'ArrowRight' || e.code === 'KeyD') setButtonDown('right');
+      if (e.code === 'KeyX' || e.code === 'KeyL') setButtonDown('actionA');
+      if (e.code === 'KeyZ' || e.code === 'KeyK') setButtonDown('actionB');
+      if (e.code === 'KeyS') setButtonDown('actionX');
+      if (e.code === 'KeyA') setButtonDown('actionY');
+      if (e.code === 'Enter') setButtonDown('start');
+      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'Space') setButtonDown('select');
       if (e.code === 'KeyP') setIsPaused((p) => !p);
       if (e.code === 'KeyR' || e.code === 'Backspace') setIsRewinding(true);
       if (e.code === 'KeyF') setIsFastForward((f) => !f);
     };
 
     const onKeyUp = (e: KeyboardEvent) => {
-      const k = keysRef.current;
-      if (e.code === 'ArrowUp' || e.code === 'KeyW') { k.up = false; sendKey('up', false); }
-      if (e.code === 'ArrowDown' || e.code === 'KeyS') { k.down = false; sendKey('down', false); }
-      if (e.code === 'ArrowLeft' || e.code === 'KeyA') { k.left = false; sendKey('left', false); }
-      if (e.code === 'ArrowRight' || e.code === 'KeyD') { k.right = false; sendKey('right', false); }
-      if (e.code === 'KeyX' || e.code === 'KeyL') { k.actionA = false; sendKey('actionA', false); }
-      if (e.code === 'KeyZ' || e.code === 'KeyK') { k.actionB = false; sendKey('actionB', false); }
-      if (e.code === 'KeyS') { k.actionX = false; sendKey('actionX', false); }
-      if (e.code === 'KeyA') { k.actionY = false; sendKey('actionY', false); }
-      if (e.code === 'Enter') { k.start = false; sendKey('start', false); }
-      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'Space') { k.select = false; sendKey('select', false); }
+      if (e.code === 'ArrowUp' || e.code === 'KeyW') setButtonUp('up');
+      if (e.code === 'ArrowDown' || e.code === 'KeyS') setButtonUp('down');
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') setButtonUp('left');
+      if (e.code === 'ArrowRight' || e.code === 'KeyD') setButtonUp('right');
+      if (e.code === 'KeyX' || e.code === 'KeyL') setButtonUp('actionA');
+      if (e.code === 'KeyZ' || e.code === 'KeyK') setButtonUp('actionB');
+      if (e.code === 'KeyS') setButtonUp('actionX');
+      if (e.code === 'KeyA') setButtonUp('actionY');
+      if (e.code === 'Enter') setButtonUp('start');
+      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'Space') setButtonUp('select');
       if (e.code === 'KeyR' || e.code === 'Backspace') setIsRewinding(false);
     };
 
@@ -823,7 +852,7 @@ export default function App() {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [currentView]);
+  }, [currentView, setButtonDown, setButtonUp]);
 
   // 60 FPS Emulation Engine & Canvas Renderer Loop
   useEffect(() => {
@@ -911,34 +940,29 @@ export default function App() {
     });
   }, [games, systemFilter, searchQuery]);
 
-  const bindPadButton = (keyName: string) => ({
-    onPointerDown: (e: React.PointerEvent) => {
+  const bindPadButton = useCallback((keyName: string) => {
+    const handleDown = (e: React.SyntheticEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch (err) {}
-      keysRef.current[keyName] = true;
-      sendKey(keyName, true);
-    },
-    onPointerUp: (e: React.PointerEvent) => {
+      setButtonDown(keyName);
+    };
+
+    const handleUp = (e: React.SyntheticEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch (err) {}
-      keysRef.current[keyName] = false;
-      sendKey(keyName, false);
-    },
-    onPointerLeave: (e: React.PointerEvent) => {
-      if (keysRef.current[keyName]) {
-        try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch (err) {}
-        keysRef.current[keyName] = false;
-        sendKey(keyName, false);
-      }
-    },
-    onPointerCancel: (e: React.PointerEvent) => {
-      try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch (err) {}
-      if (keysRef.current[keyName]) sendKey(keyName, false);
-      keysRef.current[keyName] = false;
-    }
-  });
+      setButtonUp(keyName);
+    };
+
+    return {
+      onPointerDown: handleDown,
+      onPointerUp: handleUp,
+      onPointerCancel: handleUp,
+      onTouchStart: handleDown,
+      onTouchEnd: handleUp,
+      onTouchCancel: handleUp,
+      onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
+    };
+  }, [setButtonDown, setButtonUp]);
 
   return (
     <div className={`min-h-screen w-full ${shaders.amoled ? 'bg-black text-zinc-100' : theme.appBg} font-sans select-none overflow-x-hidden`}>
@@ -1017,6 +1041,8 @@ export default function App() {
           hidePad={hidePad}
           setHidePad={setHidePad}
           bindPadButton={bindPadButton}
+          setButtonDown={setButtonDown}
+          setButtonUp={setButtonUp}
           topBarTimer={topBarTimer}
         />
       )}

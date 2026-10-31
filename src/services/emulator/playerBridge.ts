@@ -26,11 +26,56 @@ export function buildPlayerHtml(core: string, romUrl: string, title?: string): s
     'window.EJS_fixedSaveInterval=10000;' +
     'window.EJS_VirtualGamepadSettings=[];' +
     'window.EJS_defaultOptions={"virtual-gamepad":"disabled","settings.virtual-gamepad":"disabled","settings.fast-forward-ratio":"2","fast-forward-ratio":"2"};' +
+    'var _simPressTimes={};' +
+    'var _simReleaseTimers={};' +
+    'var _dispatchKb=function(kName,down){' +
+    '  var keyMap={' +
+    '    up:["ArrowUp",38],down:["ArrowDown",40],left:["ArrowLeft",37],right:["ArrowRight",39],' +
+    '    actiona:["x",88],a:["x",88],actionb:["z",90],b:["z",90],' +
+    '    actionx:["s",83],x:["s",83],actiony:["a",65],y:["a",65],' +
+    '    start:["Enter",13],select:["ShiftRight",16],' +
+    '    btnl:["q",81],l:["q",81],btnr:["w",87],r:["w",87]' +
+    '  };' +
+    '  var k=keyMap[kName];' +
+    '  if(k){' +
+    '    try{' +
+    '      var ev=new KeyboardEvent(down?"keydown":"keyup",{' +
+    '        key:k[0],code:k[0],bubbles:true,cancelable:true' +
+    '      });' +
+    '      Object.defineProperty(ev,"keyCode",{get:function(){return k[1];}});' +
+    '      Object.defineProperty(ev,"which",{get:function(){return k[1];}});' +
+    '      var target=document.getElementById("game")||document.querySelector("canvas")||window;' +
+    '      target.dispatchEvent(ev);' +
+    '      window.dispatchEvent(ev);' +
+    '    }catch(e){}' +
+    '  }' +
+    '};' +
     'window.simulateButton=function(name,down){' +
+    '  var key=String(name).toLowerCase();' +
     '  var map={actionb:0,b:0,actiony:1,y:1,select:2,start:3,up:4,down:5,left:6,right:7,actiona:8,a:8,actionx:9,x:9,btnl:10,l:10,btnr:11,r:11};' +
-    '  var idx=map[String(name).toLowerCase()];' +
-    '  if(idx!==undefined&&window.EJS_emulator&&window.EJS_emulator.gameManager){' +
-    '    try{window.EJS_emulator.gameManager.simulateInput(0,idx,down?1:0);}catch(e){}' +
+    '  var idx=map[key];' +
+    '  var sendDirect=function(val){' +
+    '    if(idx!==undefined&&window.EJS_emulator&&window.EJS_emulator.gameManager){' +
+    '      try{window.EJS_emulator.gameManager.simulateInput(0,idx,val?1:0);}catch(e){}' +
+    '    }' +
+    '    _dispatchKb(key,val);' +
+    '  };' +
+    '  if(down){' +
+    '    if(_simReleaseTimers[key]){clearTimeout(_simReleaseTimers[key]);_simReleaseTimers[key]=null;}' +
+    '    _simPressTimes[key]=Date.now();' +
+    '    sendDirect(true);' +
+    '  }else{' +
+    '    var minHold=75;' +
+    '    var elapsed=Date.now()-(_simPressTimes[key]||0);' +
+    '    if(elapsed<minHold){' +
+    '      if(_simReleaseTimers[key])clearTimeout(_simReleaseTimers[key]);' +
+    '      _simReleaseTimers[key]=setTimeout(function(){' +
+    '        _simReleaseTimers[key]=null;' +
+    '        sendDirect(false);' +
+    '      },minHold-elapsed);' +
+    '    }else{' +
+    '      sendDirect(false);' +
+    '    }' +
     '  }' +
     '};' +
     'window.setFastForward=function(active){' +
