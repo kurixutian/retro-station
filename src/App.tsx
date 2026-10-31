@@ -63,6 +63,7 @@ import {
   markLocalSaveModified,
   initGlobalSyncListeners,
   listCloudConflictBackups,
+  getCloudFilesSummary,
   deleteAllCloudSaves,
   subscribeDataUpdated,
   SyncTargetStore
@@ -1001,6 +1002,8 @@ export default function App() {
   const [cachedUser, setCachedUser] = useState<GoogleUserProfile | null>(() => getCachedUserProfile());
   const [conflictBackups, setConflictBackups] = useState<ConflictBackupItem[]>([]);
   const [showConflictsList, setShowConflictsList] = useState(false);
+  const [cloudFiles, setCloudFiles] = useState<{ name: string; size: string; modifiedTime: string }[]>([]);
+  const [showCloudFiles, setShowCloudFiles] = useState(false);
 
   // Theme & Combinable Shader Pipeline State (Auto-saved to localStorage)
   const [themeId, setThemeId] = useState(() => {
@@ -3976,8 +3979,47 @@ export default function App() {
               {/* Conflict Backups & Data Management */}
               {cachedUser && (
                 <div className="space-y-2.5 pt-2 border-t border-zinc-900">
+                  {/* Google Drive Storage Inspector */}
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-extrabold uppercase tracking-wider text-zinc-400">Cloud Data Management</span>
+                    <span className="text-xs font-extrabold uppercase tracking-wider text-zinc-400">Google Drive AppData Storage</span>
+                    <button
+                      onClick={async () => {
+                        const files = await getCloudFilesSummary();
+                        setCloudFiles(files);
+                        setShowCloudFiles((s) => !s);
+                      }}
+                      className="text-xs text-sky-400 hover:text-sky-300 font-bold cursor-pointer"
+                    >
+                      {showCloudFiles ? 'Hide Files' : 'View Stored Files'}
+                    </button>
+                  </div>
+
+                  {showCloudFiles && (
+                    <div className="p-3 rounded-xl bg-zinc-900/80 border border-zinc-800 space-y-2">
+                      <div className="text-[11px] font-bold text-zinc-300 flex items-center justify-between">
+                        <span>Files stored in your Google Drive:</span>
+                        <span className="text-[10px] text-zinc-500 font-mono">{cloudFiles.length} files</span>
+                      </div>
+                      {cloudFiles.length === 0 ? (
+                        <div className="text-[10px] text-zinc-500 py-2 text-center">No files in Google Drive yet. Tap "Sync Now" above to upload!</div>
+                      ) : (
+                        <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                          {cloudFiles.map((file, i) => (
+                            <div key={i} className="flex items-center justify-between p-2 rounded-lg bg-black/40 text-[10px] border border-white/5">
+                              <div>
+                                <div className="font-bold text-zinc-200">{file.name}</div>
+                                <div className="text-zinc-500">Modified: {file.modifiedTime}</div>
+                              </div>
+                              <span className="font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">{file.size}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-xs font-extrabold uppercase tracking-wider text-zinc-400">Conflict Safety Copies</span>
                     <button
                       onClick={async () => {
                         const list = await listCloudConflictBackups();
@@ -3986,7 +4028,7 @@ export default function App() {
                       }}
                       className="text-xs text-sky-400 hover:text-sky-300 font-bold cursor-pointer"
                     >
-                      {showConflictsList ? 'Hide Backups' : 'View Conflict Backups'}
+                      {showConflictsList ? 'Hide Backups' : 'View Backups'}
                     </button>
                   </div>
 

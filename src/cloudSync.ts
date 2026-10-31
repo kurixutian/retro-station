@@ -394,6 +394,29 @@ export async function listAllAppDataFiles(token: string): Promise<DriveFileSumma
   }
 }
 
+// User-facing summary of all files stored in player's Google Drive
+export async function getCloudFilesSummary(): Promise<{ name: string; size: string; modifiedTime: string }[]> {
+  const token = await ensureToken(false);
+  if (!token) return [];
+  const files = await listAllAppDataFiles(token);
+  return files
+    .filter((f) => !f.name.includes('.conflict.bak'))
+    .map((f) => {
+      let friendlyName = f.name;
+      if (f.name === 'retro_library_games.json') friendlyName = 'Game Library (Metadata)';
+      else if (f.name.startsWith('retro_rom__')) friendlyName = `ROM Binary (${f.name.replace('retro_rom__', '').replace('.bin', '')})`;
+      else if (f.name.startsWith('retro_state__')) friendlyName = `Save State (${f.name.replace('retro_state__', '').replace('.json', '').replace(/__/g, ' • ')})`;
+      else if (f.name.startsWith('retro_srm__')) friendlyName = `Cartridge Save (.sav/.srm) (${f.name.replace('retro_srm__', '').replace('.json', '')})`;
+
+      const sizeKb = f.size ? (Number(f.size) / 1024).toFixed(1) : '1.0';
+      return {
+        name: friendlyName,
+        size: `${sizeKb} KB`,
+        modifiedTime: new Date(f.modifiedTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+    });
+}
+
 // Key to Google Drive Filename Converter
 export function keyToFilename(key: string): string {
   if (key === 'library_games') return 'retro_library_games.json';
