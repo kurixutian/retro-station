@@ -816,8 +816,14 @@ function buildPlayerHtml(core, romUrl, title) {
     '  }catch(e){return null;}' +
     '};' +
     'var _lastSrmHash=0;' +
+    'window._userInteracted=false;' +
+    'var _markInteracted=function(){if(!window._userInteracted){window._userInteracted=true;parent.postMessage({type:"ejs-user-input"},"*");}};' +
+    'window.addEventListener("keydown",_markInteracted,true);' +
+    'window.addEventListener("pointerdown",_markInteracted,true);' +
+    'window.addEventListener("touchstart",_markInteracted,true);' +
     'setInterval(function(){' +
     '  try{' +
+    '    if(!window._userInteracted)return;' +
     '    var srm=window.getSrmData&&window.getSrmData();' +
     '    if(!srm||!srm.length)return;' +
     '    var h=0,nonEmpty=false;' +
@@ -834,7 +840,7 @@ function buildPlayerHtml(core, romUrl, title) {
     '},3000);' +
     'window.EJS_onSaveUpdate=function(e){' +
     '  try{' +
-    '    if(e&&e.save){' +
+    '    if(window._userInteracted&&e&&e.save){' +
     '      parent.postMessage({type:"ejs-srm-update",save:Array.from(e.save instanceof Uint8Array?e.save:new Uint8Array(e.save))},"*");' +
     '    }' +
     '  }catch(e){}' +
@@ -1117,12 +1123,20 @@ export default function App() {
 
     // Reconcile any downloaded games, save states, and SRAM from IndexedDB into React state
     const reconcileCloudDataFromIdb = async (keys?: string[]) => {
+      let allKnownGames: any[] = [];
       try {
         const cloudGames = await idbGet('library_games');
         if (Array.isArray(cloudGames) && cloudGames.length > 0) {
+          allKnownGames = cloudGames;
           setGames((prev) => {
             const currentIds = new Set(prev.map((g) => g.id));
-            const missing = cloudGames.filter((g) => g && g.id && !currentIds.has(g.id));
+            const currentCrcs = new Set(prev.map((g) => g.crc32 ? String(g.crc32).toLowerCase() : '').filter(Boolean));
+            const missing = cloudGames.filter((g) => {
+              if (!g || !g.id || currentIds.has(g.id)) return false;
+              const c = g.crc32 ? String(g.crc32).toLowerCase() : '';
+              if (c && currentCrcs.has(c)) return false;
+              return true;
+            });
             if (missing.length === 0) return prev;
             const merged = [...missing, ...prev];
             try { localStorage.setItem('retro_games', JSON.stringify(merged)); } catch (e) {}
@@ -1131,9 +1145,56 @@ export default function App() {
         }
       } catch (e) {}
 
+      const allIdbKeys = await idbGetAllKeys().catch(() => []);
+      const targetKeys = keys && keys.length > 0 ? keys : allIdbKeys;
+
+      // Cross-link saves if the same ROM was imported with different timestamps on Phone vs Laptop (matching CRC32 or fileName)
+      try {
+        let localGamesList: any[] = [];
+        try {
+          localGamesList = JSON.parse(localStorage.getItem('retro_games') || '[]');
+        } catch (e) {}
+        const combinedGames = [...allKnownGames, ...localGamesList];
+        const byCrc = new Map<string, string[]>();
+        for (const g of combinedGames) {
+          if (!g || !g.id) continue;
+          const matchKey = (g.crc32 ? String(g.crc32).toLowerCase() : '') || (g.fileName ? String(g.fileName).toLowerCase() : '');
+          if (!matchKey) continue;
+          const list = byCrc.get(matchKey) || [];
+          if (!list.includes(g.id)) list.push(g.id);
+          byCrc.set(matchKey, list);
+        }
+        for (const idGroup of byCrc.values()) {
+          if (idGroup.length < 2) continue;
+          for (const srcId of idGroup) {
+            for (const dstId of idGroup) {
+              if (srcId === dstId) continue;
+              for (const prefix of ['srm:', 'rtc:', 'autosave:']) {
+                const srcVal = await idbGet(`${prefix}${srcId}`).catch(() => null);
+                const dstVal = await idbGet(`${prefix}${dstId}`).catch(() => null);
+                if (srcVal && !dstVal) {
+                  await idbPut(`${prefix}${dstId}`, srcVal).catch(() => {});
+                }
+              }
+              for (let sl = 1; sl <= 4; sl++) {
+                const srcSt = await idbGet(`state:${srcId}:${sl}`).catch(() => null);
+                const dstSt = await idbGet(`state:${dstId}:${sl}`).catch(() => null);
+                if (srcSt && !dstSt) {
+                  const cloned = { ...srcSt, stateData: srcSt.stateData ? { ...srcSt.stateData, gameId: dstId } : undefined };
+                  await idbPut(`state:${dstId}:${sl}`, cloned).catch(() => {});
+                  if (!targetKeys.includes(`state:${dstId}:${sl}`)) targetKeys.push(`state:${dstId}:${sl}`);
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {}
+
       // Refresh any incoming save states
-      const targetKeys = keys || (await idbGetAllKeys().catch(() => []));
-      const stateKeys = targetKeys.filter((k) => k.startsWith('state:'));
+      const stateKeys = Array.from(new Set([
+        ...targetKeys.filter((k) => k.startsWith('state:')),
+        ...allIdbKeys.filter((k) => k.startsWith('state:')),
+      ]));
       if (stateKeys.length > 0) {
         for (const k of stateKeys) {
           const parts = k.split(':');
@@ -1179,17 +1240,14 @@ export default function App() {
       reconcileCloudDataFromIdb(keys);
     });
 
-    // Ensure any previously uploaded ROMs on this device are queued to sync to Drive
+    // Seed library_games in IndexedDB only if not yet stored (do NOT mark modified on mount, to avoid clobbering cloud)
     const userImported = games.filter((g) => g.real && g.id !== 'pokemon_gold');
     if (userImported.length > 0) {
-      idbPut('library_games', userImported).then(() => {
-        markLocalSaveModified(syncTargetStore, 'library_games');
-        userImported.forEach((g) => {
-          idbGet(g.id).then((blob) => {
-            if (blob) markLocalSaveModified(syncTargetStore, `rom:${g.id}`);
-          });
-        });
-      });
+      idbGet('library_games').then((existing) => {
+        if (!Array.isArray(existing) || existing.length === 0) {
+          idbPut('library_games', userImported).catch(() => {});
+        }
+      }).catch(() => {});
     }
 
     return () => {
@@ -1198,6 +1256,41 @@ export default function App() {
       unsubData();
     };
   }, []);
+
+  // Apply downloaded SRM / autosave into running emulator if user hasn't interacted yet
+  useEffect(() => {
+    if (currentView !== 'ingame' || !activeGame?.id || !activeGame?.real) return;
+    const unsubLive = subscribeDataUpdated(async (keys) => {
+      if (hasUserInteractedRef.current) return;
+      const gId = activeGame.id;
+      const hasSrm = keys.includes(`srm:${gId}`) || keys.some((k) => k.startsWith('srm:'));
+      const hasAuto = keys.includes(`autosave:${gId}`) || keys.some((k) => k.startsWith('autosave:'));
+      if (!hasSrm && !hasAuto) return;
+      const [srm, rtc, autoSt] = await Promise.all([
+        idbGet(`srm:${gId}`).catch(() => null),
+        idbGet(`rtc:${gId}`).catch(() => null),
+        idbGet(`autosave:${gId}`).catch(() => null),
+      ]);
+      const win = emuFrameRef.current?.contentWindow;
+      if (srm) {
+        const normSrm = normalizeBinaryData(srm);
+        const normRtc = normalizeBinaryData(rtc);
+        pendingSrmRef.current = normSrm;
+        pendingRtcRef.current = normRtc;
+        try { win?.loadSrmData?.(normSrm, normRtc); } catch (e) {}
+      }
+      if (autoSt) {
+        const normAuto = normalizeBinaryData(autoSt);
+        pendingStateRef.current = normAuto;
+        setTimeout(() => {
+          if (!hasUserInteractedRef.current && normAuto) {
+            try { win?.loadStateData?.(normAuto); } catch (e) {}
+          }
+        }, 500);
+      }
+    });
+    return () => unsubLive();
+  }, [currentView, activeGame?.id, activeGame?.real]);
 
   // In-Game Emulation Runtime State
   const [isPaused, setIsPaused] = useState(false);
@@ -1282,8 +1375,12 @@ export default function App() {
   };
   useEffect(() => {
     const onMsg = (e) => {
+      if (e.data?.type === 'ejs-user-input') {
+        hasUserInteractedRef.current = true;
+        return;
+      }
       if (e.data?.type === 'ejs-srm-update') {
-        if (activeGame?.id && e.data?.save) {
+        if (hasUserInteractedRef.current && activeGame?.id && e.data?.save) {
           const srmArr = normalizeBinaryData(e.data.save);
           if (srmArr) {
             idbPut(`srm:${activeGame.id}`, srmArr).then(() => {
@@ -1483,8 +1580,13 @@ export default function App() {
       .replace(/\.[^/.]+$/, '')
       .replace(/[_-]+/g, ' ');
 
+    const existingByCrc = games.find(
+      (g) => g.real && g.crc32 && String(g.crc32).toLowerCase() === String(crcHex).toLowerCase()
+    );
+    const deterministicId = existingByCrc?.id || (crcHex && crcHex !== '00000000' ? `rom_${String(crcHex).toLowerCase()}` : `rom_${Date.now()}`);
+
     const newGame = {
-      id: `rom_${Date.now()}`,
+      id: deterministicId,
       title: cleanTitle,
       subtitle: detected.system,
       fileName: file.name,
@@ -1735,8 +1837,16 @@ export default function App() {
   // ============================================================================
   const flushLiveProgress = useCallback(async () => {
     if (currentView !== 'ingame' || !activeGame?.id || !activeGame?.real) return;
+    if (!hasUserInteractedRef.current) return;
     const win = emuFrameRef.current?.contentWindow;
     if (!win) return;
+    const areBytesEqual = (a: Uint8Array | null, b: Uint8Array | null) => {
+      if (!a || !b || a.length !== b.length) return false;
+      for (let i = 0; i < a.length; i++) {
+        if (a[i] !== b[i]) return false;
+      }
+      return true;
+    };
     try {
       const srm = normalizeBinaryData(win.getSrmData?.());
       if (srm && srm.length > 0) {
@@ -1745,19 +1855,25 @@ export default function App() {
           if (srm[i] !== 0 && srm[i] !== 255) { nonEmpty = true; break; }
         }
         if (nonEmpty) {
-          await idbPut(`srm:${activeGame.id}`, srm).catch(() => {});
-          await markLocalSaveModified(syncTargetStore, `srm:${activeGame.id}`);
+          const prevSrm = normalizeBinaryData(await idbGet(`srm:${activeGame.id}`).catch(() => null));
+          if (!areBytesEqual(srm, prevSrm)) {
+            await idbPut(`srm:${activeGame.id}`, srm).catch(() => {});
+            await markLocalSaveModified(syncTargetStore, `srm:${activeGame.id}`);
+          }
         }
       }
       const rtc = normalizeBinaryData(win.getRtcData?.());
       if (rtc && rtc.length > 0) {
-        await idbPut(`rtc:${activeGame.id}`, rtc).catch(() => {});
-        await markLocalSaveModified(syncTargetStore, `rtc:${activeGame.id}`);
+        const prevRtc = normalizeBinaryData(await idbGet(`rtc:${activeGame.id}`).catch(() => null));
+        if (!areBytesEqual(rtc, prevRtc)) {
+          await idbPut(`rtc:${activeGame.id}`, rtc).catch(() => {});
+          await markLocalSaveModified(syncTargetStore, `rtc:${activeGame.id}`);
+        }
       }
-      // Only overwrite autosave if the user has actively played in this session (prevents title-screen clobbering)
-      if (hasUserInteractedRef.current) {
-        const stArr = normalizeBinaryData(win.getStateData?.());
-        if (stArr && stArr.length > 0) {
+      const stArr = normalizeBinaryData(win.getStateData?.());
+      if (stArr && stArr.length > 0) {
+        const prevAuto = normalizeBinaryData(await idbGet(`autosave:${activeGame.id}`).catch(() => null));
+        if (!areBytesEqual(stArr, prevAuto)) {
           await idbPut(`autosave:${activeGame.id}`, stArr).catch(() => {});
           await markLocalSaveModified(syncTargetStore, `autosave:${activeGame.id}`);
         }
@@ -1767,11 +1883,20 @@ export default function App() {
 
   const flushAllBeforeManualSync = useCallback(async () => {
     await flushLiveProgress();
-    // Also ensure any in-memory Save State Slots are persisted to IndexedDB with clean Uint8Array buffers
+    // Ensure any user-created in-memory Save State Slots are persisted to IndexedDB without clobbering cloud saves
     for (const [gId, slots] of Object.entries(savesByGameId)) {
       if (!Array.isArray(slots)) continue;
       for (const sl of slots) {
         if (sl && !sl.empty && sl.stateData) {
+          // Skip default pre-populated demo slots for pokemon_gold so they never overwrite real cloud saves
+          if (
+            gId === 'pokemon_gold' &&
+            sl.stateData.version === 'RETRO_POCKET_V2' &&
+            ((sl.slot === 1 && sl.score === 650 && sl.frame === 1420) ||
+              (sl.slot === 2 && sl.score === 1280 && sl.frame === 2890))
+          ) {
+            continue;
+          }
           const key = `state:${gId}:${sl.slot}`;
           const existing = await idbGet(key).catch(() => null);
           if (!existing) {
@@ -1784,7 +1909,6 @@ export default function App() {
               emuState: emuSt,
               stateData: sl.stateData
             }).catch(() => {});
-            await markLocalSaveModified(syncTargetStore, key);
           }
         }
       }
@@ -4041,7 +4165,7 @@ export default function App() {
                       const ok = await signInWithGoogle();
                       if (ok) {
                         showToast('Connected to Google Drive!');
-                        await executeFullSync(syncTargetStore, true);
+                        await executeFullSync(syncTargetStore, false);
                       }
                     }}
                     className="w-full py-3 px-4 rounded-2xl bg-white hover:bg-zinc-100 text-zinc-950 font-black text-sm flex items-center justify-center gap-2.5 shadow-xl transition active:scale-95 cursor-pointer"

@@ -91,11 +91,31 @@ function setStoredToken(token: string | null, expiresAt = 0) {
   } catch (e) {}
 }
 
-let inMemoryAccessToken: string | null = null;
-let tokenExpiresAt = 0; // Timestamp (ms)
+const initialStoredToken = getStoredToken();
+let inMemoryAccessToken: string | null = initialStoredToken?.token || null;
+let tokenExpiresAt = initialStoredToken?.expiresAt || 0; // Timestamp (ms)
 let tokenClient: any = null;
-let currentStatus: CloudSyncStatus = 'unlinked';
-let statusDetails = '';
+
+function getInitialSyncStatus(): { status: CloudSyncStatus; details: string } {
+  try {
+    const hasUser = !!localStorage.getItem(USER_PROFILE_STORAGE_KEY);
+    if (!hasUser) return { status: 'unlinked', details: '' };
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      return { status: 'offline', details: 'Offline (changes stored locally)' };
+    }
+    const lastSync = localStorage.getItem(LAST_SYNC_TIME_KEY);
+    if (initialStoredToken) {
+      return { status: 'idle', details: lastSync ? `Synced (${lastSync})` : 'Connected' };
+    }
+    return { status: 'idle', details: lastSync ? `Synced (${lastSync})` : 'Connected' };
+  } catch (e) {
+    return { status: 'unlinked', details: '' };
+  }
+}
+
+const initStatusObj = getInitialSyncStatus();
+let currentStatus: CloudSyncStatus = initStatusObj.status;
+let statusDetails = initStatusObj.details;
 const statusListeners = new Set<(status: CloudSyncStatus, details: string) => void>();
 
 export function getSyncStatus(): { status: CloudSyncStatus; details: string; lastSyncTime: string | null } {
@@ -257,14 +277,19 @@ async function fetchUserProfile(token: string): Promise<GoogleUserProfile | null
 
 // Ensure Valid Access Token before any sync batch
 // Follows rule: prompt: 'none' for silent renewal; handles needs_reauth
+let pendingTokenPromise: Promise<string | null> | null = null;
+
 export async function ensureToken(interactive = false): Promise<string | null> {
   if (!navigator.onLine) {
     setStatus('offline', 'Offline (changes stored locally)');
     return null;
   }
 
-  // If token is in memory and valid for at least another 5 minutes, reuse it
-  if (inMemoryAccessToken && Date.now() < tokenExpiresAt - 5 * 60 * 1000) {
+  // If token is in memory and valid for at least another 2 minutes, reuse it
+  if (inMemoryAccessToken && Date.now() < tokenExpiresAt - 2 * 60 * 1000) {
+    if (currentStatus === 'unlinked' || currentStatus === 'needs_reauth') {
+      setStatus('idle', 'Connected');
+    }
     return inMemoryAccessToken;
   }
 
@@ -273,7 +298,25 @@ export async function ensureToken(interactive = false): Promise<string | null> {
   if (stored) {
     inMemoryAccessToken = stored.token;
     tokenExpiresAt = stored.expiresAt;
+    if (currentStatus === 'unlinked' || currentStatus === 'needs_reauth') {
+      setStatus('idle', 'Connected');
+    }
     return stored.token;
+  }
+
+  // Never open an unsolicited Google OAuth popup during background checks!
+  // GIS tokenClient.requestAccessToken always triggers a browser popup window.
+  if (!interactive) {
+    if (getCachedUserProfile()) {
+      setStatus('needs_reauth', 'Session expired. Tap Sync Now or Reconnect.');
+    } else {
+      setStatus('unlinked', 'Sign in to sync with Google Drive');
+    }
+    return null;
+  }
+
+  if (pendingTokenPromise) {
+    return pendingTokenPromise;
   }
 
   // Need token client
@@ -283,7 +326,21 @@ export async function ensureToken(interactive = false): Promise<string | null> {
 
   if (!tokenClient) return null;
 
-  return new Promise((resolve) => {
+  pendingTokenPromise = new Promise((resolve) => {
+    let settled = false;
+    const finish = (val: string | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      pendingTokenPromise = null;
+      resolve(val);
+    };
+
+    const timer = setTimeout(() => {
+      setStatus('needs_reauth', 'Sign-in timed out. Tap Reconnect to try again.');
+      finish(null);
+    }, 60000);
+
     // Override callback for this specific token request
     tokenClient.callback = (resp: any) => {
       if (resp.error) {
@@ -292,7 +349,7 @@ export async function ensureToken(interactive = false): Promise<string | null> {
         } else {
           setStatus('error', resp.error_description || resp.error);
         }
-        resolve(null);
+        finish(null);
         return;
       }
 
@@ -303,26 +360,33 @@ export async function ensureToken(interactive = false): Promise<string | null> {
         setStoredToken(resp.access_token, tokenExpiresAt);
         fetchUserProfile(resp.access_token).catch(() => {});
         setStatus('idle', 'Connected');
-        resolve(resp.access_token);
+        finish(resp.access_token);
       } else {
-        resolve(null);
+        finish(null);
       }
     };
 
+    tokenClient.error_callback = (err: any) => {
+      console.warn('[CloudSync] OAuth popup closed or blocked:', err);
+      setStatus('needs_reauth', 'Sign-in cancelled or popup blocked.');
+      finish(null);
+    };
+
     try {
-      if (interactive) {
-        // User explicitly clicked "Sign In" / "Reconnect"
-        tokenClient.requestAccessToken({ prompt: '' });
-      } else {
-        // Background sync: attempt prompt: 'none' (silent renewal)
-        tokenClient.requestAccessToken({ prompt: 'none' });
+      const cachedProfile = getCachedUserProfile();
+      const reqConfig: any = { prompt: '' };
+      if (cachedProfile?.email) {
+        reqConfig.hint = cachedProfile.email;
       }
+      tokenClient.requestAccessToken(reqConfig);
     } catch (err: any) {
-      console.warn('[CloudSync] Silent token request failed:', err);
+      console.warn('[CloudSync] Token request failed:', err);
       setStatus('needs_reauth', 'Sign-in required');
-      resolve(null);
+      finish(null);
     }
   });
+
+  return pendingTokenPromise;
 }
 
 // User-Facing Sign-In Action
@@ -854,7 +918,7 @@ async function syncSingleItem(
 
   if (!meta) {
     meta = {
-      localUpdatedAt: localVal ? Date.now() : 0,
+      localUpdatedAt: 0,
       pendingUpload: false,
     };
   }
@@ -867,6 +931,50 @@ async function syncSingleItem(
 
   // If item doesn't exist locally and doesn't exist on remote, nothing to sync
   if (!localVal && !remoteFile) return { success: true, downloaded: false };
+
+  // Special additive merge for library_games so devices never clobber each other's game list
+  if (itemKey === 'library_games' && localVal && remoteFile) {
+    const remoteGames = await downloadFromAppData(token, remoteFile.id, cloudFilename);
+    if (Array.isArray(remoteGames)) {
+      const localGames = Array.isArray(localVal) ? localVal : [];
+      const mergedMap = new Map<string, any>();
+      const seenCrc = new Set<string>();
+
+      // Prefer remote entries first so existing cloud game IDs (which match cloud saves) take priority
+      for (const g of remoteGames) {
+        if (!g || !g.id) continue;
+        mergedMap.set(g.id, g);
+        if (g.crc32) seenCrc.add(String(g.crc32).toLowerCase());
+      }
+      let addedLocal = false;
+      for (const g of localGames) {
+        if (!g || !g.id) continue;
+        const crc = g.crc32 ? String(g.crc32).toLowerCase() : '';
+        if (!mergedMap.has(g.id) && (!crc || !seenCrc.has(crc))) {
+          mergedMap.set(g.id, g);
+          if (crc) seenCrc.add(crc);
+          addedLocal = true;
+        }
+      }
+
+      const merged = Array.from(mergedMap.values());
+      await store.setItem('library_games', merged);
+      let serverModTime = remoteFile.modifiedTime;
+      if (addedLocal) {
+        const upRes = await uploadToAppData(token, cloudFilename, merged, remoteFile.id);
+        if (upRes?.modifiedTime) serverModTime = upRes.modifiedTime;
+      }
+      const now = Date.now();
+      await setCloudMeta(store, itemKey, {
+        fileId: remoteFile.id,
+        lastSyncedServerModifiedTime: serverModTime,
+        lastSyncedLocalUpdatedAt: now,
+        localUpdatedAt: now,
+        pendingUpload: false,
+      });
+      return { success: true, downloaded: true };
+    }
+  }
 
   // Case A: Exists only locally -> Upload
   if (localVal && !remoteFile) {
@@ -1005,10 +1113,10 @@ export async function executeFullSync(store: SyncTargetStore, interactive = fals
     return false;
   }
 
-  return (await withSyncLock(async () => {
-    const token = await ensureToken(interactive);
-    if (!token) return false;
+  const token = await ensureToken(interactive);
+  if (!token) return false;
 
+  return (await withSyncLock(async () => {
     setStatus('syncing', 'Syncing with Google Drive...');
 
     try {
@@ -1024,11 +1132,15 @@ export async function executeFullSync(store: SyncTargetStore, interactive = fals
       const allLocalKeys = await store.getAllKeys();
       const localSyncKeys = allLocalKeys.filter((k) => isSyncableKey(k));
 
-      // 3. Union of all keys present locally OR on Google Drive
-      const allKeysToSync = new Set([
-        ...localSyncKeys,
+      // 3. Union of all keys present locally OR on Google Drive (sync library_games first)
+      const rawKeys = new Set([
         ...remoteFilesMap.keys(),
+        ...localSyncKeys,
       ]);
+      const allKeysToSync = [
+        ...(rawKeys.has('library_games') ? ['library_games'] : []),
+        ...Array.from(rawKeys).filter((k) => k !== 'library_games'),
+      ];
 
       const downloadedKeys: string[] = [];
       let syncErrorCount = 0;
@@ -1050,13 +1162,17 @@ export async function executeFullSync(store: SyncTargetStore, interactive = fals
       // Always notify UI with all known sync keys so items downloaded in any prior run are reconciled into React state
       notifyDataUpdated(Array.from(new Set([...downloadedKeys, ...allKeysToSync])));
 
+      const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      try { localStorage.setItem(LAST_SYNC_TIME_KEY, nowStr); } catch (e) {}
+
       if (syncErrorCount > 0) {
         console.warn(`[CloudSync] Sync batch finished with ${syncErrorCount} failed item(s).`);
+        if (currentStatus === 'syncing') {
+          setStatus('idle', `Synced (${nowStr})`);
+        }
         return false;
       }
 
-      const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      try { localStorage.setItem(LAST_SYNC_TIME_KEY, nowStr); } catch (e) {}
       setStatus('idle', `Synced (${nowStr})`);
       return true;
     } catch (err: any) {
@@ -1096,7 +1212,7 @@ export function initGlobalSyncListeners(store: SyncTargetStore): () => void {
   if (getCachedUserProfile() && navigator.onLine) {
     setTimeout(() => {
       executeFullSync(store, false).catch(() => {});
-    }, 1500);
+    }, 150);
   } else if (!navigator.onLine) {
     setStatus('offline', 'Offline (changes stored locally)');
   }
