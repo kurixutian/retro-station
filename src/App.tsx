@@ -3842,6 +3842,10 @@ export default function App() {
 
                   <button
                     onClick={async () => {
+                      if (!getGoogleClientId()) {
+                        showToast('Enter your Google OAuth Client ID below to enable Google Sign-In');
+                        return;
+                      }
                       const ok = await signInWithGoogle();
                       if (ok) {
                         showToast('Connected to Google Drive!');
