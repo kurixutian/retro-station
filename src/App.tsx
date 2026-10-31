@@ -66,6 +66,7 @@ import {
   getCloudFilesSummary,
   deleteAllCloudSaves,
   subscribeDataUpdated,
+  normalizeBinaryData,
   SyncTargetStore
 } from './cloudSync';
 
@@ -696,15 +697,25 @@ function buildPlayerHtml(core, romUrl, title) {
     '    }' +
     '  }catch(e){}' +
     '};' +
+    'window._toU8=function(b){' +
+    '  if(!b)return null;' +
+    '  if(b instanceof Uint8Array)return b;' +
+    '  if(ArrayBuffer.isView(b))return new Uint8Array(b.buffer,b.byteOffset,b.byteLength);' +
+    '  if(b instanceof ArrayBuffer)return new Uint8Array(b);' +
+    '  if(Array.isArray(b))return new Uint8Array(b);' +
+    '  if(typeof b==="object"){var v=Object.values(b);if(v.length>0)return new Uint8Array(v);}' +
+    '  return null;' +
+    '};' +
     'window.loadSrmData=function(srmBytes,rtcBytes){' +
     '  try{' +
     '    if(!window.EJS_emulator||!window.EJS_emulator.gameManager)return false;' +
     '    var gm=window.EJS_emulator.gameManager;' +
     '    var mod=gm.Module||window.EJS_emulator.Module;' +
     '    var fs=gm.FS||(mod&&mod.FS);' +
-    '    var srmArr=srmBytes?(srmBytes instanceof Uint8Array?srmBytes:new Uint8Array(srmBytes)):null;' +
-    '    var rtcArr=rtcBytes?(rtcBytes instanceof Uint8Array?rtcBytes:new Uint8Array(rtcBytes)):null;' +
-    '    if(fs){' +
+    '    var srmArr=window._toU8(srmBytes);' +
+    '    var rtcArr=window._toU8(rtcBytes);' +
+    '    var writeFiles=function(){' +
+    '      if(!fs)return;' +
     '      try{fs.mkdir("/data");}catch(e){}' +
     '      try{fs.mkdir("/data/saves");}catch(e){}' +
     '      var paths=[];' +
@@ -725,8 +736,9 @@ function buildPlayerHtml(core, romUrl, title) {
     '        if(srmArr){try{fs.writeFile(p,srmArr);}catch(e){}}' +
     '        if(rtcArr){var r=p.replace(/\\.[^/.]+$/,".rtc");try{fs.writeFile(r,rtcArr);}catch(e){}}' +
     '      });' +
-    '    }' +
+    '    };' +
     '    var applyWasmMemory=function(){' +
+    '      writeFiles();' +
     '      if(typeof gm.loadSaveFiles==="function"){try{gm.loadSaveFiles();}catch(e){}}' +
     '      if(mod&&mod.HEAPU8){' +
     '        var getMemData=mod._retro_get_memory_data||(gm.functions&&gm.functions.getMemoryData);' +
@@ -744,11 +756,11 @@ function buildPlayerHtml(core, romUrl, title) {
     '      }' +
     '    };' +
     '    applyWasmMemory();' +
-    '    if(typeof gm.saveSaveFiles==="function"){try{gm.saveSaveFiles();}catch(e){}}' +
     '    if(fs&&typeof fs.syncfs==="function"){try{fs.syncfs(false,function(){});}catch(e){}}' +
     '    if(typeof gm.restart==="function"){try{gm.restart();}catch(e){}}' +
     '    else if(mod&&typeof mod._retro_reset==="function"){try{mod._retro_reset();}catch(e){}}' +
     '    setTimeout(applyWasmMemory,120);' +
+    '    setTimeout(applyWasmMemory,400);' +
     '    return true;' +
     '  }catch(e){console.error("loadSrmData err",e);return false;}' +
     '};' +
@@ -768,11 +780,11 @@ function buildPlayerHtml(core, romUrl, title) {
     '    }' +
     '    if(typeof gm.getSaveFile==="function"){' +
     '      var sf=gm.getSaveFile(false);' +
-    '      if(sf&&sf.length>0)return new Uint8Array(sf);' +
+    '      if(sf&&sf.length>0)return new Uint8Array(sf).slice();' +
     '    }' +
     '    var fs=gm.FS||(mod&&mod.FS);' +
     '    var p=typeof gm.getSaveFilePath==="function"?gm.getSaveFilePath():("/data/saves/"+window.EJS_gameName+".srm");' +
-    '    if(fs&&fs.readFile){return fs.readFile(p);}' +
+    '    if(fs&&fs.readFile){var rf=fs.readFile(p);return rf?new Uint8Array(rf).slice():null;}' +
     '  }catch(e){}' +
     '  return null;' +
     '};' +
@@ -783,14 +795,15 @@ function buildPlayerHtml(core, romUrl, title) {
     '    var fs=gm.FS||(window.EJS_emulator.Module&&window.EJS_emulator.Module.FS);' +
     '    var p=typeof gm.getSaveFilePath==="function"?gm.getSaveFilePath():("/data/saves/"+window.EJS_gameName+".srm");' +
     '    var r=p.replace(/\\.[^/.]+$/,".rtc");' +
-    '    if(fs&&fs.readFile){return fs.readFile(r);}' +
+    '    if(fs&&fs.readFile){var rf=fs.readFile(r);return rf?new Uint8Array(rf).slice():null;}' +
     '  }catch(e){}' +
     '  return null;' +
     '};' +
     'window.loadStateData=function(bytes){' +
     '  try{' +
     '    if(!window.EJS_emulator||!window.EJS_emulator.gameManager)return false;' +
-    '    var arr=bytes instanceof Uint8Array?bytes:new Uint8Array(bytes);' +
+    '    var arr=window._toU8(bytes);' +
+    '    if(!arr||!arr.length)return false;' +
     '    window.EJS_emulator.gameManager.loadState(arr);' +
     '    return true;' +
     '  }catch(e){console.error("loadStateData err",e);return false;}' +
@@ -798,7 +811,8 @@ function buildPlayerHtml(core, romUrl, title) {
     'window.getStateData=function(){' +
     '  try{' +
     '    if(!window.EJS_emulator||!window.EJS_emulator.gameManager)return null;' +
-    '    return window.EJS_emulator.gameManager.getState();' +
+    '    var st=window.EJS_emulator.gameManager.getState();' +
+    '    return st?new Uint8Array(st).slice():null;' +
     '  }catch(e){return null;}' +
     '};' +
     'var _lastSrmHash=0;' +
@@ -971,6 +985,7 @@ export default function App() {
   const pendingStateRef = useRef(null);
   const pendingSrmRef = useRef(null);
   const pendingRtcRef = useRef(null);
+  const hasUserInteractedRef = useRef(false);
   const [romUrl, setRomUrl] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [systemFilter, setSystemFilter] = useState('ALL');
@@ -1055,6 +1070,7 @@ export default function App() {
               const slotN = parseInt(parts[2], 10);
               const val = cursor.value;
               if (val && gId && slotN) {
+                const emuSt = normalizeBinaryData(val.emuState || val.emuStateBase64 || val.stateData?.emuState || val.stateData?.emuStateBase64);
                 setSavesByGameId((prev) => {
                   const list = prev[gId] || createEmptySlotsForGame(gId);
                   return {
@@ -1069,12 +1085,14 @@ export default function App() {
                             score: 0,
                             frame: 0,
                             screenshot: val.screenshot || null,
-                            stateData: {
-                              version: 'EJS_STATE',
-                              gameId: gId,
-                              timestamp: val.timestamp,
-                              emuState: val.emuState
-                            }
+                            stateData: val.stateData
+                              ? { ...val.stateData, emuState: emuSt || val.stateData.emuState }
+                              : {
+                                  version: 'EJS_STATE',
+                                  gameId: gId,
+                                  timestamp: val.timestamp,
+                                  emuState: emuSt
+                                }
                           }
                         : s
                     )
@@ -1123,10 +1141,7 @@ export default function App() {
           const slotN = parseInt(parts[2], 10);
           const val = await idbGet(k);
           if (val && gId && slotN) {
-            let emuSt = val.emuState || val.stateData?.emuState;
-            if (emuSt && !(emuSt instanceof Uint8Array) && typeof emuSt === 'object') {
-              emuSt = new Uint8Array(Object.values(emuSt));
-            }
+            const emuSt = normalizeBinaryData(val.emuState || val.emuStateBase64 || val.stateData?.emuState || val.stateData?.emuStateBase64);
             setSavesByGameId((prev) => {
               const list = prev[gId] || createEmptySlotsForGame(gId);
               return {
@@ -1141,12 +1156,14 @@ export default function App() {
                         score: 0,
                         frame: 0,
                         screenshot: val.screenshot || null,
-                        stateData: val.stateData || {
-                          version: 'EJS_STATE',
-                          gameId: gId,
-                          timestamp: val.timestamp,
-                          emuState: emuSt
-                        }
+                        stateData: val.stateData
+                          ? { ...val.stateData, emuState: emuSt || val.stateData.emuState }
+                          : {
+                              version: 'EJS_STATE',
+                              gameId: gId,
+                              timestamp: val.timestamp,
+                              emuState: emuSt
+                            }
                       }
                     : s
                 )
@@ -1223,6 +1240,7 @@ export default function App() {
     try { return emuFrameRef.current?.contentWindow?.EJS_emulator || null; } catch (e) { return null; }
   };
   const sendKey = (name, down) => {
+    if (down) hasUserInteractedRef.current = true;
     const win = emuFrameRef.current?.contentWindow;
     if (!win) return;
 
@@ -1266,9 +1284,12 @@ export default function App() {
     const onMsg = (e) => {
       if (e.data?.type === 'ejs-srm-update') {
         if (activeGame?.id && e.data?.save) {
-          const srmArr = new Uint8Array(e.data.save);
-          idbPut(`srm:${activeGame.id}`, srmArr).catch(() => {});
-          markLocalSaveModified(syncTargetStore, `srm:${activeGame.id}`);
+          const srmArr = normalizeBinaryData(e.data.save);
+          if (srmArr) {
+            idbPut(`srm:${activeGame.id}`, srmArr).then(() => {
+              markLocalSaveModified(syncTargetStore, `srm:${activeGame.id}`);
+            }).catch(() => {});
+          }
         }
         return;
       }
@@ -1278,8 +1299,8 @@ export default function App() {
 
       // 1. Inject any pending battery save (.srm) or RTC (.rtc)
       if (pendingSrmRef.current || pendingRtcRef.current) {
-        const srm = pendingSrmRef.current;
-        const rtc = pendingRtcRef.current;
+        const srm = normalizeBinaryData(pendingSrmRef.current);
+        const rtc = normalizeBinaryData(pendingRtcRef.current);
         pendingSrmRef.current = null;
         pendingRtcRef.current = null;
         try {
@@ -1295,10 +1316,8 @@ export default function App() {
         pendingStateRef.current = null;
         setTimeout(() => {
           try {
-            let stateToLoad = st;
-            if (stateToLoad && !(stateToLoad instanceof Uint8Array)) {
-              stateToLoad = new Uint8Array(Object.values(stateToLoad));
-            }
+            const stateToLoad = normalizeBinaryData(st);
+            if (!stateToLoad) return;
             if (win?.loadStateData) {
               win.loadStateData(stateToLoad);
             } else {
@@ -1525,7 +1544,8 @@ export default function App() {
       showToast(`Launching ${game.title} [${game.core}]`);
     }
     setRomUrl(null);
-    pendingStateRef.current = optionalStateData?.emuState || null;
+    hasUserInteractedRef.current = false;
+    pendingStateRef.current = normalizeBinaryData(optionalStateData?.emuState) || null;
     pendingSrmRef.current = null;
     pendingRtcRef.current = null;
     if (game.real) {
@@ -1535,9 +1555,9 @@ export default function App() {
         idbGet(`rtc:${game.id}`).catch(() => null),
         optionalStateData?.emuState ? Promise.resolve(null) : idbGet(`autosave:${game.id}`).catch(() => null)
       ]).then(([blob, srm, rtc, autoSt]) => {
-        if (srm) pendingSrmRef.current = srm;
-        if (rtc) pendingRtcRef.current = rtc;
-        if (!pendingStateRef.current && autoSt) pendingStateRef.current = autoSt;
+        if (srm) pendingSrmRef.current = normalizeBinaryData(srm);
+        if (rtc) pendingRtcRef.current = normalizeBinaryData(rtc);
+        if (!pendingStateRef.current && autoSt) pendingStateRef.current = normalizeBinaryData(autoSt);
         if (blob) setRomUrl(URL.createObjectURL(blob));
         else showToast('ROM data missing - please re-upload this game');
       });
@@ -1558,9 +1578,11 @@ export default function App() {
   // ============================================================================
   const saveStateToGameSlot = useCallback((game, slotNumber) => {
     if (game.real) {
+      const win = emuFrameRef.current?.contentWindow;
       const emu = getEmu();
-      let emuState = null;
-      try { emuState = emu?.gameManager.getState(); } catch (e) {}
+      let rawState = null;
+      try { rawState = win?.getStateData?.() || emu?.gameManager.getState(); } catch (e) {}
+      const emuState = normalizeBinaryData(rawState);
       if (!emuState) { showToast('Emulator not ready yet'); return; }
       let shot = null;
       try {
@@ -1585,8 +1607,9 @@ export default function App() {
         timestamp: timeStr0,
         screenshot: shot,
         emuState
+      }).then(() => {
+        markLocalSaveModified(syncTargetStore, `state:${game.id}:${slotNumber}`);
       }).catch(console.error);
-      markLocalSaveModified(syncTargetStore, `state:${game.id}:${slotNumber}`);
       soundFX.save();
       showToast(`Saved ${game.title} → Slot #${slotNumber}`);
       return;
@@ -1661,11 +1684,15 @@ export default function App() {
     }
     if (game.real) {
       try {
-        let stateToLoad = targetSlot.stateData.emuState;
-        if (stateToLoad && !(stateToLoad instanceof Uint8Array)) {
-          stateToLoad = new Uint8Array(Object.values(stateToLoad));
+        const stateToLoad = normalizeBinaryData(targetSlot.stateData.emuState);
+        const win = emuFrameRef.current?.contentWindow;
+        if (stateToLoad) {
+          if (win?.loadStateData) {
+            win.loadStateData(stateToLoad);
+          } else {
+            getEmu()?.gameManager.loadState(stateToLoad);
+          }
         }
-        getEmu()?.gameManager.loadState(stateToLoad);
       } catch (e) {
         console.error(e);
       }
@@ -1706,35 +1733,63 @@ export default function App() {
   // ============================================================================
   // AUTOMATIC OFFLINE PROGRESS PERSISTENCE & BATTERY SAVE (.SAV / .SRM) EXPORT
   // ============================================================================
-  const flushLiveProgress = useCallback(() => {
+  const flushLiveProgress = useCallback(async () => {
     if (currentView !== 'ingame' || !activeGame?.id || !activeGame?.real) return;
     const win = emuFrameRef.current?.contentWindow;
     if (!win) return;
     try {
-      const srm = win.getSrmData?.();
+      const srm = normalizeBinaryData(win.getSrmData?.());
       if (srm && srm.length > 0) {
         let nonEmpty = false;
         for (let i = 0; i < srm.length; i += 4) {
           if (srm[i] !== 0 && srm[i] !== 255) { nonEmpty = true; break; }
         }
         if (nonEmpty) {
-          idbPut(`srm:${activeGame.id}`, srm).catch(() => {});
-          markLocalSaveModified(syncTargetStore, `srm:${activeGame.id}`);
+          await idbPut(`srm:${activeGame.id}`, srm).catch(() => {});
+          await markLocalSaveModified(syncTargetStore, `srm:${activeGame.id}`);
         }
       }
-      const rtc = win.getRtcData?.();
+      const rtc = normalizeBinaryData(win.getRtcData?.());
       if (rtc && rtc.length > 0) {
-        idbPut(`rtc:${activeGame.id}`, rtc).catch(() => {});
-        markLocalSaveModified(syncTargetStore, `rtc:${activeGame.id}`);
+        await idbPut(`rtc:${activeGame.id}`, rtc).catch(() => {});
+        await markLocalSaveModified(syncTargetStore, `rtc:${activeGame.id}`);
       }
-      const st = win.getStateData?.();
-      if (st && st.length > 0) {
-        const stArr = st instanceof Uint8Array ? st : new Uint8Array(st);
-        idbPut(`autosave:${activeGame.id}`, stArr).catch(() => {});
-        markLocalSaveModified(syncTargetStore, `autosave:${activeGame.id}`);
+      // Only overwrite autosave if the user has actively played in this session (prevents title-screen clobbering)
+      if (hasUserInteractedRef.current) {
+        const stArr = normalizeBinaryData(win.getStateData?.());
+        if (stArr && stArr.length > 0) {
+          await idbPut(`autosave:${activeGame.id}`, stArr).catch(() => {});
+          await markLocalSaveModified(syncTargetStore, `autosave:${activeGame.id}`);
+        }
       }
     } catch (e) {}
   }, [activeGame?.id, activeGame?.real, currentView]);
+
+  const flushAllBeforeManualSync = useCallback(async () => {
+    await flushLiveProgress();
+    // Also ensure any in-memory Save State Slots are persisted to IndexedDB with clean Uint8Array buffers
+    for (const [gId, slots] of Object.entries(savesByGameId)) {
+      if (!Array.isArray(slots)) continue;
+      for (const sl of slots) {
+        if (sl && !sl.empty && sl.stateData) {
+          const key = `state:${gId}:${sl.slot}`;
+          const existing = await idbGet(key).catch(() => null);
+          if (!existing) {
+            const emuSt = normalizeBinaryData(sl.stateData.emuState);
+            await idbPut(key, {
+              slot: sl.slot,
+              label: sl.label,
+              timestamp: sl.timestamp,
+              screenshot: sl.screenshot,
+              emuState: emuSt,
+              stateData: sl.stateData
+            }).catch(() => {});
+            await markLocalSaveModified(syncTargetStore, key);
+          }
+        }
+      }
+    }
+  }, [flushLiveProgress, savesByGameId]);
 
   useEffect(() => {
     if (currentView !== 'ingame' || !activeGame?.id || !activeGame?.real) return;
@@ -3075,6 +3130,7 @@ export default function App() {
                     {cachedUser && (
                       <button
                         onClick={async () => {
+                          await flushAllBeforeManualSync();
                           const ok = await executeFullSync(syncTargetStore, true);
                           if (ok) showToast('Cloud Sync Complete!');
                         }}
@@ -3927,6 +3983,7 @@ export default function App() {
                   <div className="flex items-center gap-2 pt-1">
                     <button
                       onClick={async () => {
+                        await flushAllBeforeManualSync();
                         const ok = await executeFullSync(syncTargetStore, true);
                         if (showCloudFiles) {
                           getCloudFilesSummary(false).then(setCloudFiles);

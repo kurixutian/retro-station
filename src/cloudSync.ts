@@ -525,6 +525,76 @@ export function isSyncableKey(key: string): boolean {
   );
 }
 
+// Convert any cross-realm TypedArray, ArrayBuffer, Base64 string, or JSON-serialized {"0":...} object into a clean standalone Uint8Array
+export function normalizeBinaryData(val: any): Uint8Array | null {
+  if (!val) return null;
+  let bytes: Uint8Array | null = null;
+
+  if (val instanceof Uint8Array) {
+    bytes = new Uint8Array(val.length);
+    bytes.set(val);
+  } else if (ArrayBuffer.isView(val)) {
+    const view = new Uint8Array(val.buffer, val.byteOffset, val.byteLength);
+    bytes = new Uint8Array(view.length);
+    bytes.set(view);
+  } else if (val instanceof ArrayBuffer) {
+    bytes = new Uint8Array(val.byteLength);
+    bytes.set(new Uint8Array(val));
+  } else if (Array.isArray(val)) {
+    bytes = new Uint8Array(val);
+  } else if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        return normalizeBinaryData(parsed);
+      } catch (e) {}
+    }
+    try {
+      const bin = atob(trimmed);
+      bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    } catch (e) {
+      return null;
+    }
+  } else if (typeof val === 'object') {
+    const vals = Object.values(val);
+    if (vals.length > 0 && typeof vals[0] === 'number') {
+      bytes = new Uint8Array(vals as number[]);
+    }
+  }
+
+  // Repair case where a JSON-stringified Uint8Array ('{"0":...}' or '[...]') was wrapped raw into a Uint8Array
+  if (bytes && bytes.length > 4) {
+    if (
+      (bytes[0] === 0x7b && bytes[1] === 0x22 && bytes[2] === 0x30 && bytes[3] === 0x22 && bytes[4] === 0x3a) ||
+      (bytes[0] === 0x5b && bytes[bytes.length - 1] === 0x5d)
+    ) {
+      try {
+        const text = new TextDecoder().decode(bytes);
+        const parsed = JSON.parse(text);
+        if (parsed && typeof parsed === 'object') {
+          const vals = Array.isArray(parsed) ? parsed : Object.values(parsed);
+          if (vals.length > 0 && typeof vals[0] === 'number') {
+            return new Uint8Array(vals as number[]);
+          }
+        }
+      } catch (e) {}
+    }
+  }
+
+  return bytes && bytes.length > 0 ? bytes : null;
+}
+
+function uint8ToBase64(bytes: Uint8Array): string {
+  const chunkSize = 0x8000;
+  const chunks: string[] = [];
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    chunks.push(String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize))));
+  }
+  return btoa(chunks.join(''));
+}
+
 // Multipart Upload (Atomic Create / Update for both JSON and binary Blobs)
 async function uploadToAppData(
   token: string,
@@ -539,19 +609,43 @@ async function uploadToAppData(
 
   let bodyBlob: Blob;
 
+  const isBinarySaveFilename =
+    filename.startsWith('retro_srm__') ||
+    filename.startsWith('retro_rtc__') ||
+    filename.startsWith('retro_autosave__');
+
   if (payload instanceof Blob) {
     const isJson = filename.endsWith('.json');
     const mime = isJson ? 'application/json' : 'application/octet-stream';
     const header = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: ${mime}\r\n\r\n`;
     const footer = `\r\n--${boundary}--`;
     bodyBlob = new Blob([header, payload, footer], { type: `multipart/related; boundary=${boundary}` });
-  } else if (payload instanceof Uint8Array || payload instanceof ArrayBuffer) {
-    const raw = payload instanceof Uint8Array ? payload : new Uint8Array(payload);
+  } else if (isBinarySaveFilename || payload instanceof Uint8Array || payload instanceof ArrayBuffer || ArrayBuffer.isView(payload)) {
+    const raw = normalizeBinaryData(payload) || (payload instanceof Uint8Array ? payload : new Uint8Array(payload));
     const header = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: application/octet-stream\r\n\r\n`;
     const footer = `\r\n--${boundary}--`;
     bodyBlob = new Blob([header, raw, footer], { type: `multipart/related; boundary=${boundary}` });
   } else {
-    const content = typeof payload === 'string' ? payload : JSON.stringify(payload);
+    let serializable = payload;
+    // Compactly encode Uint8Array emuState inside save state slots as Base64 instead of multi-megabyte {"0":...} objects
+    if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+      serializable = { ...payload };
+      if (serializable.emuState) {
+        const bin = normalizeBinaryData(serializable.emuState);
+        if (bin) {
+          serializable.emuStateBase64 = uint8ToBase64(bin);
+          delete serializable.emuState;
+        }
+      }
+      if (serializable.stateData?.emuState) {
+        const bin2 = normalizeBinaryData(serializable.stateData.emuState);
+        if (bin2) {
+          serializable.stateData = { ...serializable.stateData, emuStateBase64: uint8ToBase64(bin2) };
+          delete serializable.stateData.emuState;
+        }
+      }
+    }
+    const content = typeof serializable === 'string' ? serializable : JSON.stringify(serializable);
     const fullText =
       `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${content}\r\n--${boundary}--`;
     bodyBlob = new Blob([fullText], { type: `multipart/related; boundary=${boundary}` });
@@ -609,30 +703,36 @@ async function downloadFromAppData(token: string, fileId: string, filename = '')
     // 2. Read raw ArrayBuffer once so body stream is never read twice
     const buf = await res.arrayBuffer();
 
-    // 3. Binary emulator saves (.srm, .rtc, autosave) -> Uint8Array
+    // 3. Binary emulator saves (.srm, .rtc, autosave) -> Uint8Array (repairs legacy JSON-encoded saves too)
     if (
       filename.startsWith('retro_srm__') ||
       filename.startsWith('retro_rtc__') ||
       filename.startsWith('retro_autosave__')
     ) {
-      return new Uint8Array(buf);
+      return normalizeBinaryData(buf) || new Uint8Array(buf);
     }
 
     // 4. JSON files (library_games, save states)
     const text = new TextDecoder().decode(buf);
     try {
       const parsed = JSON.parse(text);
-      // Reconstruct Uint8Array if emuState was serialized into a plain object or array
-      if (parsed && typeof parsed === 'object' && parsed.emuState && !(parsed.emuState instanceof Uint8Array)) {
-        if (Array.isArray(parsed.emuState)) {
-          parsed.emuState = new Uint8Array(parsed.emuState);
-        } else if (typeof parsed.emuState === 'object') {
-          parsed.emuState = new Uint8Array(Object.values(parsed.emuState));
+      if (parsed && typeof parsed === 'object') {
+        if (parsed.emuStateBase64) {
+          parsed.emuState = normalizeBinaryData(parsed.emuStateBase64);
+          delete parsed.emuStateBase64;
+        } else if (parsed.emuState && !(parsed.emuState instanceof Uint8Array)) {
+          parsed.emuState = normalizeBinaryData(parsed.emuState);
+        }
+        if (parsed.stateData?.emuStateBase64) {
+          parsed.stateData.emuState = normalizeBinaryData(parsed.stateData.emuStateBase64);
+          delete parsed.stateData.emuStateBase64;
+        } else if (parsed.stateData?.emuState && !(parsed.stateData.emuState instanceof Uint8Array)) {
+          parsed.stateData.emuState = normalizeBinaryData(parsed.stateData.emuState);
         }
       }
       return parsed;
     } catch (e) {
-      return new Uint8Array(buf);
+      return normalizeBinaryData(buf) || new Uint8Array(buf);
     }
   } catch (err) {
     console.error('[CloudSync] downloadFromAppData error:', filename, err);
@@ -724,14 +824,38 @@ async function syncSingleItem(
   itemKey: string,
   prefetchedRemoteFile?: DriveFileSummary | null
 ): Promise<{ success: boolean; downloaded: boolean }> {
-  const localVal = await store.getItem(itemKey);
+  let localVal = await store.getItem(itemKey);
   let meta = await getCloudMeta(store, itemKey);
   const cloudFilename = keyToFilename(itemKey);
+
+  // Repair any previously stored non-Uint8Array or JSON-wrapped binary saves in local IndexedDB
+  if (localVal && (itemKey.startsWith('srm:') || itemKey.startsWith('rtc:') || itemKey.startsWith('autosave:'))) {
+    const isJsonWrapped =
+      !(localVal instanceof Uint8Array) ||
+      (localVal.length > 4 && localVal[0] === 0x7b && localVal[1] === 0x22 && localVal[2] === 0x30);
+    if (isJsonWrapped) {
+      const fixed = normalizeBinaryData(localVal);
+      if (fixed) {
+        localVal = fixed;
+        await store.setItem(itemKey, fixed);
+      }
+    }
+  } else if (localVal && itemKey.startsWith('state:') && typeof localVal === 'object') {
+    const rawSt = localVal.emuState || localVal.emuStateBase64;
+    if (rawSt && !(rawSt instanceof Uint8Array)) {
+      const fixedSt = normalizeBinaryData(rawSt);
+      if (fixedSt) {
+        localVal = { ...localVal, emuState: fixedSt };
+        delete localVal.emuStateBase64;
+        await store.setItem(itemKey, localVal);
+      }
+    }
+  }
 
   if (!meta) {
     meta = {
       localUpdatedAt: localVal ? Date.now() : 0,
-      pendingUpload: !!localVal,
+      pendingUpload: false,
     };
   }
 
@@ -831,15 +955,31 @@ async function syncSingleItem(
     const deviceId = getOrCreateDeviceId();
     const isoTimestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const conflictFilename = `${itemKey}.${deviceId}.${isoTimestamp}.conflict.bak`;
-
-    // Download remote save and store as conflict backup locally and in Drive
     const remoteData = await downloadFromAppData(token, remoteFile.id, cloudFilename);
+
+    // If this device never synced this key before or remote is newer, let remote win active slot and backup local
+    if (!meta.lastSyncedServerModifiedTime || currentServerTime >= meta.localUpdatedAt) {
+      await store.setItem(`conflict:${conflictFilename}`, localVal);
+      await uploadToAppData(token, conflictFilename, localVal);
+      if (remoteData) {
+        await store.setItem(itemKey, remoteData);
+        await setCloudMeta(store, itemKey, {
+          fileId: remoteFile.id,
+          lastSyncedServerModifiedTime: remoteFile.modifiedTime,
+          lastSyncedLocalUpdatedAt: Date.now(),
+          localUpdatedAt: Date.now(),
+          pendingUpload: false,
+        });
+      }
+      return { success: true, downloaded: true };
+    }
+
+    // Otherwise local is explicitly newer: backup remote save and push local save
     if (remoteData) {
       await store.setItem(`conflict:${conflictFilename}`, remoteData);
       await uploadToAppData(token, conflictFilename, remoteData);
     }
 
-    // Now push current local save to current slot
     const uploadRes = await uploadToAppData(token, cloudFilename, localVal, remoteFile.id);
     if (uploadRes) {
       await setCloudMeta(store, itemKey, {
@@ -850,7 +990,7 @@ async function syncSingleItem(
         pendingUpload: false,
       });
     }
-    return { success: true, downloaded: true };
+    return { success: true, downloaded: false };
   }
 
   return { success: true, downloaded: false };
