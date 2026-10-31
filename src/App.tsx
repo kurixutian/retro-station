@@ -48,6 +48,7 @@ import {
   LogOut,
   AlertCircle
 } from 'lucide-react';
+/*
 import {
   CloudSyncStatus,
   GoogleUserProfile,
@@ -66,9 +67,10 @@ import {
   getCloudFilesSummary,
   deleteAllCloudSaves,
   subscribeDataUpdated,
-  normalizeBinaryData,
   SyncTargetStore
 } from './cloudSync';
+*/
+import { normalizeBinaryData } from './cloudSync';
 
 // ============================================================================
 // 1. LIBRETRO CORE AUTO-DETECTION MATRIX
@@ -605,6 +607,7 @@ const idbGetAllKeys = async (): Promise<string[]> => {
   });
 };
 
+/*
 const syncTargetStore: SyncTargetStore = {
   getItem: async (key) => {
     if (key.startsWith('rom:')) {
@@ -623,6 +626,7 @@ const syncTargetStore: SyncTargetStore = {
   },
   getAllKeys: () => idbGetAllKeys(),
 };
+*/
 
 const EJS_CORES = { gambatte: 'gb', mgba: 'gba', fceumm: 'nes', snes9x: 'snes', genesis_plus_gx: 'segaMD' };
 
@@ -1017,6 +1021,7 @@ export default function App() {
   const [inGameMenuOpen, setInGameMenuOpen] = useState(false);
   // inGameSaveModalMode: null | 'save' | 'load' (opens Per-Game Save State Slots overlay inside a game)
   const [inGameSaveModalMode, setInGameSaveModalMode] = useState(null);
+  /*
   // cloudModalOpen: opens Google Cloud Save & Sync settings dialog
   const [cloudModalOpen, setCloudModalOpen] = useState(false);
   const [syncStatus, setSyncStatus] = useState(() => getSyncStatus());
@@ -1025,6 +1030,7 @@ export default function App() {
   const [showConflictsList, setShowConflictsList] = useState(false);
   const [cloudFiles, setCloudFiles] = useState<{ name: string; size: string; modifiedTime: string }[]>([]);
   const [showCloudFiles, setShowCloudFiles] = useState(false);
+  */
 
   // Theme & Combinable Shader Pipeline State (Auto-saved to localStorage)
   const [themeId, setThemeId] = useState(() => {
@@ -1113,6 +1119,7 @@ export default function App() {
     })();
   }, []);
 
+  /*
   // Cloud Sync Listener & Background Sync Initialization
   useEffect(() => {
     const unsub = subscribeSyncStatus(() => {
@@ -1291,6 +1298,7 @@ export default function App() {
     });
     return () => unsubLive();
   }, [currentView, activeGame?.id, activeGame?.real]);
+  */
 
   // In-Game Emulation Runtime State
   const [isPaused, setIsPaused] = useState(false);
@@ -1384,7 +1392,7 @@ export default function App() {
           const srmArr = normalizeBinaryData(e.data.save);
           if (srmArr) {
             idbPut(`srm:${activeGame.id}`, srmArr).then(() => {
-              markLocalSaveModified(syncTargetStore, `srm:${activeGame.id}`);
+              // markLocalSaveModified(syncTargetStore, `srm:${activeGame.id}`);
             }).catch(() => {});
           }
         }
@@ -1513,7 +1521,7 @@ export default function App() {
       const remaining = prev.filter((g) => g.id !== gameId);
       const userImportedOnly = remaining.filter((g) => g.real && g.id !== 'pokemon_gold');
       idbPut('library_games', userImportedOnly).catch(() => {});
-      markLocalSaveModified(syncTargetStore, 'library_games');
+      // markLocalSaveModified(syncTargetStore, 'library_games');
       return remaining;
     });
     setSavesByGameId((prev) => {
@@ -1608,7 +1616,7 @@ export default function App() {
 
     try {
       await idbPut(newGame.id, file);
-      markLocalSaveModified(syncTargetStore, `rom:${newGame.id}`);
+      // markLocalSaveModified(syncTargetStore, `rom:${newGame.id}`);
     } catch (err) {
       showToast('Could not store ROM for offline use');
     }
@@ -1616,7 +1624,7 @@ export default function App() {
       const nextGames = [newGame, ...prev.filter((g) => g.id !== newGame.id)];
       const userImportedOnly = nextGames.filter((g) => g.real && g.id !== 'pokemon_gold');
       idbPut('library_games', userImportedOnly).catch(() => {});
-      markLocalSaveModified(syncTargetStore, 'library_games');
+      // markLocalSaveModified(syncTargetStore, 'library_games');
       return nextGames;
     });
     setSavesByGameId((prev) => ({
@@ -1710,7 +1718,7 @@ export default function App() {
         screenshot: shot,
         emuState
       }).then(() => {
-        markLocalSaveModified(syncTargetStore, `state:${game.id}:${slotNumber}`);
+        // markLocalSaveModified(syncTargetStore, `state:${game.id}:${slotNumber}`);
       }).catch(console.error);
       soundFX.save();
       showToast(`Saved ${game.title} → Slot #${slotNumber}`);
@@ -1766,7 +1774,7 @@ export default function App() {
       screenshot,
       stateData: statePayload
     }).catch(console.error);
-    markLocalSaveModified(syncTargetStore, `state:${game.id}:${slotNumber}`);
+    // markLocalSaveModified(syncTargetStore, `state:${game.id}:${slotNumber}`);
 
     soundFX.save();
     showToast(`Saved ${game.title} → Slot #${slotNumber}`);
@@ -1858,7 +1866,7 @@ export default function App() {
           const prevSrm = normalizeBinaryData(await idbGet(`srm:${activeGame.id}`).catch(() => null));
           if (!areBytesEqual(srm, prevSrm)) {
             await idbPut(`srm:${activeGame.id}`, srm).catch(() => {});
-            await markLocalSaveModified(syncTargetStore, `srm:${activeGame.id}`);
+            // await markLocalSaveModified(syncTargetStore, `srm:${activeGame.id}`);
           }
         }
       }
@@ -1867,7 +1875,7 @@ export default function App() {
         const prevRtc = normalizeBinaryData(await idbGet(`rtc:${activeGame.id}`).catch(() => null));
         if (!areBytesEqual(rtc, prevRtc)) {
           await idbPut(`rtc:${activeGame.id}`, rtc).catch(() => {});
-          await markLocalSaveModified(syncTargetStore, `rtc:${activeGame.id}`);
+          // await markLocalSaveModified(syncTargetStore, `rtc:${activeGame.id}`);
         }
       }
       const stArr = normalizeBinaryData(win.getStateData?.());
@@ -1875,12 +1883,13 @@ export default function App() {
         const prevAuto = normalizeBinaryData(await idbGet(`autosave:${activeGame.id}`).catch(() => null));
         if (!areBytesEqual(stArr, prevAuto)) {
           await idbPut(`autosave:${activeGame.id}`, stArr).catch(() => {});
-          await markLocalSaveModified(syncTargetStore, `autosave:${activeGame.id}`);
+          // await markLocalSaveModified(syncTargetStore, `autosave:${activeGame.id}`);
         }
       }
     } catch (e) {}
   }, [activeGame?.id, activeGame?.real, currentView]);
 
+  /*
   const flushAllBeforeManualSync = useCallback(async () => {
     await flushLiveProgress();
     // Ensure any user-created in-memory Save State Slots are persisted to IndexedDB without clobbering cloud saves
@@ -1914,6 +1923,7 @@ export default function App() {
       }
     }
   }, [flushLiveProgress, savesByGameId]);
+  */
 
   useEffect(() => {
     if (currentView !== 'ingame' || !activeGame?.id || !activeGame?.real) return;
@@ -2853,7 +2863,7 @@ export default function App() {
                   <Plus className="w-4 h-4 stroke-[2.5]" />
                 </button>
 
-                {/* Cloud Save Sync Button / User Avatar */}
+                {/* Cloud Save Sync Button / User Avatar (Temporarily Disabled)
                 <button
                   onClick={() => setCloudModalOpen(true)}
                   className={`px-2.5 py-2 rounded-xl border transition active:scale-95 flex items-center gap-1.5 cursor-pointer ${
@@ -2901,6 +2911,7 @@ export default function App() {
                     {cachedUser ? (cachedUser.name?.split(' ')[0] || 'Cloud') : 'Cloud Save'}
                   </span>
                 </button>
+                */}
 
                 <button
                   onClick={() => setGlobalSettingsOpen(true)}
@@ -3211,7 +3222,7 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* Google Cloud Save */}
+                {/* Google Cloud Save (Temporarily Disabled)
                 <div className="pt-2 border-t border-zinc-800/80 space-y-1.5">
                   <div className="flex items-center justify-between text-[10px]">
                     <span className="font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1">
@@ -3268,6 +3279,7 @@ export default function App() {
                     )}
                   </div>
                 </div>
+                */}
 
                 {/* Cartridge Battery Save (.SAV / .SRM) Export */}
                 <div className="pt-2 border-t border-zinc-800/80 space-y-1.5">
@@ -3979,9 +3991,10 @@ export default function App() {
       )}
 
       {/* ====================================================================
-          MODAL 3: GOOGLE DRIVE CLOUD SAVE & SYNC
+          MODAL 3: GOOGLE DRIVE CLOUD SAVE & SYNC (Temporarily Disabled)
       ==================================================================== */}
-      {cloudModalOpen && (
+      {/*
+      cloudModalOpen && (
         <div
           className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
           style={{
@@ -4017,7 +4030,7 @@ export default function App() {
             </div>
 
             <div className="flex-1 overflow-y-auto p-5 space-y-6">
-              {/* Account / Status Banner */}
+              // Account / Status Banner
               {cachedUser ? (
                 <div className="p-4 rounded-2xl bg-zinc-900/90 border border-zinc-800 space-y-3">
                   <div className="flex items-center justify-between">
@@ -4181,10 +4194,10 @@ export default function App() {
                 </div>
               )}
 
-              {/* Conflict Backups & Data Management */}
+              // Conflict Backups & Data Management
               {cachedUser && (
                 <div className="space-y-2.5 pt-2 border-t border-zinc-900">
-                  {/* Google Drive Storage Inspector */}
+                  // Google Drive Storage Inspector
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-extrabold uppercase tracking-wider text-zinc-400">Google Drive AppData Storage</span>
                     <button
@@ -4281,6 +4294,7 @@ export default function App() {
           </div>
         </div>
       )}
+      */}
     </div>
   );
 }
