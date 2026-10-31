@@ -56,21 +56,73 @@ export function formatGameTitle(rawTitle: string): string {
 export function getBoxartUrls(game: any): string[] {
   if (!game) return [];
   const urls: string[] = [];
-  if (game.coverUrl) urls.push(game.coverUrl);
+
+  // 1. User custom boxart override (Base64 data URI or custom URL)
+  if (game.customBoxart) urls.push(game.customBoxart);
+  if (game.coverUrl && !urls.includes(game.coverUrl)) urls.push(game.coverUrl);
 
   const ext = game.ext || (game.fileName ? game.fileName.split('.').pop().toLowerCase() : '');
-  const libSystem = LIBRETRO_SYSTEM_MAP[ext] || (game.shortSystem === 'GBC' ? 'Nintendo - Game Boy Color' : null);
+  const libSystem =
+    LIBRETRO_SYSTEM_MAP[ext] ||
+    (game.shortSystem === 'GBC'
+      ? 'Nintendo - Game Boy Color'
+      : game.shortSystem === 'GBA'
+      ? 'Nintendo - Game Boy Advance'
+      : game.shortSystem === 'GB'
+      ? 'Nintendo - Game Boy'
+      : game.shortSystem === 'NES'
+      ? 'Nintendo - Nintendo Entertainment System'
+      : game.shortSystem === 'SNES'
+      ? 'Nintendo - Super Nintendo Entertainment System'
+      : game.shortSystem === 'GEN' || game.shortSystem === 'MD'
+      ? 'Sega - Mega Drive - Genesis'
+      : null);
 
-  if (libSystem && game.fileName) {
-    const rawBase = game.fileName.replace(/\.[^/.]+$/, '');
-    urls.push(`https://thumbnails.libretro.com/${encodeURIComponent(libSystem)}/Named_Boxarts/${encodeURIComponent(rawBase)}.png`);
+  if (!libSystem) return urls;
+
+  const candidateTitles = new Set<string>();
+
+  // Raw filename without extension
+  if (game.fileName) {
+    const rawBase = game.fileName.replace(/\.[^/.]+$/, '').trim();
+    if (rawBase) candidateTitles.add(rawBase);
   }
-  if (libSystem && game.title) {
-    urls.push(`https://thumbnails.libretro.com/${encodeURIComponent(libSystem)}/Named_Boxarts/${encodeURIComponent(game.title)}.png`);
-    const clean = formatGameTitle(game.title);
-    if (clean !== game.title) {
-      urls.push(`https://thumbnails.libretro.com/${encodeURIComponent(libSystem)}/Named_Boxarts/${encodeURIComponent(clean)}.png`);
+
+  // Game Title
+  if (game.title) {
+    candidateTitles.add(game.title.trim());
+  }
+
+  // Clean title without bracketed regions
+  const clean = formatGameTitle(game.title || game.fileName || '');
+  if (clean) {
+    candidateTitles.add(clean);
+    // Common Libretro regional variations
+    candidateTitles.add(`${clean} (USA, Europe)`);
+    candidateTitles.add(`${clean} (USA)`);
+    candidateTitles.add(`${clean} (Europe)`);
+    candidateTitles.add(`${clean} (World)`);
+    candidateTitles.add(`${clean} (Japan)`);
+    // Hyphenated forms (e.g. Pokemon - Emerald Version)
+    if (clean.includes(' ')) {
+      const parts = clean.split(' ');
+      if (parts.length >= 2) {
+        candidateTitles.add(`${parts[0]} - ${parts.slice(1).join(' ')}`);
+        candidateTitles.add(`${parts[0]} - ${parts.slice(1).join(' ')} (USA)`);
+        candidateTitles.add(`${parts[0]} - ${parts.slice(1).join(' ')} (USA, Europe)`);
+      }
     }
   }
+
+  const encodedSystem = encodeURIComponent(libSystem);
+  for (const title of candidateTitles) {
+    const safeTitle = title.replace(/[/:*?"<>|\\]/g, '_').trim();
+    const encodedTitle = encodeURIComponent(safeTitle);
+    // GitHub raw CDN (Fastest, zero CORS limits, global cache)
+    urls.push(`https://raw.githubusercontent.com/libretro-thumbnails/${encodedSystem}/master/Named_Boxarts/${encodedTitle}.png`);
+    // Libretro official thumbnails mirror
+    urls.push(`https://thumbnails.libretro.com/${encodedSystem}/Named_Boxarts/${encodedTitle}.png`);
+  }
+
   return urls;
 }

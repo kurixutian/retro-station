@@ -195,7 +195,8 @@ export default function App() {
   }, [isPaused, revealTopBar]);
 
   const [isRewinding, setIsRewinding] = useState(false);
-  const [isFastForward, setIsFastForward] = useState(false);
+  // 0 = off; 2 / 3 / 4 / 8 = fast-forward multiplier
+  const [ffSpeed, setFfSpeed] = useState<number>(0);
   const [hidePad, setHidePad] = useState(false);
   const [padLayout, setPadLayout] = useState<PadLayout>(loadPadLayout);
   const [customizing, setCustomizing] = useState(false);
@@ -874,7 +875,7 @@ export default function App() {
       frameCounter++;
       if (now - fpsTimer >= 500) {
         const computedFps = Math.min(120, Math.round((frameCounter * 1000) / (now - fpsTimer)));
-        setFps(isPaused ? 0 : isFastForward ? computedFps * 2 : computedFps);
+        setFps(isPaused ? 0 : ffSpeed > 1 ? computedFps * Math.min(ffSpeed, 4) : computedFps);
         setLiveScore(engineStateRef.current.score || 0);
         setLiveFrame(engineStateRef.current.frame || 0);
         frameCounter = 0;
@@ -891,7 +892,7 @@ export default function App() {
               engineStateRef.current = prevSnapshot;
             }
           } else {
-            const steps = isFastForward ? 2 : 1;
+            const steps = ffSpeed > 1 ? Math.min(ffSpeed, 4) : 1;
             for (let s = 0; s < steps; s++) {
               stepGameFrame(engineStateRef.current, keysRef.current, EdgeTapRef);
               if (engineStateRef.current.frame % 3 === 0) {
@@ -903,7 +904,7 @@ export default function App() {
         }
 
         if (ctx) {
-          drawGameCanvas(ctx, engineStateRef.current, activeGame, isRewinding, isFastForward);
+          drawGameCanvas(ctx, engineStateRef.current, activeGame, isRewinding, ffSpeed > 1);
         }
       }
 
@@ -912,22 +913,22 @@ export default function App() {
 
     animId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(animId);
-  }, [activeGame, currentView, isFastForward, isPaused, isRewinding]);
+  }, [activeGame, currentView, ffSpeed, isPaused, isRewinding]);
 
   useEffect(() => {
     try {
       const win = emuFrameRef.current?.contentWindow as any;
-      win?.setFastForward?.(isFastForward);
+      win?.setFastForward?.(ffSpeed > 1, ffSpeed);
       const emu = getEmu();
       if (emu?.gameManager) {
-        if (typeof emu.gameManager.setFastForwardRatio === 'function') emu.gameManager.setFastForwardRatio(2);
-        if (typeof emu.gameManager.toggleFastForward === 'function') emu.gameManager.toggleFastForward(isFastForward ? 1 : 0);
+        if (typeof emu.gameManager.setFastForwardRatio === 'function') emu.gameManager.setFastForwardRatio(ffSpeed > 1 ? ffSpeed : 1);
+        if (typeof emu.gameManager.toggleFastForward === 'function') emu.gameManager.toggleFastForward(ffSpeed > 1 ? 1 : 0);
       }
       Object.entries(keysRef.current).forEach(([k, down]) => {
         if (down) win?.simulateButton?.(k, true);
       });
     } catch (e) {}
-  }, [isFastForward]);
+  }, [ffSpeed]);
 
   useEffect(() => {
     if (!activeGame.real) return;
@@ -1021,8 +1022,9 @@ export default function App() {
           setIsPaused={setIsPaused}
           isRewinding={isRewinding}
           setIsRewinding={setIsRewinding}
-          isFastForward={isFastForward}
-          setIsFastForward={setIsFastForward}
+          isFastForward={ffSpeed > 1}
+          ffSpeed={ffSpeed}
+          setFfSpeed={setFfSpeed}
           isMuted={isMuted}
           toggleAudio={toggleAudio}
           inGameMenuOpen={inGameMenuOpen}

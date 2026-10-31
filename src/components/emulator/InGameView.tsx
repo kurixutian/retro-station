@@ -17,6 +17,8 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
+  Maximize,
+  Minimize,
 } from 'lucide-react';
 import { Game, Theme, PadLayout, PadGroupId } from '../../types';
 import { coreRatio, formatGameTitle, EJS_CORES } from '../../constants/cores';
@@ -34,8 +36,10 @@ interface InGameViewProps {
   setIsPaused: React.Dispatch<React.SetStateAction<boolean>>;
   isRewinding: boolean;
   setIsRewinding: (r: boolean) => void;
+  /** 0 = off; 2 / 3 / 4 / 8 = fast-forward multiplier */
   isFastForward: boolean;
-  setIsFastForward: React.Dispatch<React.SetStateAction<boolean>>;
+  ffSpeed: number;
+  setFfSpeed: React.Dispatch<React.SetStateAction<number>>;
   isMuted: boolean;
   toggleAudio: () => void;
   inGameMenuOpen: boolean;
@@ -77,7 +81,8 @@ export const InGameView: React.FC<InGameViewProps> = ({
   isRewinding,
   setIsRewinding,
   isFastForward,
-  setIsFastForward,
+  ffSpeed,
+  setFfSpeed,
   isMuted,
   toggleAudio,
   inGameMenuOpen,
@@ -116,6 +121,34 @@ export const InGameView: React.FC<InGameViewProps> = ({
     left: false,
     right: false,
   });
+
+  // ── Fullscreen / Landscape mode ──────────────────────────────────────────
+  const [isFullscreen, setIsFullscreen] = React.useState(false);
+  const [isLandscape, setIsLandscape] = React.useState(
+    () => typeof window !== 'undefined' && window.innerWidth > window.innerHeight
+  );
+
+  React.useEffect(() => {
+    const mq = window.matchMedia('(orientation: landscape)');
+    const handler = (e: MediaQueryListEvent | MediaQueryList) => setIsLandscape(e.matches);
+    handler(mq); // initial check
+    mq.addEventListener('change', handler as (e: MediaQueryListEvent) => void);
+    return () => mq.removeEventListener('change', handler as (e: MediaQueryListEvent) => void);
+  }, []);
+
+  React.useEffect(() => {
+    const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
+
+  const toggleFullscreen = React.useCallback(() => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  }, []);
 
   const updateDpadByCoords = React.useCallback((clientX: number, clientY: number) => {
     if (!dpadContainerRef.current || !setButtonDown || !setButtonUp) return;
@@ -160,9 +193,11 @@ export const InGameView: React.FC<InGameViewProps> = ({
       className={`fixed inset-0 w-full overflow-hidden ${shaders.amoled ? 'bg-black' : 'bg-zinc-950'}`}
       style={{ height: '100dvh' }}
     >
-      {/* Vertical Handheld Shell Container */}
+      {/* Handheld Shell — portrait: flex-col, landscape: flex-row (game + controls side by side) */}
       <div
-        className={`relative w-full h-full max-w-[560px] mx-auto flex flex-col overflow-hidden ${
+        className={`relative w-full h-full ${isLandscape ? '' : 'max-w-[560px]'} mx-auto flex ${
+          isLandscape ? 'flex-row' : 'flex-col'
+        } overflow-hidden ${
           shaders.amoled ? 'bg-black border-zinc-900' : theme.shellBg
         }`}
       >
@@ -205,18 +240,28 @@ export const InGameView: React.FC<InGameViewProps> = ({
             </span>
           </div>
 
-          {/* Top Settings Gear Button */}
-          <button
-            onClick={() => setInGameMenuOpen((o) => !o)}
-            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition active:scale-95 ${
-              inGameMenuOpen
-                ? theme.accentBg
-                : 'bg-zinc-900/90 hover:bg-zinc-800 text-zinc-100 border-white/10'
-            }`}
-          >
-            <Settings className="w-4 h-4" />
-            <span>Menu</span>
-          </button>
+          {/* Top Settings Gear Button + Fullscreen Toggle */}
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={toggleFullscreen}
+              className="flex items-center gap-1 px-2 py-1.5 rounded-xl border text-xs font-bold transition active:scale-95 bg-zinc-900/90 hover:bg-zinc-800 text-zinc-100 border-white/10"
+              aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+              title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+            >
+              {isFullscreen ? <Minimize className="w-3.5 h-3.5" /> : <Maximize className="w-3.5 h-3.5" />}
+            </button>
+            <button
+              onClick={() => setInGameMenuOpen((o) => !o)}
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition active:scale-95 ${
+                inGameMenuOpen
+                  ? theme.accentBg
+                  : 'bg-zinc-900/90 hover:bg-zinc-800 text-zinc-100 border-white/10'
+              }`}
+            >
+              <Settings className="w-4 h-4" />
+              <span>Menu</span>
+            </button>
+          </div>
         </div>
 
         {/* DROPDOWN DRAWER FROM TOP SETTINGS BUTTON */}
@@ -351,10 +396,10 @@ export const InGameView: React.FC<InGameViewProps> = ({
 
         {/* 2. UPPER SCREEN AREA: GAME VIEWPORT + COMBINABLE SHADERS */}
         <div
-          className={`flex-none p-2 flex flex-col items-center justify-center ${
+          className={`${isLandscape ? 'flex-1 min-w-0' : 'flex-none'} p-2 flex flex-col items-center justify-center ${
             shaders.amoled ? 'bg-black border-b border-zinc-900' : theme.bezelBg
           }`}
-          style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 24px)' }}
+          style={{ paddingTop: isLandscape ? '8px' : 'max(env(safe-area-inset-top, 0px), 24px)' }}
         >
           <div
             className={`relative bg-black overflow-hidden border-2 ${
@@ -364,7 +409,9 @@ export const InGameView: React.FC<InGameViewProps> = ({
             }`}
             style={{
               aspectRatio: String(coreRatio(activeGame.core)),
-              width: `min(100%, ${(48 * coreRatio(activeGame.core)).toFixed(2)}dvh)`,
+              width: isLandscape
+                ? `min(100%, calc(${(100 * coreRatio(activeGame.core)).toFixed(2)}dvh - 16px))`
+                : `min(100%, ${(48 * coreRatio(activeGame.core)).toFixed(2)}dvh)`,
               boxShadow: !shaders.amoled && shaders.rgbBloom
                 ? `0 0 28px ${theme.hex}33, inset 0 0 18px rgba(0,0,0,0.75)`
                 : 'none',
@@ -455,7 +502,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
         {/* 3. CONTROL DECK: free-placement, resizable pad groups */}
         <div
           ref={deckRef}
-          className={`relative flex-1 min-h-0 border-t ${
+          className={`relative ${isLandscape ? 'flex-none w-[220px] border-l' : 'flex-1 min-h-0 border-t'} ${
             shaders.amoled ? 'bg-black border-zinc-900' : theme.deckBg
           } overflow-hidden select-none touch-none`}
           style={{
@@ -527,13 +574,19 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 <span>Rewind</span>
               </button>
 
-              {/* 2x Speed Turbo Toggle */}
+              {/* Fast-Forward Speed Picker: OFF | 2x | 4x | 8x (cycles on tap) */}
               <button
                 type="button"
                 onPointerDown={(e) => {
                   e.preventDefault();
                   haptics.toggle();
-                  setIsFastForward((f) => !f);
+                  // Cycle: 0 → 2 → 4 → 8 → 0
+                  setFfSpeed((s) => {
+                    if (s === 0) return 2;
+                    if (s === 2) return 4;
+                    if (s === 4) return 8;
+                    return 0;
+                  });
                 }}
                 className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl font-bold text-xs border transition active:scale-95 touch-none select-none ${
                   isFastForward
@@ -544,7 +597,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 }`}
               >
                 <FastForward className="w-3.5 h-3.5" />
-                <span>2x Speed</span>
+                <span>{isFastForward ? `${ffSpeed}x` : '1x'}</span>
               </button>
             </div>
           </PadGroup>

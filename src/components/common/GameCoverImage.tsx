@@ -1,6 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Gamepad2 } from 'lucide-react';
 import { getBoxartUrls, formatGameTitle } from '../../constants/cores';
+import { idbGet, idbPut } from '../../services/storage/idb';
 
 interface GameCoverImageProps {
   game: any;
@@ -17,9 +18,33 @@ export const GameCoverImage: React.FC<GameCoverImageProps> = ({
 }) => {
   const [srcIndex, setSrcIndex] = useState(0);
   const [failedAll, setFailedAll] = useState(false);
-  const urls = useMemo(() => getBoxartUrls(game), [game]);
+  const [cachedUrl, setCachedUrl] = useState<string | null>(null);
 
-  const currentUrl = urls[srcIndex];
+  useEffect(() => {
+    let active = true;
+    if (game?.id) {
+      idbGet(`cover:${game.id}`)
+        .then((saved) => {
+          if (active && saved && typeof saved === 'string') {
+            setCachedUrl(saved);
+          }
+        })
+        .catch(() => {});
+    }
+    return () => {
+      active = false;
+    };
+  }, [game?.id]);
+
+  const urls = useMemo(() => {
+    const list = getBoxartUrls(game);
+    if (cachedUrl && !list.includes(cachedUrl)) {
+      return [cachedUrl, ...list];
+    }
+    return list;
+  }, [game, cachedUrl]);
+
+  const currentUrl = cachedUrl || urls[srcIndex];
 
   if (!currentUrl || failedAll) {
     return (
@@ -47,7 +72,16 @@ export const GameCoverImage: React.FC<GameCoverImageProps> = ({
       <img
         src={currentUrl}
         alt={formatGameTitle(game?.title || '')}
+        onLoad={() => {
+          if (currentUrl && game?.id && currentUrl !== cachedUrl) {
+            idbPut(`cover:${game.id}`, currentUrl).catch(() => {});
+          }
+        }}
         onError={() => {
+          if (cachedUrl) {
+            setCachedUrl(null);
+            return;
+          }
           if (srcIndex + 1 < urls.length) {
             setSrcIndex((i) => i + 1);
           } else {

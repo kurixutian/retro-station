@@ -78,11 +78,12 @@ export function buildPlayerHtml(core: string, romUrl: string, title?: string): s
     '    }' +
     '  }' +
     '};' +
-    'window.setFastForward=function(active){' +
+    'window.setFastForward=function(active,ratio){' +
     '  try{' +
     '    if(window.EJS_emulator&&window.EJS_emulator.gameManager){' +
     '      var gm=window.EJS_emulator.gameManager;' +
-    '      if(typeof gm.setFastForwardRatio==="function")gm.setFastForwardRatio(2);' +
+    '      var r=typeof ratio==="number"&&ratio>=1?ratio:2;' +
+    '      if(typeof gm.setFastForwardRatio==="function")gm.setFastForwardRatio(active?r:1);' +
     '      if(typeof gm.toggleFastForward==="function")gm.toggleFastForward(active?1:0);' +
     '    }' +
     '  }catch(e){}' +
