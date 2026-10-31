@@ -838,7 +838,14 @@ export default function App() {
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'Space') setButtonDown('select');
       if (e.code === 'KeyP') setIsPaused((p) => !p);
       if (e.code === 'KeyR' || e.code === 'Backspace') setIsRewinding(true);
-      if (e.code === 'KeyF') setFfSpeed((s) => s > 0 ? 0 : 2);
+      if (e.code === 'KeyF') {
+        setFfSpeed((s) => {
+          if (s === 0) return 2;
+          if (s === 2) return 4;
+          if (s === 4) return 8;
+          return 0;
+        });
+      };
     };
 
     const onKeyUp = (e: KeyboardEvent) => {
@@ -875,7 +882,7 @@ export default function App() {
       frameCounter++;
       if (now - fpsTimer >= 500) {
         const computedFps = Math.min(120, Math.round((frameCounter * 1000) / (now - fpsTimer)));
-        setFps(isPaused ? 0 : ffSpeed > 1 ? computedFps * Math.min(ffSpeed, 4) : computedFps);
+        setFps(isPaused ? 0 : ffSpeed > 1 ? computedFps * ffSpeed : computedFps);
         setLiveScore(engineStateRef.current.score || 0);
         setLiveFrame(engineStateRef.current.frame || 0);
         frameCounter = 0;
@@ -892,7 +899,7 @@ export default function App() {
               engineStateRef.current = prevSnapshot;
             }
           } else {
-            const steps = ffSpeed > 1 ? Math.min(ffSpeed, 4) : 1;
+            const steps = ffSpeed > 1 ? ffSpeed : 1;
             for (let s = 0; s < steps; s++) {
               stepGameFrame(engineStateRef.current, keysRef.current, EdgeTapRef);
               if (engineStateRef.current.frame % 3 === 0) {
@@ -904,7 +911,7 @@ export default function App() {
         }
 
         if (ctx) {
-          drawGameCanvas(ctx, engineStateRef.current, activeGame, isRewinding, ffSpeed > 1);
+          drawGameCanvas(ctx, engineStateRef.current, activeGame, isRewinding, ffSpeed);
         }
       }
 
@@ -918,11 +925,34 @@ export default function App() {
   useEffect(() => {
     try {
       const win = emuFrameRef.current?.contentWindow as any;
-      win?.setFastForward?.(ffSpeed > 1, ffSpeed);
-      const emu = getEmu();
-      if (emu?.gameManager) {
-        if (typeof emu.gameManager.setFastForwardRatio === 'function') emu.gameManager.setFastForwardRatio(ffSpeed > 1 ? ffSpeed : 1);
-        if (typeof emu.gameManager.toggleFastForward === 'function') emu.gameManager.toggleFastForward(ffSpeed > 1 ? 1 : 0);
+      if (typeof win?.setFastForward === 'function') {
+        win.setFastForward(ffSpeed > 1, ffSpeed);
+      } else {
+        const emu = getEmu();
+        if (emu) {
+          const r = ffSpeed > 1 ? ffSpeed : 1;
+          const active = ffSpeed > 1;
+          if (typeof emu.handleSpecialOptions === 'function') {
+            if (active) {
+              emu.handleSpecialOptions('ff-ratio', String(r));
+              if (!emu.isFastForward) emu.handleSpecialOptions('fastForward', 'enabled');
+            } else {
+              emu.handleSpecialOptions('fastForward', 'disabled');
+            }
+          } else if (emu.gameManager) {
+            const gm = emu.gameManager;
+            if (active) {
+              if (typeof gm.toggleFastForward === 'function') gm.toggleFastForward(0);
+              if (typeof gm.setFastForwardRatio === 'function') gm.setFastForwardRatio(r);
+              setTimeout(() => {
+                try { if (typeof gm.toggleFastForward === 'function') gm.toggleFastForward(1); } catch (e) {}
+              }, 15);
+            } else {
+              if (typeof gm.setFastForwardRatio === 'function') gm.setFastForwardRatio(1);
+              if (typeof gm.toggleFastForward === 'function') gm.toggleFastForward(0);
+            }
+          }
+        }
       }
       Object.entries(keysRef.current).forEach(([k, down]) => {
         if (down) win?.simulateButton?.(k, true);

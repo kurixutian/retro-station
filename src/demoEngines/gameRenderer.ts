@@ -6,7 +6,7 @@ export function drawGameCanvas(
   st: any,
   activeGame: { shortSystem?: string; core?: string },
   isRewinding = false,
-  isFastForward = false
+  isFastForward: boolean | number = false
 ) {
   const W = 320;
   const H = 240;
@@ -352,8 +352,9 @@ export function drawGameCanvas(
     ctx.font = 'bold 14px monospace';
     ctx.fillText('⏪ REWINDING TIME...', 80, H / 2);
   } else if (isFastForward) {
+    const mult = typeof isFastForward === 'number' ? isFastForward : 2;
     ctx.fillStyle = '#38bdf8';
     ctx.font = 'bold 9px monospace';
-    ctx.fillText('⏩ 2X TURBO', 142, 12);
+    ctx.fillText(`⏩ ${mult}X TURBO`, 142, 12);
   }
 }
