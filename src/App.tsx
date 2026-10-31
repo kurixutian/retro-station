@@ -978,7 +978,6 @@ export default function App() {
   const [cloudModalOpen, setCloudModalOpen] = useState(false);
   const [syncStatus, setSyncStatus] = useState(() => getSyncStatus());
   const [cachedUser, setCachedUser] = useState<GoogleUserProfile | null>(() => getCachedUserProfile());
-  const [clientIdInput, setClientIdInput] = useState(() => getGoogleClientId());
   const [conflictBackups, setConflictBackups] = useState<ConflictBackupItem[]>([]);
   const [showConflictsList, setShowConflictsList] = useState(false);
 
@@ -3842,10 +3841,6 @@ export default function App() {
 
                   <button
                     onClick={async () => {
-                      if (!getGoogleClientId()) {
-                        showToast('Enter your Google OAuth Client ID below to enable Google Sign-In');
-                        return;
-                      }
                       const ok = await signInWithGoogle();
                       if (ok) {
                         showToast('Connected to Google Drive!');
@@ -3864,35 +3859,6 @@ export default function App() {
                   </button>
                 </div>
               )}
-
-              {/* Advanced / Developer Settings: OAuth Client ID */}
-              <div className="space-y-2 pt-2 border-t border-zinc-900">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-extrabold uppercase tracking-wider text-zinc-400">Google OAuth Client ID</span>
-                  <span className="text-[10px] text-zinc-500 font-mono">Web Application</span>
-                </div>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={clientIdInput}
-                    onChange={(e) => setClientIdInput(e.target.value)}
-                    placeholder="e.g. 123456789-abcdef.apps.googleusercontent.com"
-                    className="flex-1 px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-zinc-200 font-mono focus:outline-none focus:border-sky-500"
-                  />
-                  <button
-                    onClick={() => {
-                      setGoogleClientId(clientIdInput);
-                      showToast('Google Client ID updated!');
-                    }}
-                    className="px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold transition active:scale-95 cursor-pointer"
-                  >
-                    Save
-                  </button>
-                </div>
-                <p className="text-[10px] text-zinc-500 leading-snug">
-                  To use your own Google Cloud project: create a free OAuth 2.0 Client ID in Google Cloud Console, add <span className="font-mono text-zinc-400">{typeof window !== 'undefined' ? window.location.origin : ''}</span> to Authorized JavaScript origins, and paste your Client ID above.
-                </p>
-              </div>
 
               {/* Conflict Backups & Data Management */}
               {cachedUser && (

@@ -90,12 +90,19 @@ function setStatus(status: CloudSyncStatus, details = '') {
   });
 }
 
-// Get saved Google Client ID or fallback
+export const DEFAULT_GOOGLE_CLIENT_ID =
+  '812701015700-srefneer1disk609pa2s4pqj7s2c8ln0.apps.googleusercontent.com';
+
+// Get saved Google Client ID or default
 export function getGoogleClientId(): string {
   try {
-    return localStorage.getItem(CLIENT_ID_STORAGE_KEY) || (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || '';
+    return (
+      localStorage.getItem(CLIENT_ID_STORAGE_KEY) ||
+      (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID ||
+      DEFAULT_GOOGLE_CLIENT_ID
+    );
   } catch (e) {
-    return '';
+    return DEFAULT_GOOGLE_CLIENT_ID;
   }
 }
 
