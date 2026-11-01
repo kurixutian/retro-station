@@ -95,14 +95,32 @@ export default function App() {
 
   useEffect(() => {
     const unsub = onDataUpdated((keys) => {
-      if (keys.includes('retro_games')) {
+      if (
+        keys.includes('retro_games') ||
+        keys.includes('library_games') ||
+        keys.some((k) => k.startsWith('rom_') || k.startsWith('rom:'))
+      ) {
         try {
-          const saved = JSON.parse(localStorage.getItem('retro_games') || 'null');
-          if (Array.isArray(saved)) {
-            setGames(saved.map((g: any) => ({
+          const applyGameList = (list: any[]) => {
+            if (!Array.isArray(list) || list.length === 0) return;
+            setGames(list.map((g: any) => ({
               ...g,
               subtitle: (g.subtitle || g.system || '').replace(/\s*•\s*Auto-Detected Core/i, '')
             })));
+            setSavesByGameId((prev) => {
+              const next = { ...prev };
+              list.forEach((g: any) => {
+                if (!next[g.id]) next[g.id] = createEmptySlotsForGame(g.id);
+              });
+              return next;
+            });
+          };
+
+          const saved = JSON.parse(localStorage.getItem('retro_games') || 'null');
+          if (Array.isArray(saved) && saved.length > 0) {
+            applyGameList(saved);
+          } else {
+            idbGet('library_games').then(applyGameList).catch(() => {});
           }
         } catch (e) {}
       }

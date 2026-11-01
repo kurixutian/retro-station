@@ -185,10 +185,13 @@ export function isSyncableKey(key: string): boolean {
   return (
     key === 'retro_games' ||
     key === 'library_games' ||
+    key.startsWith('rom_') ||
+    key.startsWith('rom:') ||
     key.startsWith('state:') ||
     key.startsWith('srm:') ||
     key.startsWith('rtc:') ||
-    key.startsWith('autosave:')
+    key.startsWith('autosave:') ||
+    key.startsWith('cover:')
   );
 }
 
@@ -208,7 +211,11 @@ export function normalizeBinaryData(val: any): Uint8Array | null {
     bytes = new Uint8Array(val.byteLength);
     bytes.set(new Uint8Array(val));
   } else if (Array.isArray(val)) {
-    bytes = new Uint8Array(val);
+    if (val.length > 0 && typeof val[0] === 'number') {
+      bytes = new Uint8Array(val);
+    } else {
+      return null;
+    }
   } else if (typeof val === 'string') {
     const trimmed = val.trim();
     if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
@@ -224,10 +231,16 @@ export function normalizeBinaryData(val: any): Uint8Array | null {
     } catch (e) {
       return null;
     }
-  } else if (typeof val === 'object') {
-    const vals = Object.values(val);
-    if (vals.length > 0 && typeof vals[0] === 'number') {
-      bytes = new Uint8Array(vals as number[]);
+  } else if (typeof val === 'object' && val !== null) {
+    // Only deserialize if it's a numeric-indexed object map like {"0": 1, "1": 2, ...}
+    const keys = Object.keys(val);
+    if (keys.length > 0 && keys[0] === '0' && typeof (val as any)[0] === 'number') {
+      const vals = Object.values(val);
+      if (typeof vals[0] === 'number') {
+        bytes = new Uint8Array(vals as number[]);
+      }
+    } else {
+      return null;
     }
   }
 
@@ -423,26 +436,34 @@ export async function syncNow(): Promise<{
       // If remote has newer data (or local never had it)
       if (remoteUpdatedAt > localUpdatedAt || !localMeta) {
         try {
-          if (rKey === 'retro_games') {
-            // Merge games list
+          if (rKey === 'retro_games' || rKey === 'library_games') {
             const remoteGamesList = Array.isArray(rItem.data) ? rItem.data : [];
-            let localGamesList: any[] = [];
-            try {
-              localGamesList = JSON.parse(localStorage.getItem('retro_games') || '[]');
-            } catch (e) {}
+            if (remoteGamesList.length > 0) {
+              let localGamesList: any[] = [];
+              try {
+                localGamesList = JSON.parse(localStorage.getItem('retro_games') || '[]');
+              } catch (e) {}
 
-            // Additive merge by ID
-            const mergedMap = new Map<string, any>();
-            remoteGamesList.forEach((g: any) => g?.id && mergedMap.set(g.id, g));
-            localGamesList.forEach((g: any) => g?.id && mergedMap.set(g.id, g));
-            const merged = Array.from(mergedMap.values());
+              // Additive merge by ID
+              const mergedMap = new Map<string, any>();
+              localGamesList.forEach((g: any) => g?.id && mergedMap.set(g.id, g));
+              remoteGamesList.forEach((g: any) => g?.id && mergedMap.set(g.id, g));
+              const merged = Array.from(mergedMap.values());
 
-            localStorage.setItem('retro_games', JSON.stringify(merged));
-            await idbPut('library_games', merged.filter((g: any) => g.real && g.id !== 'pokemon_gold')).catch(() => {});
-          } else if (rItem.isBinary && typeof rItem.data === 'string') {
-            const rawBytes = base64ToUint8(rItem.data);
-            await idbPut(rKey, rawBytes);
-          } else {
+              localStorage.setItem('retro_games', JSON.stringify(merged));
+              await idbPut('library_games', merged.filter((g: any) => g.real && g.id !== 'pokemon_gold')).catch(() => {});
+            }
+          } else if (rKey.startsWith('rom_') || rKey.startsWith('rom:')) {
+            // Restore ROM as a Blob so URL.createObjectURL(blob) works!
+            if (typeof rItem.data === 'string') {
+              const rawBytes = base64ToUint8(rItem.data);
+              const blob = new Blob([rawBytes as any], { type: 'application/octet-stream' });
+              await idbPut(rKey, blob);
+              if (rKey.startsWith('rom:')) {
+                await idbPut(rKey.slice(4), blob).catch(() => {});
+              }
+            }
+          } else if (rKey.startsWith('state:')) {
             // Save state slot JSON or object
             let valToSave = rItem.data;
             if (valToSave && typeof valToSave === 'object') {
@@ -453,8 +474,13 @@ export async function syncNow(): Promise<{
               if (valToSave.stateData?.emuStateBase64) {
                 valToSave.stateData.emuState = base64ToUint8(valToSave.stateData.emuStateBase64);
               }
+              await idbPut(rKey, valToSave);
             }
-            await idbPut(rKey, valToSave);
+          } else if (rItem.isBinary && typeof rItem.data === 'string') {
+            const rawBytes = base64ToUint8(rItem.data);
+            await idbPut(rKey, rawBytes);
+          } else {
+            await idbPut(rKey, rItem.data);
           }
 
           metaMap[rKey] = {
@@ -478,63 +504,115 @@ export async function syncNow(): Promise<{
       const localUpdatedAt = localMeta?.updatedAt || 0;
       const remoteUpdatedAt = remoteItem?.updatedAt || 0;
 
+      // Force push if remote has invalid/corrupted data for games or states
+      const remoteCorrupt =
+        remoteItem &&
+        ((key === 'retro_games' && (!Array.isArray(remoteItem.data) || remoteItem.isBinary)) ||
+         (key.startsWith('state:') && (typeof remoteItem.data !== 'object' || remoteItem.isBinary)));
+
       const needsPush =
         localMeta?.pendingUpload ||
         !remoteItem ||
+        remoteCorrupt ||
         localUpdatedAt > remoteUpdatedAt;
 
       if (needsPush) {
         try {
-          let rawData: any = null;
-          let isBinary = false;
-
           if (key === 'retro_games') {
+            let localGames: any[] = [];
             try {
-              rawData = JSON.parse(localStorage.getItem('retro_games') || '[]');
-            } catch (e) {
-              rawData = [];
-            }
-          } else {
-            rawData = await idbGet(key);
-          }
-
-          if (rawData !== null && rawData !== undefined) {
-            const bin = normalizeBinaryData(rawData);
-            if (bin) {
-              isBinary = true;
+              localGames = JSON.parse(localStorage.getItem('retro_games') || '[]');
+            } catch (e) {}
+            if (localGames.length > 0) {
               itemsToUpload[key] = {
                 key,
-                data: uint8ToBase64(bin),
-                updatedAt: localUpdatedAt || Date.now(),
-                isBinary: true,
+                data: localGames,
+                updatedAt: Date.now(),
+                isBinary: false,
               };
-            } else {
-              // Object or JSON
-              let serializable = rawData;
-              if (rawData && typeof rawData === 'object' && !Array.isArray(rawData)) {
-                serializable = { ...rawData };
-                if (serializable.emuState) {
-                  const b = normalizeBinaryData(serializable.emuState);
-                  if (b) {
-                    serializable.emuStateBase64 = uint8ToBase64(b);
-                    delete serializable.emuState;
-                  }
-                }
-                if (serializable.stateData?.emuState) {
-                  const b2 = normalizeBinaryData(serializable.stateData.emuState);
-                  if (b2) {
-                    serializable.stateData = { ...serializable.stateData, emuStateBase64: uint8ToBase64(b2) };
-                    delete serializable.stateData.emuState;
-                  }
+            }
+          } else if (key === 'library_games') {
+            const libGames = await idbGet('library_games');
+            if (Array.isArray(libGames) && libGames.length > 0) {
+              itemsToUpload[key] = {
+                key,
+                data: libGames,
+                updatedAt: Date.now(),
+                isBinary: false,
+              };
+            }
+          } else if (key.startsWith('state:')) {
+            const slotData = await idbGet(key);
+            if (slotData && typeof slotData === 'object') {
+              const serializable = { ...slotData };
+              if (serializable.emuState) {
+                const b = normalizeBinaryData(serializable.emuState);
+                if (b) {
+                  serializable.emuStateBase64 = uint8ToBase64(b);
+                  delete serializable.emuState;
                 }
               }
-
+              if (serializable.stateData?.emuState) {
+                const b2 = normalizeBinaryData(serializable.stateData.emuState);
+                if (b2) {
+                  serializable.stateData = { ...serializable.stateData, emuStateBase64: uint8ToBase64(b2) };
+                  delete serializable.stateData.emuState;
+                }
+              }
               itemsToUpload[key] = {
                 key,
                 data: serializable,
                 updatedAt: localUpdatedAt || Date.now(),
                 isBinary: false,
               };
+            }
+          } else if (key.startsWith('rom_') || key.startsWith('rom:')) {
+            const romData = await idbGet(key);
+            if (romData) {
+              let bytes: Uint8Array | null = null;
+              if (romData instanceof Blob) {
+                const ab = await romData.arrayBuffer();
+                bytes = new Uint8Array(ab);
+              } else if (romData instanceof ArrayBuffer) {
+                bytes = new Uint8Array(romData);
+              } else {
+                bytes = normalizeBinaryData(romData);
+              }
+              if (bytes && bytes.length > 0) {
+                itemsToUpload[key] = {
+                  key,
+                  data: uint8ToBase64(bytes),
+                  updatedAt: localUpdatedAt || Date.now(),
+                  isBinary: true,
+                };
+              }
+            }
+          } else {
+            // srm:*, rtc:*, autosave:*, cover:*
+            const raw = await idbGet(key);
+            if (raw) {
+              let bytes: Uint8Array | null = null;
+              if (raw instanceof Blob) {
+                const ab = await raw.arrayBuffer();
+                bytes = new Uint8Array(ab);
+              } else {
+                bytes = normalizeBinaryData(raw);
+              }
+              if (bytes && bytes.length > 0) {
+                itemsToUpload[key] = {
+                  key,
+                  data: uint8ToBase64(bytes),
+                  updatedAt: localUpdatedAt || Date.now(),
+                  isBinary: true,
+                };
+              } else if (typeof raw === 'string' && key.startsWith('cover:')) {
+                itemsToUpload[key] = {
+                  key,
+                  data: raw,
+                  updatedAt: localUpdatedAt || Date.now(),
+                  isBinary: false,
+                };
+              }
             }
           }
         } catch (prepErr) {
