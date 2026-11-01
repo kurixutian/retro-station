@@ -59,8 +59,10 @@ export default {
     }
 
     const storageKey = `vault:${rawCode}`;
+    // In-memory fallback if KV/R2 binding is not configured yet
+    const mem = globalThis.__retro_mem_store || (globalThis.__retro_mem_store = new Map());
 
-    // Storage Adapter (works seamlessly with either R2 Bucket or KV Namespace)
+    // Storage Adapter (works seamlessly with R2 Bucket, KV Namespace, or memory fallback)
     const storage = {
       async get() {
         if (env.RETRO_BUCKET) {
@@ -72,7 +74,7 @@ export default {
           const raw = await env.RETRO_VAULT.get(storageKey, 'json');
           return raw;
         }
-        throw new Error('No storage binding configured. Bind RETRO_VAULT (KV) or RETRO_BUCKET (R2).');
+        return mem.get(storageKey) || null;
       },
       async put(data) {
         const payload = JSON.stringify(data);
@@ -86,11 +88,12 @@ export default {
           await env.RETRO_VAULT.put(storageKey, payload);
           return;
         }
-        throw new Error('No storage binding configured. Bind RETRO_VAULT (KV) or RETRO_BUCKET (R2).');
+        mem.set(storageKey, data);
       },
       async delete() {
         if (env.RETRO_BUCKET) await env.RETRO_BUCKET.delete(storageKey);
         if (env.RETRO_VAULT) await env.RETRO_VAULT.delete(storageKey);
+        mem.delete(storageKey);
       },
     };
 
