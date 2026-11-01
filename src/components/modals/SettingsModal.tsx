@@ -1,8 +1,9 @@
 import React from 'react';
-import { Sliders, X, Tv, Palette, Check, Vibrate } from 'lucide-react';
+import { Sliders, X, Tv, Palette, Check, Vibrate, Cloud, ChevronRight } from 'lucide-react';
 import { THEMES } from '../../constants/themes';
 import { Theme } from '../../types';
 import { haptics } from '../../services/haptics';
+import { getSyncCode } from '../../cloudSync';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -14,6 +15,7 @@ interface SettingsModalProps {
   toggleShader: (key: string) => void;
   hapticsEnabled?: boolean;
   setHapticsEnabled?: (val: boolean) => void;
+  onOpenCloudSync?: () => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -26,8 +28,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   toggleShader,
   hapticsEnabled = true,
   setHapticsEnabled,
+  onOpenCloudSync,
 }) => {
   if (!isOpen) return null;
+  const syncCode = getSyncCode();
 
   return (
     <div
@@ -54,6 +58,35 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-6">
+          {/* Cloud Save Vault Card */}
+          <div
+            onClick={() => {
+              onClose();
+              onOpenCloudSync?.();
+            }}
+            className="p-4 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 bg-zinc-900/70 border-zinc-800 text-zinc-300 hover:bg-zinc-900 hover:border-zinc-700"
+          >
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <Cloud className="w-4 h-4 text-sky-400" />
+                <span className="text-sm font-extrabold text-white">Cloud Save Vault</span>
+                <span className={`px-2 py-0.5 rounded-md text-[9px] font-black tracking-wider uppercase ${
+                  syncCode
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                    : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+                }`}>
+                  {syncCode ? 'Linked' : 'Not Linked'}
+                </span>
+              </div>
+              <p className="text-xs text-zinc-400 leading-snug">
+                {syncCode
+                  ? `Active Sync Code: ${syncCode}. Tap to manage or sync.`
+                  : 'Sync your saves, states & games across devices with a private code.'}
+              </p>
+            </div>
+            <ChevronRight className="w-4 h-4 text-zinc-500 shrink-0" />
+          </div>
+
           {/* Controls & Haptic Feedback Toggle Card */}
           <div
             onClick={() => {

@@ -8,6 +8,7 @@ import {
   Settings,
   Play,
   X,
+  Cloud,
 } from 'lucide-react';
 import { Game, Theme } from '../../types';
 import { formatGameTitle } from '../../constants/cores';
@@ -28,6 +29,8 @@ interface LibraryViewProps {
   onLaunchGame: (game: Game) => void;
   onOpenSettings: () => void;
   onTriggerAddRom: () => void;
+  onOpenCloudSync: () => void;
+  cloudStatus?: 'unlinked' | 'idle' | 'syncing' | 'offline' | 'error';
 }
 
 export const LibraryView: React.FC<LibraryViewProps> = ({
@@ -44,6 +47,8 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   onLaunchGame,
   onOpenSettings,
   onTriggerAddRom,
+  onOpenCloudSync,
+  cloudStatus,
 }) => {
   return (
     <div className="pb-16">
@@ -89,6 +94,23 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
               title="Load ROM"
             >
               <Plus className="w-4 h-4 stroke-[2.5]" />
+            </button>
+
+            <button
+              onClick={onOpenCloudSync}
+              className={`p-2.5 rounded-xl border transition active:scale-95 flex items-center gap-1.5 ${
+                cloudStatus === 'idle'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
+                  : cloudStatus === 'syncing'
+                  ? 'bg-sky-500/10 border-sky-500/30 text-sky-400 animate-pulse'
+                  : 'bg-zinc-900/90 hover:bg-zinc-800 border-zinc-800 text-zinc-300'
+              }`}
+              title="Cloud Save Vault"
+            >
+              <Cloud className="w-4 h-4" />
+              {cloudStatus === 'idle' && (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+              )}
             </button>
 
             <button

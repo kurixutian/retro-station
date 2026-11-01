@@ -12,12 +12,19 @@ import { createEmptySlotsForGame, createPrepopulatedThumbnail, downloadBinaryFil
 import { createInitialEngineState } from './demoEngines/engineState';
 import { stepGameFrame } from './demoEngines/gameLogic';
 import { drawGameCanvas } from './demoEngines/gameRenderer';
-import { normalizeBinaryData } from './cloudSync';
+import {
+  normalizeBinaryData,
+  markLocalSaveModified,
+  onDataUpdated,
+  subscribeSyncStatus,
+  CloudSyncStatus,
+} from './cloudSync';
 
 import { LibraryView } from './components/library/LibraryView';
 import { InGameView } from './components/emulator/InGameView';
 import { SettingsModal } from './components/modals/SettingsModal';
 import { SaveSlotsModal } from './components/modals/SaveSlotsModal';
+import { CloudSyncModal } from './components/modals/CloudSyncModal';
 
 const INITIAL_GAMES: Game[] = [];
 
@@ -78,6 +85,73 @@ export default function App() {
   const [globalSettingsOpen, setGlobalSettingsOpen] = useState(false);
   const [inGameMenuOpen, setInGameMenuOpen] = useState(false);
   const [inGameSaveModalMode, setInGameSaveModalMode] = useState<'save' | 'load' | null>(null);
+  const [cloudModalOpen, setCloudModalOpen] = useState(false);
+  const [cloudStatus, setCloudStatus] = useState<CloudSyncStatus>('unlinked');
+
+  useEffect(() => {
+    const unsub = subscribeSyncStatus((st) => setCloudStatus(st));
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    const unsub = onDataUpdated((keys) => {
+      if (keys.includes('retro_games')) {
+        try {
+          const saved = JSON.parse(localStorage.getItem('retro_games') || 'null');
+          if (Array.isArray(saved)) {
+            setGames(saved.map((g: any) => ({
+              ...g,
+              subtitle: (g.subtitle || g.system || '').replace(/\s*•\s*Auto-Detected Core/i, '')
+            })));
+          }
+        } catch (e) {}
+      }
+      const hasStateUpdate = keys.some((k) => k.startsWith('state:'));
+      if (hasStateUpdate) {
+        (async () => {
+          for (const key of keys) {
+            if (key.startsWith('state:')) {
+              const parts = key.split(':');
+              const gId = parts[1];
+              const slotN = parseInt(parts[2], 10);
+              const val = await idbGet(key).catch(() => null);
+              if (val && gId && slotN) {
+                const emuSt = normalizeBinaryData(val.emuState || val.emuStateBase64 || val.stateData?.emuState || val.stateData?.emuStateBase64);
+                setSavesByGameId((prev) => {
+                  const list = prev[gId] || createEmptySlotsForGame(gId);
+                  return {
+                    ...prev,
+                    [gId]: list.map((s) =>
+                      s.slot === slotN
+                        ? {
+                            slot: slotN,
+                            empty: false,
+                            label: val.label || `Slot #${slotN}`,
+                            timestamp: val.timestamp || '',
+                            score: 0,
+                            frame: 0,
+                            screenshot: val.screenshot || null,
+                            stateData: val.stateData
+                              ? { ...val.stateData, emuState: emuSt || val.stateData.emuState }
+                              : {
+                                  version: 'EJS_STATE',
+                                  gameId: gId,
+                                  timestamp: val.timestamp,
+                                  emuState: emuSt
+                                }
+                          }
+                        : s
+                    )
+                  };
+                });
+              }
+            }
+          }
+        })();
+      }
+    });
+    return () => unsub();
+  }, []);
 
   // Theme & Combinable Shader Pipeline State (Auto-saved to localStorage)
   const [themeId, setThemeId] = useState(() => {
@@ -208,7 +282,10 @@ export default function App() {
   }, [padLayout]);
 
   useEffect(() => {
-    try { localStorage.setItem('retro_games', JSON.stringify(games)); } catch (e) {}
+    try {
+      localStorage.setItem('retro_games', JSON.stringify(games));
+      markLocalSaveModified('retro_games');
+    } catch (e) {}
   }, [games]);
 
   const getEmu = () => {
@@ -612,7 +689,7 @@ export default function App() {
         timestamp: timeStr0,
         screenshot: shot,
         emuState
-      }).catch(console.error);
+      }).then(() => markLocalSaveModified(`state:${game.id}:${slotNumber}`)).catch(console.error);
       soundFX.save();
       showToast(`Saved ${game.title} → Slot #${slotNumber}`);
       return;
@@ -667,7 +744,7 @@ export default function App() {
       timestamp: timeStr,
       screenshot,
       stateData: statePayload
-    }).catch(console.error);
+    }).then(() => markLocalSaveModified(`state:${game.id}:${slotNumber}`)).catch(console.error);
 
     soundFX.save();
     showToast(`Saved ${game.title} → Slot #${slotNumber}`);
@@ -729,7 +806,9 @@ export default function App() {
         )
       };
     });
-    idbDelete(`state:${gameId}:${slotNumber}`).catch(console.error);
+    idbDelete(`state:${gameId}:${slotNumber}`)
+      .then(() => markLocalSaveModified(`state:${gameId}:${slotNumber}`))
+      .catch(console.error);
     showToast(`Cleared Slot #${slotNumber}`);
   }, [showToast]);
 
@@ -756,6 +835,7 @@ export default function App() {
           const prevSrm = normalizeBinaryData(await idbGet(`srm:${activeGame.id}`).catch(() => null));
           if (!areBytesEqual(srm, prevSrm)) {
             await idbPut(`srm:${activeGame.id}`, srm).catch(() => {});
+            markLocalSaveModified(`srm:${activeGame.id}`);
           }
         }
       }
@@ -764,6 +844,7 @@ export default function App() {
         const prevRtc = normalizeBinaryData(await idbGet(`rtc:${activeGame.id}`).catch(() => null));
         if (!areBytesEqual(rtc, prevRtc)) {
           await idbPut(`rtc:${activeGame.id}`, rtc).catch(() => {});
+          markLocalSaveModified(`rtc:${activeGame.id}`);
         }
       }
       const stArr = normalizeBinaryData(win.getStateData?.());
@@ -771,6 +852,7 @@ export default function App() {
         const prevAuto = normalizeBinaryData(await idbGet(`autosave:${activeGame.id}`).catch(() => null));
         if (!areBytesEqual(stArr, prevAuto)) {
           await idbPut(`autosave:${activeGame.id}`, stArr).catch(() => {});
+          markLocalSaveModified(`autosave:${activeGame.id}`);
         }
       }
     } catch (e) {}
@@ -1042,6 +1124,8 @@ export default function App() {
           onLaunchGame={(g) => launchGame(g)}
           onOpenSettings={() => setGlobalSettingsOpen(true)}
           onTriggerAddRom={() => romInputRef.current?.click()}
+          onOpenCloudSync={() => setCloudModalOpen(true)}
+          cloudStatus={cloudStatus}
         />
       )}
 
@@ -1121,6 +1205,15 @@ export default function App() {
         toggleShader={toggleShader}
         hapticsEnabled={hapticsEnabled}
         setHapticsEnabled={setHapticsEnabled}
+        onOpenCloudSync={() => setCloudModalOpen(true)}
+      />
+
+      {/* MODAL 3: CLOUD SAVE VAULT (SYNC CODE) */}
+      <CloudSyncModal
+        isOpen={cloudModalOpen}
+        onClose={() => setCloudModalOpen(false)}
+        theme={theme}
+        showToast={showToast}
       />
     </div>
   );
