@@ -136,6 +136,20 @@ export default {
         // Timestamp-based atomic merge (newer revision wins per save item)
         for (const [key, item] of Object.entries(incomingItems)) {
           const existing = vault.items[key];
+
+          // Never let an empty game list from a fresh client overwrite an existing populated library
+          if ((key === 'retro_games' || key === 'library_games') && existing && Array.isArray(existing.data) && existing.data.length > 0) {
+            const incomingList = Array.isArray(item.data) ? item.data : [];
+            if (incomingList.length === 0) {
+              continue; // Keep existing games
+            }
+            // Additive merge by ID
+            const map = new Map();
+            existing.data.forEach((g) => g && g.id && map.set(g.id, g));
+            incomingList.forEach((g) => g && g.id && map.set(g.id, g));
+            item.data = Array.from(map.values());
+          }
+
           if (!existing || (item.updatedAt || 0) >= (existing.updatedAt || 0)) {
             vault.items[key] = item;
           }

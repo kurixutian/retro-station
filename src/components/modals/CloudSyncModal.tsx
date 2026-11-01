@@ -118,17 +118,20 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
       showToast('Please enter a valid Sync Code');
       return;
     }
+    try {
+      localStorage.removeItem('retro_sync_meta');
+    } catch (err) {}
     setSyncCode(clean);
     setLocalSyncCode(clean);
     setInputCode('');
-    showToast(`Connected to code ${clean}. Restoring saves...`);
+    showToast(`Connected to vault ${clean}. Restoring progress...`);
 
     setIsSyncing(true);
     const res = await syncNow();
     setIsSyncing(false);
 
     if (res.success) {
-      showToast(`Synced! Restored ${res.pulledCount} save(s) from vault.`);
+      showToast(`Restored ${res.pulledCount} items from vault!`);
     } else {
       showToast(`Linked! (${res.error || 'Will sync when online'})`);
     }

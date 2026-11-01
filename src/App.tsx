@@ -299,10 +299,18 @@ export default function App() {
     try { localStorage.setItem('retro_pad_layout', JSON.stringify(padLayout)); } catch (e) {}
   }, [padLayout]);
 
+  const isFirstMountRef = useRef(true);
+
   useEffect(() => {
     try {
       localStorage.setItem('retro_games', JSON.stringify(games));
-      markLocalSaveModified('retro_games');
+      if (isFirstMountRef.current) {
+        isFirstMountRef.current = false;
+        return;
+      }
+      if (games.length > 0) {
+        markLocalSaveModified('retro_games');
+      }
     } catch (e) {}
   }, [games]);
 
