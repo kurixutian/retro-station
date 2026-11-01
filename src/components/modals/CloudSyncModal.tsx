@@ -155,10 +155,18 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     }
   };
 
-  const handleSaveEndpoint = () => {
+  const handleSaveEndpoint = async () => {
     const clean = endpointInput.trim();
     setSyncEndpoint(clean);
-    showToast('Vault endpoint updated');
+    showToast('Vault endpoint saved. Testing connection...');
+    setIsSyncing(true);
+    const res = await syncNow();
+    setIsSyncing(false);
+    if (res.success) {
+      showToast('Vault connected and synced!');
+    } else {
+      showToast(`Warning: ${res.error || 'Could not reach server'}`);
+    }
   };
 
   const handleResetEndpoint = () => {
@@ -267,6 +275,19 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                     )}
                   </button>
                 </div>
+
+                {/* Error / Connection Notice */}
+                {syncStatus === 'error' && (
+                  <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-[11px] text-rose-300 leading-snug space-y-1">
+                    <div className="font-extrabold flex items-center gap-1.5 text-rose-200">
+                      <span>⚠️ Sync Notice:</span>
+                    </div>
+                    <p>{statusDetails || 'Could not connect to cloud vault.'}</p>
+                    <p className="text-zinc-400 text-[10px] pt-1">
+                      If you haven't deployed your Cloudflare Worker yet, see the quick steps below or check <span className="font-mono text-zinc-300">worker/README.md</span>.
+                    </p>
+                  </div>
+                )}
 
                 <p className="text-[11px] text-zinc-400 text-center leading-snug">
                   Enter this code on your phone, tablet, or PC to access all your save files and imported games!

@@ -379,9 +379,13 @@ export async function syncNow(): Promise<{
       }
     } catch (networkErr: any) {
       console.warn('[CloudSync] Network request failed:', networkErr);
-      setStatus('error', `Could not reach sync vault (${networkErr.message || 'network error'})`);
+      const isPlaceholder = endpoint.includes('retro-vault.workers.dev');
+      const errorMsg = isPlaceholder
+        ? 'Vault worker not deployed yet. Deploy your free worker or paste your URL below.'
+        : `Could not reach sync vault (${networkErr.message || 'network error'})`;
+      setStatus('error', errorMsg);
       isSyncRunning = false;
-      return { success: false, error: networkErr.message, pulledCount: 0, pushedCount: 0 };
+      return { success: false, error: errorMsg, pulledCount: 0, pushedCount: 0 };
     }
 
     const remoteItems = remoteVault?.items || {};
