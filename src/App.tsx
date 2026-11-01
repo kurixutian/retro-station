@@ -834,6 +834,8 @@ export default function App() {
       if (e.code === 'KeyZ' || e.code === 'KeyK') setButtonDown('actionB');
       if (e.code === 'KeyS') setButtonDown('actionX');
       if (e.code === 'KeyA') setButtonDown('actionY');
+      if (e.code === 'KeyQ') setButtonDown('btnL');
+      if (e.code === 'KeyE') setButtonDown('btnR');
       if (e.code === 'Enter') setButtonDown('start');
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'Space') setButtonDown('select');
       if (e.code === 'KeyP') setIsPaused((p) => !p);
@@ -857,6 +859,8 @@ export default function App() {
       if (e.code === 'KeyZ' || e.code === 'KeyK') setButtonUp('actionB');
       if (e.code === 'KeyS') setButtonUp('actionX');
       if (e.code === 'KeyA') setButtonUp('actionY');
+      if (e.code === 'KeyQ') setButtonUp('btnL');
+      if (e.code === 'KeyE') setButtonUp('btnR');
       if (e.code === 'Enter') setButtonUp('start');
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'Space') setButtonUp('select');
       if (e.code === 'KeyR' || e.code === 'Backspace') setIsRewinding(false);
