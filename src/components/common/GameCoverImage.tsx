@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Gamepad2 } from 'lucide-react';
 import { getBoxartUrls, formatGameTitle } from '../../constants/cores';
-import { idbGet, idbPut } from '../../services/storage/idb';
+import { idbGet, idbPut, idbDelete } from '../../services/storage/idb';
 
 interface GameCoverImageProps {
   game: any;
@@ -20,13 +20,24 @@ export const GameCoverImage: React.FC<GameCoverImageProps> = ({
   const [failedAll, setFailedAll] = useState(false);
   const [cachedUrl, setCachedUrl] = useState<string | null>(null);
 
+  // Reset indices whenever the displayed game changes
+  useEffect(() => {
+    setSrcIndex(0);
+    setFailedAll(false);
+  }, [game?.id]);
+
   useEffect(() => {
     let active = true;
     if (game?.id) {
       idbGet(`cover:${game.id}`)
         .then((saved) => {
           if (active && saved && typeof saved === 'string') {
-            setCachedUrl(saved);
+            // Discard previously cached broken URLs with %20 in raw.githubusercontent.com
+            if (saved.includes('raw.githubusercontent.com') && saved.includes('%20')) {
+              idbDelete(`cover:${game.id}`).catch(() => {});
+            } else {
+              setCachedUrl(saved);
+            }
           }
         })
         .catch(() => {});
@@ -81,6 +92,9 @@ export const GameCoverImage: React.FC<GameCoverImageProps> = ({
         onError={() => {
           if (cachedUrl) {
             setCachedUrl(null);
+            if (game?.id) {
+              idbDelete(`cover:${game.id}`).catch(() => {});
+            }
             return;
           }
           if (srcIndex + 1 < urls.length) {
