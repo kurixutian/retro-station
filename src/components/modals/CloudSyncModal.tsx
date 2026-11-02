@@ -14,8 +14,6 @@ import {
   ArrowRight,
   ChevronDown,
   ChevronUp,
-  Eye,
-  EyeOff,
 } from 'lucide-react';
 import { Theme } from '../../types';
 import {
@@ -53,7 +51,6 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   const [isSyncing, setIsSyncing] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [showEndpoint, setShowEndpoint] = useState(false);
 
   const getCustomEndpoint = () => {
     try {
@@ -424,28 +421,13 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                   By default, RetroStation uses the community Cloudflare Worker vault. If you deployed your own private Cloudflare Worker, paste your worker URL below:
                 </p>
                 <div className="flex gap-2">
-                  <div className="relative flex-1 flex items-center">
-                    <input
-                      type={showEndpoint ? 'text' : 'password'}
-                      value={endpointInput}
-                      onChange={(e) => setEndpointInput(e.target.value)}
-                      placeholder="https://your-worker.your-subdomain.workers.dev"
-                      className="w-full bg-zinc-900 border border-zinc-800 rounded-lg pl-3 pr-8 py-1.5 text-[11px] font-mono text-zinc-200 outline-none focus:border-zinc-700"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowEndpoint((v) => !v)}
-                      className="absolute right-2 text-zinc-500 hover:text-zinc-300 p-0.5 transition"
-                      title={showEndpoint ? 'Hide Worker URL' : 'Show Worker URL'}
-                      aria-label={showEndpoint ? 'Hide Worker URL' : 'Show Worker URL'}
-                    >
-                      {showEndpoint ? (
-                        <EyeOff className="w-3.5 h-3.5" />
-                      ) : (
-                        <Eye className="w-3.5 h-3.5" />
-                      )}
-                    </button>
-                  </div>
+                  <input
+                    type="text"
+                    value={endpointInput}
+                    onChange={(e) => setEndpointInput(e.target.value)}
+                    placeholder="https://your-worker.your-subdomain.workers.dev"
+                    className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-1.5 text-[11px] font-mono text-zinc-200 outline-none focus:border-zinc-700"
+                  />
                   <button
                     onClick={handleSaveEndpoint}
                     className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-[11px] font-bold transition"

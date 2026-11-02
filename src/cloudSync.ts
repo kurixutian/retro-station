@@ -35,9 +35,7 @@ const SYNC_META_KEY = 'retro_sync_meta';
 const DEVICE_ID_KEY = 'retro_device_id';
 
 // Default worker endpoint (configured to your live Cloudflare Worker)
-export const DEFAULT_SYNC_ENDPOINT =
-  (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_SYNC_ENDPOINT) ||
-  'https://retro-vault.xtian-xtn.workers.dev';
+export const DEFAULT_SYNC_ENDPOINT = 'https://retro-vault.xtian-xtn.workers.dev';
 
 // Persistent Device ID
 export function getOrCreateDeviceId(): string {
