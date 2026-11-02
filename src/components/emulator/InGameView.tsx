@@ -565,7 +565,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
   return (
     <div
       className={`fixed inset-0 w-full overflow-hidden ${shaders.amoled ? 'bg-black' : 'bg-zinc-950'}`}
-      style={{ height: '100dvh' }}
+      style={{ height: '100lvh' }}
     >
       {/* Handheld Shell — portrait: flex-col, landscape: flex-row (game + controls side by side) */}
       <div
@@ -847,9 +847,9 @@ export const InGameView: React.FC<InGameViewProps> = ({
             style={{
               aspectRatio: String(coreRatio(activeGame.core)),
               maxWidth: '100%',
-              maxHeight: isLandscape ? 'calc(100dvh - 16px)' : undefined,
-              width: isLandscape ? 'auto' : `min(100%, ${(48 * coreRatio(activeGame.core)).toFixed(2)}dvh)`,
-              height: isLandscape ? 'calc(100dvh - 16px)' : undefined,
+              maxHeight: isLandscape ? 'calc(100lvh - 16px)' : undefined,
+              width: isLandscape ? 'auto' : `min(100%, ${(48 * coreRatio(activeGame.core)).toFixed(2)}lvh)`,
+              height: isLandscape ? 'calc(100lvh - 16px)' : undefined,
               boxShadow: !shaders.amoled && shaders.rgbBloom
                 ? `0 0 28px ${theme.hex}33, inset 0 0 18px rgba(0,0,0,0.75)`
                 : 'none',

@@ -1411,7 +1411,7 @@ export default function App() {
   }, [setButtonDown, setButtonUp]);
 
   return (
-    <div className={`min-h-[100dvh] w-full ${shaders.amoled ? 'bg-black text-zinc-100' : theme.appBg} font-sans select-none overflow-x-hidden`}>
+    <div className={`min-h-[100vh] min-h-[100lvh] w-full ${shaders.amoled ? 'bg-black text-zinc-100' : theme.appBg} font-sans select-none overflow-x-hidden`}>
       {/* Hidden File Input for ROMs */}
       <input
         ref={romInputRef}

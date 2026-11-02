@@ -53,7 +53,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   onOpenControls,
 }) => {
   return (
-    <div className="pb-16 min-h-[100dvh]">
+    <div className="pb-16 min-h-[100vh] min-h-[100lvh]">
       {/* Sticky Top Navigation Bar */}
       <header
         className="sticky top-0 z-30 backdrop-blur-xl bg-zinc-950/85 border-b border-zinc-800/80 px-4 sm:px-6 py-3 hardware-panel"
