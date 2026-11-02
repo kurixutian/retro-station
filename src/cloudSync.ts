@@ -97,13 +97,21 @@ export function generateSyncCode(): string {
 export function getSyncEndpoint(): string {
   try {
     const custom = localStorage.getItem(SYNC_ENDPOINT_KEY);
+    if (!custom) return DEFAULT_SYNC_ENDPOINT;
+    const clean = custom.trim().replace(/\/+$/, '');
     if (
-      custom &&
-      custom.trim().replace(/\/+$/, '') !== DEFAULT_SYNC_ENDPOINT.replace(/\/+$/, '')
+      !clean ||
+      clean === DEFAULT_SYNC_ENDPOINT.replace(/\/+$/, '') ||
+      clean === 'https://retro-vault.workers.dev' ||
+      clean.includes('retro-vault.workers.dev') ||
+      clean.includes('your-subdomain') ||
+      clean.includes('your-worker') ||
+      clean.includes('placeholder')
     ) {
-      return custom.trim().replace(/\/+$/, '');
+      localStorage.removeItem(SYNC_ENDPOINT_KEY);
+      return DEFAULT_SYNC_ENDPOINT;
     }
-    return DEFAULT_SYNC_ENDPOINT;
+    return clean;
   } catch (e) {
     return DEFAULT_SYNC_ENDPOINT;
   }
@@ -112,7 +120,14 @@ export function getSyncEndpoint(): string {
 export function setSyncEndpoint(url: string): void {
   try {
     const clean = url.trim().replace(/\/+$/, '');
-    if (clean) {
+    if (
+      clean &&
+      clean !== DEFAULT_SYNC_ENDPOINT.replace(/\/+$/, '') &&
+      clean !== 'https://retro-vault.workers.dev' &&
+      !clean.includes('retro-vault.workers.dev') &&
+      !clean.includes('your-subdomain') &&
+      !clean.includes('your-worker')
+    ) {
       localStorage.setItem(SYNC_ENDPOINT_KEY, clean);
     } else {
       localStorage.removeItem(SYNC_ENDPOINT_KEY);
@@ -190,8 +205,6 @@ export function isSyncableKey(key: string): boolean {
   return (
     key === 'retro_games' ||
     key === 'library_games' ||
-    key.startsWith('rom_') ||
-    key.startsWith('rom:') ||
     key.startsWith('state:') ||
     key.startsWith('srm:') ||
     key.startsWith('rtc:') ||
@@ -464,6 +477,12 @@ export async function syncNow(): Promise<{
       }
     } catch (networkErr: any) {
       console.warn('[CloudSync] Network request failed:', networkErr);
+      if (endpoint !== DEFAULT_SYNC_ENDPOINT) {
+        console.warn(`[CloudSync] Custom endpoint ${endpoint} failed. Resetting to default worker.`);
+        localStorage.removeItem(SYNC_ENDPOINT_KEY);
+        isSyncRunning = false;
+        return syncNow();
+      }
       const isPlaceholder = endpoint === 'https://retro-vault.workers.dev';
       const errorMsg = isPlaceholder
         ? 'Vault worker not deployed yet. Deploy your free worker or paste your URL below.'
@@ -697,31 +716,65 @@ export async function syncNow(): Promise<{
       }
     }
 
-    // 5. Send POST batch to remote if we have items to upload
-    if (Object.keys(itemsToUpload).length > 0) {
-      const postUrl = `${endpoint}/api/sync/${encodeURIComponent(code)}`;
-      const payload = {
-        clientDeviceId: getOrCreateDeviceId(),
-        items: itemsToUpload,
-      };
+    // 5. Send POST batch to remote in safe chunks (<= 450KB) to respect Cloudflare Worker 10ms CPU limits
+    const uploadEntries = Object.entries(itemsToUpload);
+    if (uploadEntries.length > 0) {
+      const MAX_BATCH_BYTES = 450 * 1024;
+      const batches: Record<string, SyncVaultItem>[] = [];
+      let currentBatch: Record<string, SyncVaultItem> = {};
+      let currentSize = 0;
 
-      const pushRes = await fetch(postUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+      for (const [k, it] of uploadEntries) {
+        let est = 0;
+        try {
+          est = JSON.stringify(it).length;
+        } catch (e) {
+          est = 1024;
+        }
 
-      if (!pushRes.ok) {
-        throw new Error(`Vault server upload error: HTTP ${pushRes.status}`);
+        // Guard against oversized single items that would exhaust the worker CPU limit
+        if (est > 900 * 1024) {
+          console.warn(`[CloudSync] Skipping oversized item ${k} (${Math.round(est / 1024)} KB)`);
+          continue;
+        }
+
+        if (currentSize + est > MAX_BATCH_BYTES && Object.keys(currentBatch).length > 0) {
+          batches.push(currentBatch);
+          currentBatch = {};
+          currentSize = 0;
+        }
+        currentBatch[k] = it;
+        currentSize += est;
+      }
+      if (Object.keys(currentBatch).length > 0) {
+        batches.push(currentBatch);
       }
 
-      // Mark items as synced
-      for (const [upKey, upItem] of Object.entries(itemsToUpload)) {
-        metaMap[upKey] = {
-          updatedAt: upItem.updatedAt,
-          pendingUpload: false,
+      for (const batch of batches) {
+        const postUrl = `${endpoint}/api/sync/${encodeURIComponent(code)}`;
+        const payload = {
+          clientDeviceId: getOrCreateDeviceId(),
+          items: batch,
         };
-        pushedCount++;
+
+        const pushRes = await fetch(postUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        if (!pushRes.ok) {
+          throw new Error(`Vault server upload error: HTTP ${pushRes.status}`);
+        }
+
+        // Mark items in this batch as synced
+        for (const [upKey, upItem] of Object.entries(batch)) {
+          metaMap[upKey] = {
+            updatedAt: upItem.updatedAt,
+            pendingUpload: false,
+          };
+          pushedCount++;
+        }
       }
     }
 

@@ -301,7 +301,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                     </div>
                     <p>{statusDetails || 'Could not connect to cloud vault.'}</p>
                     <p className="text-zinc-400 text-[10px] pt-1">
-                      If you haven't deployed your Cloudflare Worker yet, see the quick steps below or check <span className="font-mono text-zinc-300">worker/README.md</span>.
+                      Please check your internet connection or tap &quot;Sync Now&quot; to retry.
                     </p>
                   </div>
                 )}
