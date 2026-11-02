@@ -107,6 +107,15 @@ export default {
             { headers: corsHeaders }
           );
         }
+        if (vault.deleted_games && Array.isArray(vault.deleted_games) && vault.deleted_games.length > 0) {
+          vault.items = vault.items || {};
+          vault.items.retro_deleted_games = {
+            key: 'retro_deleted_games',
+            data: vault.deleted_games,
+            updatedAt: vault.lastModified || Date.now(),
+            isBinary: false,
+          };
+        }
         return new Response(
           JSON.stringify({ exists: true, ...vault }),
           { headers: corsHeaders }
@@ -133,20 +142,60 @@ export default {
           vault = { version: 1, items: {}, lastModified: Date.now() };
         }
 
+        // 1. Process tombstones (deleted games tracking)
+        const deletedSet = new Set(Array.isArray(vault.deleted_games) ? vault.deleted_games : []);
+        if (incomingItems.retro_deleted_games && Array.isArray(incomingItems.retro_deleted_games.data)) {
+          incomingItems.retro_deleted_games.data.forEach((id) => id && deletedSet.add(id));
+        }
+        if (incomingItems.deleted_games && Array.isArray(incomingItems.deleted_games.data)) {
+          incomingItems.deleted_games.data.forEach((id) => id && deletedSet.add(id));
+        }
+
+        if (deletedSet.size > 0) {
+          vault.deleted_games = Array.from(deletedSet);
+          // Purge all items related to deleted games from vault
+          for (const delId of deletedSet) {
+            for (const vKey of Object.keys(vault.items)) {
+              if (
+                vKey === delId ||
+                vKey === `rom:${delId}` ||
+                vKey.startsWith(`state:${delId}:`) ||
+                vKey === `srm:${delId}` ||
+                vKey === `rtc:${delId}` ||
+                vKey === `autosave:${delId}` ||
+                vKey === `cover:${delId}`
+              ) {
+                delete vault.items[vKey];
+              }
+            }
+          }
+        }
+
+        // Clean up any oversized legacy rom_ keys from vault to ensure instant sub-second sync
+        for (const vKey of Object.keys(vault.items)) {
+          if (vKey.startsWith('rom_') || vKey.startsWith('rom:')) {
+            delete vault.items[vKey];
+          }
+        }
+
         // Timestamp-based atomic merge (newer revision wins per save item)
         for (const [key, item] of Object.entries(incomingItems)) {
+          // Never store raw ROM binaries in vault to keep sync fast
+          if (key.startsWith('rom_') || key.startsWith('rom:')) {
+            continue;
+          }
+
           const existing = vault.items[key];
 
-          // Never let an empty game list from a fresh client overwrite an existing populated library
-          if ((key === 'retro_games' || key === 'library_games') && existing && Array.isArray(existing.data) && existing.data.length > 0) {
+          // Merge games list respecting tombstones
+          if (key === 'retro_games' || key === 'library_games') {
             const incomingList = Array.isArray(item.data) ? item.data : [];
-            if (incomingList.length === 0) {
-              continue; // Keep existing games
-            }
-            // Additive merge by ID
+            const existingList = existing && Array.isArray(existing.data) ? existing.data : [];
+
+            // Additive merge by ID, respecting tombstones
             const map = new Map();
-            existing.data.forEach((g) => g && g.id && map.set(g.id, g));
-            incomingList.forEach((g) => g && g.id && map.set(g.id, g));
+            existingList.forEach((g) => g && g.id && !deletedSet.has(g.id) && map.set(g.id, g));
+            incomingList.forEach((g) => g && g.id && !deletedSet.has(g.id) && map.set(g.id, g));
             item.data = Array.from(map.values());
           }
 

@@ -19,6 +19,11 @@ import {
   subscribeSyncStatus,
   mergeAndDeduplicateGames,
   CloudSyncStatus,
+  getSyncCode,
+  syncNow,
+  recordDeletedGame,
+  unrecordDeletedGame,
+  getDeletedGameIds,
 } from './cloudSync';
 
 import { LibraryView } from './components/library/LibraryView';
@@ -27,6 +32,7 @@ import { SettingsModal } from './components/modals/SettingsModal';
 import { SaveSlotsModal } from './components/modals/SaveSlotsModal';
 import { CloudSyncModal } from './components/modals/CloudSyncModal';
 import { ControlsModal } from './components/modals/ControlsModal';
+import { MissingRomModal } from './components/modals/MissingRomModal';
 
 const INITIAL_GAMES: Game[] = [];
 
@@ -50,7 +56,9 @@ export default function App() {
     try {
       const saved = JSON.parse(localStorage.getItem('retro_games') || 'null');
       if (Array.isArray(saved)) {
-        const deduped = mergeAndDeduplicateGames(saved, [], false);
+        const deletedSet = new Set(getDeletedGameIds());
+        const filtered = saved.filter((g) => g && g.id && !deletedSet.has(g.id));
+        const deduped = mergeAndDeduplicateGames(filtered, [], false);
         return deduped.map((g) => ({
           ...g,
           subtitle: (g.subtitle || g.system || '').replace(/\s*•\s*Auto-Detected Core/i, '')
@@ -90,10 +98,36 @@ export default function App() {
   const [inGameSaveModalMode, setInGameSaveModalMode] = useState<'save' | 'load' | null>(null);
   const [cloudModalOpen, setCloudModalOpen] = useState(false);
   const [cloudStatus, setCloudStatus] = useState<CloudSyncStatus>('unlinked');
+  const [missingRomData, setMissingRomData] = useState<{ game: Game; optionalStateData?: any } | null>(null);
 
   useEffect(() => {
     const unsub = subscribeSyncStatus((st) => setCloudStatus(st));
     return () => unsub();
+  }, []);
+
+  // Auto-sync on startup if a Sync Code is linked
+  useEffect(() => {
+    const code = getSyncCode();
+    if (code && typeof navigator !== 'undefined' && navigator.onLine) {
+      syncNow().catch((err) => console.warn('[CloudSync] Startup sync warning:', err));
+    }
+  }, []);
+
+  // Restore library from IndexedDB if localStorage was empty
+  useEffect(() => {
+    if (games.length === 0) {
+      idbGet('library_games').then((saved) => {
+        if (Array.isArray(saved) && saved.length > 0) {
+          const deletedSet = new Set(getDeletedGameIds());
+          const filtered = saved.filter((g) => g && g.id && !deletedSet.has(g.id));
+          const deduped = mergeAndDeduplicateGames(filtered, [], false);
+          setGames(deduped.map((g: any) => ({
+            ...g,
+            subtitle: (g.subtitle || g.system || '').replace(/\s*•\s*Auto-Detected Core/i, '')
+          })));
+        }
+      }).catch(() => {});
+    }
   }, []);
 
   useEffect(() => {
@@ -101,12 +135,15 @@ export default function App() {
       if (
         keys.includes('retro_games') ||
         keys.includes('library_games') ||
-        keys.some((k) => k.startsWith('rom_') || k.startsWith('rom:'))
+        keys.includes('retro_deleted_games') ||
+        keys.includes('deleted_games')
       ) {
         try {
           const applyGameList = (list: any[]) => {
-            if (!Array.isArray(list) || list.length === 0) return;
-            const deduped = mergeAndDeduplicateGames(list, [], false);
+            if (!Array.isArray(list)) return;
+            const deletedSet = new Set(getDeletedGameIds());
+            const filtered = list.filter((g: any) => g && g.id && !deletedSet.has(g.id));
+            const deduped = mergeAndDeduplicateGames(filtered, [], false);
             setGames(deduped.map((g: any) => ({
               ...g,
               subtitle: (g.subtitle || g.system || '').replace(/\s*•\s*Auto-Detected Core/i, '')
@@ -120,11 +157,19 @@ export default function App() {
             });
           };
 
-          const saved = JSON.parse(localStorage.getItem('retro_games') || 'null');
+          let saved: any[] | null = null;
+          try {
+            saved = JSON.parse(localStorage.getItem('retro_games') || 'null');
+          } catch (e) {}
+
           if (Array.isArray(saved) && saved.length > 0) {
             applyGameList(saved);
           } else {
-            idbGet('library_games').then(applyGameList).catch(() => {});
+            idbGet('library_games').then((idbList) => {
+              if (Array.isArray(idbList)) {
+                applyGameList(idbList);
+              }
+            }).catch(() => {});
           }
         } catch (e) {}
       }
@@ -532,22 +577,51 @@ export default function App() {
     showToast(next ? 'Game Audio Muted' : 'Game Audio On');
   };
 
+  const handleRomSelectedForMissingGame = async (file: File) => {
+    if (!missingRomData) return;
+    const { game, optionalStateData } = missingRomData;
+    try {
+      await idbPut(game.id, file);
+      setMissingRomData(null);
+      showToast(`Linked ROM for ${game.title}! Launching...`);
+      launchGame(game, optionalStateData);
+    } catch (e) {
+      showToast('Could not store ROM file on this device');
+    }
+  };
+
   const deleteRom = useCallback(async (gameId: string) => {
+    // 1. Record tombstone so this game never resurrects across devices
+    recordDeletedGame(gameId);
+
+    // 2. Clean up all IndexedDB keys for this game
     try {
       await idbDelete(gameId);
       await idbDelete(`rom:${gameId}`);
+      await idbDelete(`srm:${gameId}`);
+      await idbDelete(`rtc:${gameId}`);
+      await idbDelete(`autosave:${gameId}`);
+      await idbDelete(`cover:${gameId}`);
+      for (let s = 1; s <= 4; s++) {
+        await idbDelete(`state:${gameId}:${s}`);
+      }
     } catch (e) {}
+
+    // 3. Update state and localStorage
     setGames((prev) => {
       const remaining = prev.filter((g) => g.id !== gameId);
       const userImportedOnly = remaining.filter((g) => g.real && g.id !== 'pokemon_gold');
+      localStorage.setItem('retro_games', JSON.stringify(remaining));
       idbPut('library_games', userImportedOnly).catch(() => {});
       return remaining;
     });
+
     setSavesByGameId((prev) => {
       const next = { ...prev };
       delete next[gameId];
       return next;
     });
+
     setDetailGame((d) => (d?.id === gameId ? null : d));
     setActiveGame((a) => {
       if (a?.id === gameId) {
@@ -556,6 +630,12 @@ export default function App() {
       }
       return a;
     });
+
+    // 4. Mark modified to trigger instant sync
+    markLocalSaveModified('retro_games');
+    markLocalSaveModified('library_games');
+    markLocalSaveModified('retro_deleted_games');
+
     showToast('ROM deleted from library');
   }, [showToast]);
 
@@ -621,11 +701,17 @@ export default function App() {
       crc32: crcHex,
     };
 
+    // If this game was previously deleted, clear its tombstone so it can be added fresh!
+    unrecordDeletedGame(newGame.id);
+
     try {
       await idbPut(newGame.id, file);
+      markLocalSaveModified('library_games');
+      markLocalSaveModified('retro_games');
     } catch (err) {
       showToast('Could not store ROM for offline use');
     }
+
     setGames((prev) => {
       const nextGames = [
         newGame,
@@ -637,9 +723,11 @@ export default function App() {
         ),
       ];
       const userImportedOnly = nextGames.filter((g) => g.real && g.id !== 'pokemon_gold');
+      localStorage.setItem('retro_games', JSON.stringify(nextGames));
       idbPut('library_games', userImportedOnly).catch(() => {});
       return nextGames;
     });
+
     setSavesByGameId((prev) => ({
       ...prev,
       [newGame.id]: createEmptySlotsForGame(newGame.id)
@@ -651,6 +739,53 @@ export default function App() {
   };
 
   const launchGame = useCallback((game: Game, optionalStateData: any = null) => {
+    if (game.real) {
+      Promise.all([
+        idbGet(game.id).catch(() => null),
+        idbGet(`srm:${game.id}`).catch(() => null),
+        idbGet(`rtc:${game.id}`).catch(() => null),
+        optionalStateData?.emuState ? Promise.resolve(null) : idbGet(`autosave:${game.id}`).catch(() => null)
+      ]).then(([blob, srm, rtc, autoSt]) => {
+        if (!blob) {
+          // ROM binary not on this device yet! Prompt user to select file
+          setMissingRomData({ game, optionalStateData });
+          return;
+        }
+
+        setActiveGame(game);
+        if (optionalStateData && optionalStateData.engineState) {
+          engineStateRef.current = JSON.parse(JSON.stringify(optionalStateData.engineState));
+          setLiveScore(engineStateRef.current.score || 0);
+          setLiveFrame(engineStateRef.current.frame || 0);
+          showToast(`Loaded State (${optionalStateData.timestamp || 'Saved'}) • ${game.title}`);
+        } else {
+          engineStateRef.current = createInitialEngineState(game.engineType);
+          setLiveScore(0);
+          setLiveFrame(0);
+          showToast(`Launching ${game.title} [${game.core}]`);
+        }
+
+        setRomUrl(URL.createObjectURL(blob));
+        hasUserInteractedRef.current = false;
+        pendingStateRef.current = normalizeBinaryData(optionalStateData?.emuState) || null;
+        pendingSrmRef.current = srm ? normalizeBinaryData(srm) : null;
+        pendingRtcRef.current = rtc ? normalizeBinaryData(rtc) : null;
+        if (!pendingStateRef.current && autoSt) pendingStateRef.current = normalizeBinaryData(autoSt);
+
+        rewindBufferRef.current = [];
+        setIsPaused(false);
+        setIsRewinding(false);
+        setFfSpeed(0);
+        setDetailGame(null);
+        setInGameMenuOpen(false);
+        setInGameSaveModalMode(null);
+        setCurrentView('ingame');
+        soundFX.save();
+      });
+      return;
+    }
+
+    // Demo/stub games
     setActiveGame(game);
     if (optionalStateData && optionalStateData.engineState) {
       engineStateRef.current = JSON.parse(JSON.stringify(optionalStateData.engineState));
@@ -668,20 +803,6 @@ export default function App() {
     pendingStateRef.current = normalizeBinaryData(optionalStateData?.emuState) || null;
     pendingSrmRef.current = null;
     pendingRtcRef.current = null;
-    if (game.real) {
-      Promise.all([
-        idbGet(game.id).catch(() => null),
-        idbGet(`srm:${game.id}`).catch(() => null),
-        idbGet(`rtc:${game.id}`).catch(() => null),
-        optionalStateData?.emuState ? Promise.resolve(null) : idbGet(`autosave:${game.id}`).catch(() => null)
-      ]).then(([blob, srm, rtc, autoSt]) => {
-        if (srm) pendingSrmRef.current = normalizeBinaryData(srm);
-        if (rtc) pendingRtcRef.current = normalizeBinaryData(rtc);
-        if (!pendingStateRef.current && autoSt) pendingStateRef.current = normalizeBinaryData(autoSt);
-        if (blob) setRomUrl(URL.createObjectURL(blob));
-        else showToast('ROM data missing - please re-upload this game');
-      });
-    }
     rewindBufferRef.current = [];
     setIsPaused(false);
     setIsRewinding(false);
@@ -1425,6 +1546,16 @@ export default function App() {
         isOpen={controlsModalOpen}
         onClose={() => setControlsModalOpen(false)}
         theme={theme}
+      />
+
+      {/* MODAL 5: LOCATE MISSING ROM FOR SYNCED GAME */}
+      <MissingRomModal
+        isOpen={Boolean(missingRomData)}
+        onClose={() => setMissingRomData(null)}
+        game={missingRomData?.game || null}
+        theme={theme}
+        onRomSelected={handleRomSelectedForMissingGame}
+        showToast={showToast}
       />
     </div>
   );
