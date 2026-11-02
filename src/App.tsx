@@ -26,6 +26,7 @@ import { InGameView } from './components/emulator/InGameView';
 import { SettingsModal } from './components/modals/SettingsModal';
 import { SaveSlotsModal } from './components/modals/SaveSlotsModal';
 import { CloudSyncModal } from './components/modals/CloudSyncModal';
+import { ControlsModal } from './components/modals/ControlsModal';
 
 const INITIAL_GAMES: Game[] = [];
 
@@ -455,9 +456,10 @@ export default function App() {
   const scalePad = (id: PadGroupId, sc: number) =>
     setPadLayout((l) => ({ ...l, [id]: { ...l[id], s: sc } }));
 
-  const [, setFps] = useState(60);
-  const [, setLiveScore] = useState(0);
-  const [, setLiveFrame] = useState(0);
+  const [fps, setFps] = useState(60);
+  const [liveScore, setLiveScore] = useState(0);
+  const [liveFrame, setLiveFrame] = useState(0);
+  const [controlsModalOpen, setControlsModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1015,25 +1017,38 @@ export default function App() {
     showToast(`Exported ${outName} (${(srmBytes.length / 1024).toFixed(1)} KB)`);
   }, [activeGame?.id, currentView, showToast]);
 
-  // Keyboard controls
+  // Keyboard controls with zero collision & hotkeys
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (currentView !== 'ingame') return;
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
         e.preventDefault();
       }
+      // D-Pad / Movement
       if (e.code === 'ArrowUp' || e.code === 'KeyW') setButtonDown('up');
       if (e.code === 'ArrowDown' || e.code === 'KeyS') setButtonDown('down');
       if (e.code === 'ArrowLeft' || e.code === 'KeyA') setButtonDown('left');
       if (e.code === 'ArrowRight' || e.code === 'KeyD') setButtonDown('right');
+
+      // Action Buttons (Decoupled from WASD: X/L for A, Z/K for B, C/I for X, V/J for Y)
       if (e.code === 'KeyX' || e.code === 'KeyL') setButtonDown('actionA');
       if (e.code === 'KeyZ' || e.code === 'KeyK') setButtonDown('actionB');
-      if (e.code === 'KeyS') setButtonDown('actionX');
-      if (e.code === 'KeyA') setButtonDown('actionY');
-      if (e.code === 'KeyQ') setButtonDown('btnL');
-      if (e.code === 'KeyE') setButtonDown('btnR');
+      if (e.code === 'KeyC' || e.code === 'KeyI') setButtonDown('actionX');
+      if (e.code === 'KeyV' || e.code === 'KeyJ') setButtonDown('actionY');
+
+      // Shoulder Buttons
+      if (e.code === 'KeyQ' || e.code === 'KeyU') setButtonDown('btnL');
+      if (e.code === 'KeyE' || e.code === 'KeyO') setButtonDown('btnR');
+
+      // System Controls
       if (e.code === 'Enter') setButtonDown('start');
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'Space') setButtonDown('select');
+
+      // In-Game Hotkeys
+      if (e.code === 'Escape' || e.code === 'Backquote') {
+        e.preventDefault();
+        setInGameMenuOpen((o) => !o);
+      }
       if (e.code === 'KeyP') setIsPaused((p) => !p);
       if (e.code === 'KeyR' || e.code === 'Backspace') setIsRewinding(true);
       if (e.code === 'KeyF') {
@@ -1043,7 +1058,16 @@ export default function App() {
           if (s === 4) return 8;
           return 0;
         });
-      };
+      }
+      if (e.code === 'KeyM') toggleAudio();
+      if (e.code === 'F1') {
+        e.preventDefault();
+        if (activeGame) saveStateToGameSlot(activeGame, 1);
+      }
+      if (e.code === 'F3') {
+        e.preventDefault();
+        if (activeGame) loadStateFromGameSlot(activeGame, 1);
+      }
     };
 
     const onKeyUp = (e: KeyboardEvent) => {
@@ -1053,10 +1077,10 @@ export default function App() {
       if (e.code === 'ArrowRight' || e.code === 'KeyD') setButtonUp('right');
       if (e.code === 'KeyX' || e.code === 'KeyL') setButtonUp('actionA');
       if (e.code === 'KeyZ' || e.code === 'KeyK') setButtonUp('actionB');
-      if (e.code === 'KeyS') setButtonUp('actionX');
-      if (e.code === 'KeyA') setButtonUp('actionY');
-      if (e.code === 'KeyQ') setButtonUp('btnL');
-      if (e.code === 'KeyE') setButtonUp('btnR');
+      if (e.code === 'KeyC' || e.code === 'KeyI') setButtonUp('actionX');
+      if (e.code === 'KeyV' || e.code === 'KeyJ') setButtonUp('actionY');
+      if (e.code === 'KeyQ' || e.code === 'KeyU') setButtonUp('btnL');
+      if (e.code === 'KeyE' || e.code === 'KeyO') setButtonUp('btnR');
       if (e.code === 'Enter') setButtonUp('start');
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'Space') setButtonUp('select');
       if (e.code === 'KeyR' || e.code === 'Backspace') setIsRewinding(false);
@@ -1068,7 +1092,69 @@ export default function App() {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [currentView, setButtonDown, setButtonUp]);
+  }, [currentView, setButtonDown, setButtonUp, activeGame, toggleAudio, saveStateToGameSlot, loadStateFromGameSlot]);
+
+  // Gamepad API integration (W3C standard mapping for Bluetooth / USB gamepads)
+  const prevGamepadButtonsRef = useRef<Record<string, boolean>>({});
+  useEffect(() => {
+    let animId: number;
+    const pollGamepads = () => {
+      if (currentView === 'ingame') {
+        const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+        const gp = gamepads[0] || gamepads[1] || gamepads[2] || gamepads[3];
+        if (gp) {
+          const btn = (idx: number) => Boolean(gp.buttons[idx]?.pressed);
+          const axis = (idx: number) => gp.axes[idx] || 0;
+
+          const curState: Record<string, boolean> = {
+            up: btn(12) || axis(1) < -0.45,
+            down: btn(13) || axis(1) > 0.45,
+            left: btn(14) || axis(0) < -0.45,
+            right: btn(15) || axis(0) > 0.45,
+            actionA: btn(0),
+            actionB: btn(1),
+            actionX: btn(2),
+            actionY: btn(3),
+            btnL: btn(4),
+            btnR: btn(5),
+            select: btn(8),
+            start: btn(9)
+          };
+
+          for (const key of Object.keys(curState)) {
+            const wasDown = prevGamepadButtonsRef.current[key];
+            const isDown = curState[key];
+            if (isDown && !wasDown) {
+              setButtonDown(key as any);
+            } else if (!isDown && wasDown) {
+              setButtonUp(key as any);
+            }
+          }
+          prevGamepadButtonsRef.current = curState;
+        }
+      }
+      animId = requestAnimationFrame(pollGamepads);
+    };
+
+    const handleGamepadConnected = (e: GamepadEvent) => {
+      showToast(`🎮 Controller Connected: ${e.gamepad.id.slice(0, 24)}`);
+      soundFX.save();
+    };
+
+    const handleGamepadDisconnected = () => {
+      showToast('🎮 Controller Disconnected');
+    };
+
+    window.addEventListener('gamepadconnected', handleGamepadConnected);
+    window.addEventListener('gamepaddisconnected', handleGamepadDisconnected);
+    animId = requestAnimationFrame(pollGamepads);
+
+    return () => {
+      cancelAnimationFrame(animId);
+      window.removeEventListener('gamepadconnected', handleGamepadConnected);
+      window.removeEventListener('gamepaddisconnected', handleGamepadDisconnected);
+    };
+  }, [currentView, setButtonDown, setButtonUp, showToast]);
 
   // 60 FPS Emulation Engine & Canvas Renderer Loop
   useEffect(() => {
@@ -1240,6 +1326,7 @@ export default function App() {
           onTriggerAddRom={() => romInputRef.current?.click()}
           onOpenCloudSync={() => setCloudModalOpen(true)}
           cloudStatus={cloudStatus}
+          onOpenControls={() => setControlsModalOpen(true)}
         />
       )}
 
@@ -1286,6 +1373,9 @@ export default function App() {
           setButtonDown={setButtonDown}
           setButtonUp={setButtonUp}
           topBarTimer={topBarTimer}
+          fps={fps}
+          launchGame={launchGame}
+          onOpenControls={() => setControlsModalOpen(true)}
         />
       )}
 
@@ -1328,6 +1418,13 @@ export default function App() {
         onClose={() => setCloudModalOpen(false)}
         theme={theme}
         showToast={showToast}
+      />
+
+      {/* MODAL 4: CONTROLLER & KEYBOARD MAPPING GUIDE */}
+      <ControlsModal
+        isOpen={controlsModalOpen}
+        onClose={() => setControlsModalOpen(false)}
+        theme={theme}
       />
     </div>
   );

@@ -51,6 +51,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   const [isSyncing, setIsSyncing] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
 
   const getCustomEndpoint = () => {
     try {
@@ -163,12 +164,11 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   };
 
   const handleDisconnect = () => {
-    if (confirm('Disconnect from this Sync Code? Your local saves and games will remain safe on this device.')) {
-      clearSyncCode();
-      setLocalSyncCode(null);
-      setSyncStatus('unlinked');
-      showToast('Disconnected from Sync Code');
-    }
+    clearSyncCode();
+    setLocalSyncCode(null);
+    setSyncStatus('unlinked');
+    setConfirmDisconnect(false);
+    showToast('Disconnected from Sync Code');
   };
 
   const handleSaveEndpoint = async () => {
@@ -333,14 +333,31 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                   <span>{isSyncing ? 'Syncing Vault...' : 'Sync Now'}</span>
                 </button>
 
-                <button
-                  onClick={handleDisconnect}
-                  className="py-3 px-4 rounded-xl font-bold text-xs bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-rose-400 transition active:scale-95 flex items-center gap-1.5"
-                  title="Disconnect Code"
-                >
-                  <LogOut className="w-4 h-4" />
-                  <span className="hidden sm:inline">Disconnect</span>
-                </button>
+                {confirmDisconnect ? (
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={handleDisconnect}
+                      className="py-3 px-3 rounded-xl font-bold text-xs bg-rose-600 hover:bg-rose-500 text-white transition active:scale-95"
+                    >
+                      Disconnect?
+                    </button>
+                    <button
+                      onClick={() => setConfirmDisconnect(false)}
+                      className="py-3 px-2.5 rounded-xl text-xs text-zinc-400 hover:text-white bg-zinc-900 border border-zinc-800"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setConfirmDisconnect(true)}
+                    className="py-3 px-4 rounded-xl font-bold text-xs bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-rose-400 transition active:scale-95 flex items-center gap-1.5"
+                    title="Disconnect Code"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    <span className="hidden sm:inline">Disconnect</span>
+                  </button>
+                )}
               </div>
             </div>
           ) : (

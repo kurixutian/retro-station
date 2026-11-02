@@ -19,6 +19,8 @@ import {
   X,
   Maximize,
   Minimize,
+  RefreshCw,
+  Gamepad2,
 } from 'lucide-react';
 import { Game, Theme, PadLayout, PadGroupId } from '../../types';
 import { coreRatio, formatGameTitle, EJS_CORES } from '../../constants/cores';
@@ -69,6 +71,9 @@ interface InGameViewProps {
   setButtonDown?: (name: string) => void;
   setButtonUp?: (name: string) => void;
   topBarTimer: React.MutableRefObject<any>;
+  fps?: number;
+  launchGame?: (game: Game) => void;
+  onOpenControls?: () => void;
 }
 
 export const InGameView: React.FC<InGameViewProps> = ({
@@ -112,6 +117,9 @@ export const InGameView: React.FC<InGameViewProps> = ({
   setButtonDown,
   setButtonUp,
   topBarTimer,
+  fps,
+  launchGame,
+  onOpenControls,
 }) => {
   const dpadContainerRef = React.useRef<HTMLDivElement | null>(null);
   const activeDpadPointerId = React.useRef<number | null>(null);
@@ -368,8 +376,8 @@ export const InGameView: React.FC<InGameViewProps> = ({
           });
         }}
         className={`flex items-center justify-center gap-1.5 ${
-          compact ? 'py-1 px-2.5 rounded-lg text-xs' : 'py-2 px-2.5 rounded-xl text-xs'
-        } font-bold border transition active:scale-95 touch-none select-none ${
+          compact ? 'py-1.5 px-3 min-h-[36px] rounded-lg text-xs' : 'py-2.5 px-3 min-h-[44px] rounded-xl text-xs'
+        } font-bold border transition active:scale-95 touch-none select-none tactile-btn ${
           isPaused
             ? 'bg-amber-500 text-zinc-950 border-amber-300 shadow-lg'
             : shaders.amoled
@@ -394,8 +402,8 @@ export const InGameView: React.FC<InGameViewProps> = ({
         onPointerLeave={() => setIsRewinding(false)}
         onPointerCancel={() => setIsRewinding(false)}
         className={`flex items-center justify-center gap-1.5 ${
-          compact ? 'py-1 px-2.5 rounded-lg text-xs' : 'py-2 px-2.5 rounded-xl text-xs'
-        } font-bold border transition active:scale-95 touch-none select-none ${
+          compact ? 'py-1.5 px-3 min-h-[36px] rounded-lg text-xs' : 'py-2.5 px-3 min-h-[44px] rounded-xl text-xs'
+        } font-bold border transition active:scale-95 touch-none select-none tactile-btn ${
           isRewinding
             ? 'bg-amber-400 text-zinc-950 border-amber-200 shadow-lg'
             : shaders.amoled
@@ -422,8 +430,8 @@ export const InGameView: React.FC<InGameViewProps> = ({
           });
         }}
         className={`flex items-center justify-center gap-1.5 ${
-          compact ? 'py-1 px-2.5 rounded-lg text-xs' : 'py-2 px-2.5 rounded-xl text-xs'
-        } font-bold border transition active:scale-95 touch-none select-none ${
+          compact ? 'py-1.5 px-3 min-h-[36px] rounded-lg text-xs' : 'py-2.5 px-3 min-h-[44px] rounded-xl text-xs'
+        } font-bold border transition active:scale-95 touch-none select-none tactile-btn ${
           isFastForward
             ? 'bg-sky-400 text-zinc-950 border-sky-200 shadow-lg'
             : shaders.amoled
@@ -582,6 +590,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
           className={`absolute top-0 ${isLandscape ? 'left-1/3 right-1/3' : 'left-0 right-0'} z-30 cursor-pointer`}
           style={{ height: 'max(env(safe-area-inset-top, 0px) + 28px, 44px)' }}
         />
+
         {/* 1. TOP BAR (auto-hides) */}
         <div
           className={`absolute top-0 left-0 right-0 z-40 flex items-center justify-between px-3.5 pb-2.5 ${
@@ -602,7 +611,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
               setInGameMenuOpen(false);
               setCurrentView('home');
             }}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-zinc-200 border border-white/10 text-xs font-bold transition active:scale-95"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-zinc-200 border border-white/10 text-xs font-bold transition active:scale-95 tactile-btn"
           >
             <Home className="w-3.5 h-3.5 text-emerald-400" />
             <span>Library</span>
@@ -612,6 +621,17 @@ export const InGameView: React.FC<InGameViewProps> = ({
             <span className="text-xs font-extrabold text-zinc-100 truncate max-w-[180px]">
               {formatGameTitle(activeGame.title)}
             </span>
+            <div className="flex items-center gap-1.5 text-[9px] font-mono text-zinc-400">
+              <span className="px-1.5 py-0.2 rounded bg-zinc-800 text-amber-300 font-bold uppercase">{activeGame.core}</span>
+              <span>•</span>
+              <span className="text-emerald-400 font-bold">{fps || 60} FPS</span>
+              {isMuted && (
+                <>
+                  <span>•</span>
+                  <span className="text-rose-400 font-bold">MUTED</span>
+                </>
+              )}
+            </div>
           </div>
 
           {/* Top Settings Gear Button + Fullscreen Toggle */}
@@ -713,6 +733,36 @@ export const InGameView: React.FC<InGameViewProps> = ({
                   <Sliders className="w-4 h-4 text-purple-400" />
                   <span>Shaders & Theme</span>
                 </button>
+
+                {/* Controls & Keybindings Guide */}
+                {onOpenControls && (
+                  <button
+                    onClick={() => {
+                      setInGameMenuOpen(false);
+                      onOpenControls();
+                    }}
+                    className="flex items-center gap-2 px-3 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 text-xs font-semibold transition"
+                  >
+                    <Gamepad2 className="w-4 h-4 text-emerald-400" />
+                    <span>Controls Guide</span>
+                  </button>
+                )}
+
+                {/* Reboot Core / Hard Reset */}
+                {launchGame && (
+                  <button
+                    onClick={() => {
+                      setInGameMenuOpen(false);
+                      launchGame(activeGame);
+                      showToast(`Rebooted ${activeGame.title}`);
+                    }}
+                    className="flex items-center gap-2 px-3 py-2 rounded-xl bg-zinc-900 hover:bg-rose-900/20 border border-zinc-800 hover:border-rose-500/30 text-zinc-300 hover:text-rose-300 text-xs font-semibold transition"
+                    title="Reload cartridge and restart emulator core"
+                  >
+                    <RefreshCw className="w-4 h-4 text-amber-400" />
+                    <span>Reboot Core</span>
+                  </button>
+                )}
               </div>
 
               {/* Cartridge Battery Save (.SAV / .SRM) Export */}

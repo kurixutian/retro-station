@@ -13,6 +13,24 @@ html, body {
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
 }
 
+::selection {
+  background-color: rgba(16, 185, 129, 0.4);
+  color: #ffffff;
+}
+
+input, textarea {
+  caret-color: #10b981;
+}
+
+:focus-visible {
+  outline: 2px solid rgba(16, 185, 129, 0.85);
+  outline-offset: 2px;
+}
+
+.font-mono {
+  font-variant-numeric: tabular-nums;
+}
+
 .safe-top {
   padding-top: max(env(safe-area-inset-top, 0px), 16px);
 }

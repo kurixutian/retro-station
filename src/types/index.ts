@@ -11,6 +11,9 @@ export interface Game {
   customBoxart?: string;
   customTitle?: string;
   fileSize?: number;
+  cover?: string;
+  customCover?: string;
+  crc32?: string;
 }
 
 export interface SaveSlot {

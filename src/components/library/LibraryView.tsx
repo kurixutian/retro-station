@@ -31,6 +31,7 @@ interface LibraryViewProps {
   onTriggerAddRom: () => void;
   onOpenCloudSync: () => void;
   cloudStatus?: 'unlinked' | 'idle' | 'syncing' | 'offline' | 'error';
+  onOpenControls?: () => void;
 }
 
 export const LibraryView: React.FC<LibraryViewProps> = ({
@@ -49,6 +50,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   onTriggerAddRom,
   onOpenCloudSync,
   cloudStatus,
+  onOpenControls,
 }) => {
   return (
     <div className="pb-16 min-h-[100dvh]">
@@ -74,23 +76,11 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             </div>
           </div>
 
-          {/* Right Action Buttons: Search Toggle, + Load ROM, Settings */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowSearch((s) => !s)}
-              className={`p-2.5 rounded-xl border tactile-btn transition ${
-                showSearch
-                  ? 'bg-zinc-800 border-zinc-700 text-zinc-100'
-                  : 'bg-zinc-900/90 hover:bg-zinc-800 border-zinc-800 text-zinc-300'
-              }`}
-              title="Search ROMs"
-            >
-              <Search className="w-4 h-4" />
-            </button>
-
+          {/* Right Action Buttons: + Load ROM, Cloud Vault, Controls, Settings */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <button
               onClick={onTriggerAddRom}
-              className={`p-2.5 rounded-xl font-bold shadow-lg tactile-btn transition ${theme.accentBg}`}
+              className={`p-2 sm:p-2.5 rounded-xl font-bold shadow-lg tactile-btn transition ${theme.accentBg}`}
               title="Load ROM"
             >
               <Plus className="w-4 h-4 stroke-[2.5]" />
@@ -98,7 +88,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 
             <button
               onClick={onOpenCloudSync}
-              className={`p-2.5 rounded-xl border tactile-btn transition flex items-center gap-1.5 ${
+              className={`p-2 sm:p-2.5 rounded-xl border tactile-btn transition flex items-center gap-1.5 ${
                 cloudStatus === 'idle'
                   ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
                   : cloudStatus === 'syncing'
@@ -113,9 +103,20 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
               )}
             </button>
 
+            {onOpenControls && (
+              <button
+                onClick={onOpenControls}
+                className="p-2 sm:p-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 tactile-btn transition"
+                title="Controls & Keybindings Guide"
+                aria-label="Controls and keybindings"
+              >
+                <Gamepad2 className="w-4 h-4 text-sky-400" />
+              </button>
+            )}
+
             <button
               onClick={onOpenSettings}
-              className="p-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 tactile-btn transition"
+              className="p-2 sm:p-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 tactile-btn transition"
               title="Configuration"
             >
               <Settings className="w-4 h-4 text-emerald-400" />
@@ -208,16 +209,12 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             <div className="flex items-center gap-2">
               <HardDrive className={`w-4 h-4 ${theme.accentText}`} />
               <h2 className="text-sm sm:text-base font-extrabold tracking-tight">
-                Game Library ({filteredGames.length})
+                Cartridge Library
               </h2>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-zinc-900 border border-zinc-800 text-zinc-400">
+                {filteredGames.length} {filteredGames.length === 1 ? 'ROM' : 'ROMs'}
+              </span>
             </div>
-            <button
-              onClick={onTriggerAddRom}
-              className={`text-xs font-semibold flex items-center gap-1 ${theme.accentText} hover:underline`}
-            >
-              <FolderPlus className="w-3.5 h-3.5" />
-              <span>Add ROM</span>
-            </button>
           </div>
 
           {filteredGames.length === 0 && games.length === 0 ? (

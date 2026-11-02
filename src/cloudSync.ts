@@ -4,7 +4,7 @@
 // Works 100% offline on the go; automatically syncs when online
 // ============================================================================
 
-import { idbGet, idbPut, idbGetAllKeys } from './services/storage/idb';
+import { idbGet, idbPut, idbDelete, idbGetAllKeys } from './services/storage/idb';
 
 export type CloudSyncStatus =
   | 'unlinked'
@@ -483,7 +483,7 @@ export async function syncNow(): Promise<{
         isSyncRunning = false;
         return syncNow();
       }
-      const isPlaceholder = endpoint === 'https://retro-vault.workers.dev';
+      const isPlaceholder = (endpoint as string) === 'https://retro-vault.workers.dev';
       const errorMsg = isPlaceholder
         ? 'Vault worker not deployed yet. Deploy your free worker or paste your URL below.'
         : `Could not reach sync vault (${networkErr.message || 'network error'})`;
