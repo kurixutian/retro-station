@@ -15,7 +15,7 @@ interface SaveSlotsModalProps {
   exportBatterySave: (game: Game, format: 'sav' | 'srm') => void;
   deleteRom: (gameId: string) => void;
   loadStateFromGameSlot: (game: Game, slotNum: number) => void;
-  saveStateToGameSlot: (game: Game, slotNum: number) => void;
+  saveStateToGameSlot: (game: Game, slotNum: number) => void | Promise<void>;
   deleteGameSlot: (gameId: string, slotNum: number) => void;
 }
 
@@ -47,10 +47,10 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
         paddingRight: 'max(env(safe-area-inset-right, 0px) + 12px, 16px)'
       }}
     >
-      <div className="w-full max-w-2xl max-h-[88vh] flex flex-col rounded-3xl bg-zinc-950 border border-zinc-800 shadow-2xl overflow-hidden my-auto">
+      <div className="w-full max-w-2xl max-h-[88vh] flex flex-col rounded-3xl bg-zinc-950 border border-zinc-800 shadow-2xl overflow-hidden my-auto hardware-panel">
         {/* Dialog Header Banner */}
-        <div className={`relative p-5 bg-gradient-to-r ${targetGame.coverGradient || 'from-zinc-800 to-zinc-950'} flex-none`}>
-          <div className="absolute inset-0 bg-zinc-950/65" />
+        <div className={`relative p-5 bg-gradient-to-r ${targetGame.coverGradient || 'from-zinc-800 to-zinc-950'} flex-none border-b border-black/40`}>
+          <div className="absolute inset-0 bg-zinc-950/70" />
           <div className="relative z-10 flex items-start justify-between gap-3">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
@@ -63,7 +63,8 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
 
             <button
               onClick={onClose}
-              className="p-2 rounded-full bg-black/50 hover:bg-black/80 text-zinc-200 border border-white/15"
+              className="p-2 rounded-full bg-black/50 hover:bg-black/80 text-zinc-200 border border-white/15 tactile-btn"
+              aria-label="Close"
             >
               <X className="w-4 h-4" />
             </button>
@@ -74,7 +75,7 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
             {currentView === 'home' && (
               <button
                 onClick={() => launchGame(targetGame)}
-                className="p-2.5 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-zinc-950 font-black shadow-lg transition active:scale-95"
+                className="p-2.5 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-zinc-950 font-black shadow-lg tactile-btn transition"
                 title={`Play ${formatGameTitle(targetGame.title)}`}
               >
                 <Play className="w-5 h-5 fill-current ml-0.5" />
@@ -83,7 +84,7 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
 
             <button
               onClick={() => exportBatterySave(targetGame, 'sav')}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-amber-300 border border-amber-500/30 text-xs font-bold transition"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-amber-300 border border-amber-500/30 text-xs font-bold tactile-btn transition"
               title="Download .sav for physical cartridge flasher (GB Operator / FlashGBX)"
             >
               <Download className="w-3.5 h-3.5" />
@@ -92,7 +93,7 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
 
             <button
               onClick={() => exportBatterySave(targetGame, 'srm')}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-zinc-200 border border-zinc-700 text-xs font-bold transition"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-zinc-200 border border-zinc-700 text-xs font-bold tactile-btn transition"
               title="Download .srm for RetroArch"
             >
               <Download className="w-3.5 h-3.5 text-amber-400" />
@@ -105,8 +106,9 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
                   deleteRom(targetGame.id);
                 }
               }}
-              className="p-2.5 rounded-xl bg-zinc-900/90 hover:bg-rose-900/30 text-zinc-400 hover:text-rose-400 border border-zinc-800 hover:border-rose-500/40 transition active:scale-95"
+              className="p-2.5 rounded-xl bg-zinc-900/90 hover:bg-rose-900/30 text-zinc-400 hover:text-rose-400 border border-zinc-800 hover:border-rose-500/40 tactile-btn transition"
               title="Delete ROM"
+              aria-label="Delete ROM"
             >
               <Trash2 className="w-4 h-4" />
             </button>
@@ -140,15 +142,22 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
                 <div className="flex items-center gap-3">
                   {/* Thumbnail Preview */}
                   <div className="w-20 h-16 rounded-xl bg-zinc-950 border border-zinc-800 overflow-hidden shrink-0 flex items-center justify-center">
-                    {slotObj.screenshot ? (
-                      <img
-                        src={slotObj.screenshot}
-                        alt={`Slot ${slotObj.slot}`}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <span className="text-[10px] font-mono text-zinc-600">EMPTY</span>
-                    )}
+                    {(() => {
+                      const isValidScreenshot = slotObj.screenshot && !slotObj.screenshot.includes('AezYV5YcSZIEwHp7');
+                      const previewImg = isValidScreenshot ? slotObj.screenshot : (!slotObj.empty ? (targetGame.customCover || targetGame.cover) : null);
+                      if (previewImg) {
+                        return (
+                          <img
+                            src={previewImg}
+                            alt={`Slot ${slotObj.slot}`}
+                            className="w-full h-full object-cover"
+                          />
+                        );
+                      }
+                      return (
+                        <span className="text-[10px] font-mono text-zinc-600">EMPTY</span>
+                      );
+                    })()}
                   </div>
 
                   <div className="min-w-0 flex-1">
@@ -165,7 +174,7 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
                     <p className="text-xs font-bold text-zinc-100 truncate mt-0.5">
                       {slotObj.label}
                     </p>
-                    {!slotObj.empty && (
+                    {!slotObj.empty && (slotObj.score > 0 || slotObj.frame > 0) && (
                       <p className="text-[10px] font-mono text-zinc-400">
                         Score: {slotObj.score} • Frame: {slotObj.frame}
                       </p>
@@ -179,7 +188,7 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
                   <button
                     disabled={slotObj.empty}
                     onClick={() => loadStateFromGameSlot(targetGame, slotObj.slot)}
-                    className={`flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg text-[11px] font-bold transition ${
+                    className={`flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg text-[11px] font-bold transition tactile-btn ${
                       slotObj.empty
                         ? 'bg-zinc-800/50 text-zinc-600 cursor-not-allowed'
                         : 'bg-emerald-500 hover:bg-emerald-400 text-zinc-950'
@@ -193,7 +202,7 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
                   {currentView === 'ingame' && activeGame?.id === targetGame.id && (
                     <button
                       onClick={() => saveStateToGameSlot(targetGame, slotObj.slot)}
-                      className="flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 text-[11px] font-bold transition"
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 text-[11px] font-bold transition tactile-btn"
                     >
                       <Camera className="w-3 h-3" />
                       <span>Save Here</span>
@@ -204,8 +213,9 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
                   {!slotObj.empty && (
                     <button
                       onClick={() => deleteGameSlot(targetGame.id, slotObj.slot)}
-                      className="p-1.5 rounded-lg bg-zinc-800 hover:bg-rose-500/30 text-rose-400"
+                      className="p-1.5 rounded-lg bg-zinc-800 hover:bg-rose-500/30 text-rose-400 tactile-btn"
                       title="Delete slot"
+                      aria-label="Delete slot"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>

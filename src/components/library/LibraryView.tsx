@@ -51,10 +51,10 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   cloudStatus,
 }) => {
   return (
-    <div className="pb-16">
+    <div className="pb-16 min-h-[100dvh]">
       {/* Sticky Top Navigation Bar */}
       <header
-        className="sticky top-0 z-30 backdrop-blur-xl bg-zinc-950/85 border-b border-zinc-800/80 px-4 sm:px-6 py-3"
+        className="sticky top-0 z-30 backdrop-blur-xl bg-zinc-950/85 border-b border-zinc-800/80 px-4 sm:px-6 py-3 hardware-panel"
         style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 12px)' }}
       >
         <div className="max-w-6xl mx-auto flex items-center justify-between gap-3">
@@ -78,7 +78,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowSearch((s) => !s)}
-              className={`p-2.5 rounded-xl border transition active:scale-95 ${
+              className={`p-2.5 rounded-xl border tactile-btn transition ${
                 showSearch
                   ? 'bg-zinc-800 border-zinc-700 text-zinc-100'
                   : 'bg-zinc-900/90 hover:bg-zinc-800 border-zinc-800 text-zinc-300'
@@ -90,7 +90,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 
             <button
               onClick={onTriggerAddRom}
-              className={`p-2.5 rounded-xl font-bold shadow-lg transition active:scale-95 ${theme.accentBg}`}
+              className={`p-2.5 rounded-xl font-bold shadow-lg tactile-btn transition ${theme.accentBg}`}
               title="Load ROM"
             >
               <Plus className="w-4 h-4 stroke-[2.5]" />
@@ -98,11 +98,11 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 
             <button
               onClick={onOpenCloudSync}
-              className={`p-2.5 rounded-xl border transition active:scale-95 flex items-center gap-1.5 ${
+              className={`p-2.5 rounded-xl border tactile-btn transition flex items-center gap-1.5 ${
                 cloudStatus === 'idle'
                   ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
                   : cloudStatus === 'syncing'
-                  ? 'bg-sky-500/10 border-sky-500/30 text-sky-400 animate-pulse'
+                  ? 'bg-sky-500/10 border-sky-500/30 text-sky-400'
                   : 'bg-zinc-900/90 hover:bg-zinc-800 border-zinc-800 text-zinc-300'
               }`}
               title="Cloud Save Vault"
@@ -115,8 +115,8 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 
             <button
               onClick={onOpenSettings}
-              className="p-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 transition active:scale-95"
-              title="Appearance"
+              className="p-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 tactile-btn transition"
+              title="Configuration"
             >
               <Settings className="w-4 h-4 text-emerald-400" />
             </button>
@@ -147,15 +147,15 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
         )}
       </header>
 
-      {/* Main Netflix-Style Content Container */}
+      {/* Main Content Container */}
       <main className="max-w-6xl mx-auto px-4 sm:px-6 pt-5 space-y-7">
-        {/* Hero Spotlight Banner (Most Recent Loaded ROM) */}
+        {/* Hero Spotlight Banner */}
         {games[0] && (
-          <div className="relative rounded-3xl overflow-hidden border border-zinc-800/90 shadow-2xl h-56 sm:h-64 flex items-end p-5 sm:p-8">
+          <div className="relative rounded-3xl overflow-hidden border border-zinc-800/90 shadow-2xl h-56 sm:h-64 flex items-end p-5 sm:p-8 hardware-panel">
             {/* Full Cover Image Background */}
             <div className="absolute inset-0">
-              <GameCoverImage game={games[0]} imgClassName="w-full h-full object-cover opacity-60" />
-              <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/70 to-transparent" />
+              <GameCoverImage game={games[0]} imgClassName="w-full h-full object-cover opacity-65 hero-art-pan" />
+              <div className="absolute inset-0 bg-gradient-to-t from-zinc-950/90 via-zinc-950/50 to-transparent" />
             </div>
 
             <div className="relative z-10 w-full flex items-end justify-between gap-4">
@@ -176,7 +176,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 
               <button
                 onClick={() => onLaunchGame(games[0])}
-                className="w-12 h-12 rounded-full bg-white hover:bg-zinc-200 text-zinc-950 flex items-center justify-center shadow-2xl transition active:scale-95 shrink-0"
+                className="w-12 h-12 rounded-full bg-white hover:bg-zinc-200 text-zinc-950 flex items-center justify-center shadow-2xl tactile-btn transition shrink-0"
                 title={`Play ${formatGameTitle(games[0].title)}`}
               >
                 <Play className="w-5 h-5 fill-current ml-0.5" />
@@ -191,7 +191,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             <button
               key={sys}
               onClick={() => setSystemFilter(sys)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold tactile-btn transition ${
                 systemFilter === sys
                   ? theme.accentBg
                   : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200 border border-zinc-800'
@@ -233,7 +233,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
               </div>
               <button
                 onClick={onTriggerAddRom}
-                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs shadow-lg transition active:scale-95 ${theme.accentBg}`}
+                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs tactile-btn shadow-lg transition ${theme.accentBg}`}
               >
                 <Plus className="w-4 h-4 stroke-[2.5]" />
                 <span>Load ROM</span>
@@ -253,7 +253,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
               {/* Quick "Add ROM" Card */}
               <button
                 onClick={onTriggerAddRom}
-                className="rounded-2xl border-2 border-dashed border-zinc-800 hover:border-emerald-500/60 bg-zinc-900/40 hover:bg-zinc-900/80 p-4 flex flex-col items-center justify-center gap-2 min-h-[200px] transition group"
+                className="rounded-2xl border-2 border-dashed border-zinc-800 hover:border-emerald-500/60 bg-zinc-900/40 hover:bg-zinc-900/80 p-4 flex flex-col items-center justify-center gap-2 min-h-[200px] transition group tactile-btn"
               >
                 <div className="w-11 h-11 rounded-2xl bg-zinc-800 group-hover:bg-emerald-500/20 flex items-center justify-center transition">
                   <Plus className="w-6 h-6 text-zinc-400 group-hover:text-emerald-400" />

@@ -50,11 +50,12 @@ export const GameCoverImage: React.FC<GameCoverImageProps> = ({
     return (
       <div
         className={`relative w-full h-full bg-gradient-to-br ${
-          game?.coverGradient || 'from-zinc-800 to-zinc-950'
-        } flex flex-col justify-between p-3 overflow-hidden ${className}`}
+          game?.coverGradient || 'from-zinc-900 to-zinc-950'
+        } flex flex-col justify-between p-3 overflow-hidden border border-black/40 ${className}`}
       >
+        <div className="absolute inset-0 cartridge-grip opacity-30 pointer-events-none" />
         {showBadge && (
-          <span className="self-start px-2 py-0.5 rounded-md text-[10px] font-black bg-black/60 text-white backdrop-blur-sm border border-white/15">
+          <span className="self-start relative z-10 px-2 py-0.5 rounded-md text-[10px] font-black bg-black/60 text-white backdrop-blur-sm border border-white/15">
             {game?.shortSystem || 'ROM'}
           </span>
         )}
@@ -88,7 +89,11 @@ export const GameCoverImage: React.FC<GameCoverImageProps> = ({
             setFailedAll(true);
           }
         }}
-        className={`w-full h-full object-cover object-center ${imgClassName}`}
+        className={`w-full h-full object-cover ${
+          imgClassName.includes('object-') || imgClassName.includes('hero-art-pan')
+            ? ''
+            : 'object-center'
+        } ${imgClassName}`}
         loading="lazy"
       />
       {showBadge && (

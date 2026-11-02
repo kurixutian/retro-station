@@ -17,6 +17,7 @@ import {
   markLocalSaveModified,
   onDataUpdated,
   subscribeSyncStatus,
+  mergeAndDeduplicateGames,
   CloudSyncStatus,
 } from './cloudSync';
 
@@ -48,7 +49,8 @@ export default function App() {
     try {
       const saved = JSON.parse(localStorage.getItem('retro_games') || 'null');
       if (Array.isArray(saved)) {
-        return saved.map((g) => ({
+        const deduped = mergeAndDeduplicateGames(saved, [], false);
+        return deduped.map((g) => ({
           ...g,
           subtitle: (g.subtitle || g.system || '').replace(/\s*•\s*Auto-Detected Core/i, '')
         }));
@@ -103,13 +105,14 @@ export default function App() {
         try {
           const applyGameList = (list: any[]) => {
             if (!Array.isArray(list) || list.length === 0) return;
-            setGames(list.map((g: any) => ({
+            const deduped = mergeAndDeduplicateGames(list, [], false);
+            setGames(deduped.map((g: any) => ({
               ...g,
               subtitle: (g.subtitle || g.system || '').replace(/\s*•\s*Auto-Detected Core/i, '')
             })));
             setSavesByGameId((prev) => {
               const next = { ...prev };
-              list.forEach((g: any) => {
+              deduped.forEach((g: any) => {
                 if (!next[g.id]) next[g.id] = createEmptySlotsForGame(g.id);
               });
               return next;
@@ -594,10 +597,13 @@ export default function App() {
     const coverGradient = gradients[games.length % gradients.length];
 
     const cleanTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ');
-    const existingByCrc = games.find(
-      (g: any) => g.real && g.crc32 && String(g.crc32).toLowerCase() === String(crcHex).toLowerCase()
+    const existingGame = games.find(
+      (g: any) =>
+        (g.crc32 && String(g.crc32).toLowerCase() === String(crcHex).toLowerCase()) ||
+        (g.fileName && g.fileName.toLowerCase() === file.name.toLowerCase()) ||
+        (g.title && g.title.toLowerCase() === cleanTitle.toLowerCase() && g.core === detected.core)
     );
-    const deterministicId = existingByCrc?.id || (crcHex && crcHex !== '00000000' ? `rom_${String(crcHex).toLowerCase()}` : `rom_${Date.now()}`);
+    const deterministicId = existingGame?.id || (crcHex && crcHex !== '00000000' ? `rom_${String(crcHex).toLowerCase()}` : `rom_${Date.now()}`);
 
     const newGame: Game = {
       id: deterministicId,
@@ -607,9 +613,10 @@ export default function App() {
       system: detected.system,
       shortSystem: detected.shortSystem,
       engineType,
-      coverGradient,
+      coverGradient: existingGame?.coverGradient || coverGradient,
       real: true,
       fileSize: file.size,
+      crc32: crcHex,
     };
 
     try {
@@ -618,7 +625,15 @@ export default function App() {
       showToast('Could not store ROM for offline use');
     }
     setGames((prev) => {
-      const nextGames = [newGame, ...prev.filter((g) => g.id !== newGame.id)];
+      const nextGames = [
+        newGame,
+        ...prev.filter(
+          (g) =>
+            g.id !== newGame.id &&
+            g.fileName?.toLowerCase() !== file.name.toLowerCase() &&
+            !(g.title?.toLowerCase() === cleanTitle.toLowerCase() && g.core === detected.core)
+        ),
+      ];
       const userImportedOnly = nextGames.filter((g) => g.real && g.id !== 'pokemon_gold');
       idbPut('library_games', userImportedOnly).catch(() => {});
       return nextGames;
@@ -676,18 +691,63 @@ export default function App() {
     soundFX.save();
   }, [showToast]);
 
-  const saveStateToGameSlot = useCallback((game: Game, slotNumber: number) => {
+  const saveStateToGameSlot = useCallback(async (game: Game, slotNumber: number) => {
     if (game.real) {
       const win = emuFrameRef.current?.contentWindow as any;
       const emu = getEmu();
       let rawState = null;
-      try { rawState = win?.getStateData?.() || emu?.gameManager.getState(); } catch (e) {}
+      try { rawState = win?.getStateData?.() || emu?.gameManager?.getState(); } catch (e) {}
       const emuState = normalizeBinaryData(rawState);
       if (!emuState) { showToast('Emulator not ready yet'); return; }
+
       let shot: string | null = null;
       try {
-        shot = (emuFrameRef.current?.contentDocument?.querySelector('canvas') as HTMLCanvasElement)?.toDataURL('image/png') || null;
+        if (typeof win?.captureGameScreenshot === 'function') {
+          shot = await win.captureGameScreenshot();
+        }
       } catch (e) {}
+
+      if (!shot) {
+        try {
+          const doc = emuFrameRef.current?.contentDocument;
+          const canvases = Array.from(doc?.querySelectorAll('canvas') || []) as HTMLCanvasElement[];
+          let best: HTMLCanvasElement | null = null;
+          let maxArea = 0;
+          for (const c of canvases) {
+            const area = (c.width || 0) * (c.height || 0);
+            if (area > maxArea && c.style.display !== 'none') {
+              maxArea = area;
+              best = c;
+            }
+          }
+          if (best && best.width > 0 && best.height > 0) {
+            const maxW = 320;
+            let w = best.width;
+            let h = best.height;
+            if (w > maxW) {
+              const s = maxW / w;
+              w = Math.round(w * s);
+              h = Math.round(h * s);
+            }
+            const thumb = document.createElement('canvas');
+            thumb.width = w;
+            thumb.height = h;
+            const ctx = thumb.getContext('2d');
+            if (ctx) {
+              ctx.imageSmoothingEnabled = true;
+              ctx.drawImage(best, 0, 0, w, h);
+              shot = thumb.toDataURL('image/jpeg', 0.85);
+            } else {
+              shot = best.toDataURL('image/jpeg', 0.85);
+            }
+          }
+        } catch (e) {}
+      }
+
+      if (!shot) {
+        shot = game.customCover || game.cover || null;
+      }
+
       const timeStr0 = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       setSavesByGameId((prev) => {
         const existing = prev[game.id] || createEmptySlotsForGame(game.id);
@@ -722,7 +782,35 @@ export default function App() {
     }
 
     const canvas = canvasRef.current;
-    const screenshot = canvas ? canvas.toDataURL('image/png') : createPrepopulatedThumbnail('overworld');
+    let screenshot: string | null = null;
+    if (canvas) {
+      try {
+        const maxW = 320;
+        let w = canvas.width;
+        let h = canvas.height;
+        if (w > maxW) {
+          const s = maxW / w;
+          w = Math.round(w * s);
+          h = Math.round(h * s);
+        }
+        const thumb = document.createElement('canvas');
+        thumb.width = w;
+        thumb.height = h;
+        const ctx = thumb.getContext('2d');
+        if (ctx) {
+          ctx.imageSmoothingEnabled = true;
+          ctx.drawImage(canvas, 0, 0, w, h);
+          screenshot = thumb.toDataURL('image/jpeg', 0.85);
+        } else {
+          screenshot = canvas.toDataURL('image/jpeg', 0.85);
+        }
+      } catch (e) {
+        screenshot = canvas.toDataURL('image/png');
+      }
+    }
+    if (!screenshot) {
+      screenshot = createPrepopulatedThumbnail('overworld');
+    }
     const clonedEngine = JSON.parse(JSON.stringify(engineStateRef.current));
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
@@ -1116,7 +1204,7 @@ export default function App() {
   }, [setButtonDown, setButtonUp]);
 
   return (
-    <div className={`min-h-screen w-full ${shaders.amoled ? 'bg-black text-zinc-100' : theme.appBg} font-sans select-none overflow-x-hidden`}>
+    <div className={`min-h-[100dvh] w-full ${shaders.amoled ? 'bg-black text-zinc-100' : theme.appBg} font-sans select-none overflow-x-hidden`}>
       {/* Hidden File Input for ROMs */}
       <input
         ref={romInputRef}
@@ -1128,8 +1216,8 @@ export default function App() {
 
       {/* Floating Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-zinc-900/95 border border-emerald-500/50 text-emerald-300 text-xs font-medium shadow-2xl backdrop-blur-md">
-          <Sparkles className="w-4 h-4 text-emerald-400 shrink-0" />
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-zinc-950/95 border border-zinc-700/90 text-zinc-100 text-xs font-mono font-bold shadow-2xl backdrop-blur-xl hardware-panel">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 hardware-led shrink-0" />
           <span>{toastMessage}</span>
         </div>
       )}

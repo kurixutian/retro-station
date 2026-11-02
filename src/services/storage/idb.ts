@@ -42,11 +42,7 @@ export const idbGetAllKeys = async (): Promise<string[]> => {
     const q = db.transaction('roms', 'readonly').objectStore('roms').getAllKeys();
     q.onsuccess = () => {
       const keys = ((q.result as any[]) || []).map(String);
-      const expanded = new Set(keys);
-      keys.forEach((k) => {
-        if (k.startsWith('rom_')) expanded.add(`rom:${k}`);
-      });
-      res(Array.from(expanded));
+      res(keys);
     };
     q.onerror = () => rej(q.error);
   });

@@ -43,15 +43,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         paddingRight: 'max(env(safe-area-inset-right, 0px) + 12px, 16px)'
       }}
     >
-      <div className="w-full max-w-xl max-h-[88vh] flex flex-col rounded-3xl bg-zinc-950 border border-zinc-800 shadow-2xl overflow-hidden my-auto">
+      <div className="w-full max-w-xl max-h-[88vh] flex flex-col rounded-3xl bg-zinc-950 border border-zinc-800 shadow-2xl overflow-hidden my-auto hardware-panel">
         <div className="flex-none flex items-center justify-between px-5 py-4 border-b border-zinc-800 bg-zinc-950">
           <div className="flex items-center gap-2.5">
             <Sliders className={`w-5 h-5 ${theme.accentText}`} />
-            <h2 className="text-base font-black text-white">Appearance</h2>
+            <h2 className="text-base font-black text-white">Configuration</h2>
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-full bg-zinc-900 hover:bg-zinc-800 text-zinc-300"
+            className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white tactile-btn border border-zinc-800"
+            aria-label="Close Settings"
           >
             <X className="w-4 h-4" />
           </button>
@@ -109,7 +110,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </span>
               </div>
               <p className="text-xs text-zinc-400 leading-snug">
-                Crisp physical click vibrations on D-Pad and action buttons for authentic tactile controller response.
+                Vibration on buttons.
               </p>
             </div>
 

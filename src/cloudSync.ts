@@ -35,7 +35,9 @@ const SYNC_META_KEY = 'retro_sync_meta';
 const DEVICE_ID_KEY = 'retro_device_id';
 
 // Default worker endpoint (configured to your live Cloudflare Worker)
-export const DEFAULT_SYNC_ENDPOINT = 'https://retro-vault.xtian-xtn.workers.dev';
+export const DEFAULT_SYNC_ENDPOINT =
+  (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_SYNC_ENDPOINT) ||
+  'https://retro-vault.xtian-xtn.workers.dev';
 
 // Persistent Device ID
 export function getOrCreateDeviceId(): string {
@@ -97,7 +99,12 @@ export function generateSyncCode(): string {
 export function getSyncEndpoint(): string {
   try {
     const custom = localStorage.getItem(SYNC_ENDPOINT_KEY);
-    if (custom && custom !== 'https://retro-vault.workers.dev') return custom;
+    if (
+      custom &&
+      custom.trim().replace(/\/+$/, '') !== DEFAULT_SYNC_ENDPOINT.replace(/\/+$/, '')
+    ) {
+      return custom.trim().replace(/\/+$/, '');
+    }
     return DEFAULT_SYNC_ENDPOINT;
   } catch (e) {
     return DEFAULT_SYNC_ENDPOINT;
@@ -193,6 +200,71 @@ export function isSyncableKey(key: string): boolean {
     key.startsWith('autosave:') ||
     key.startsWith('cover:')
   );
+}
+
+/**
+ * Deduplicates and merges game lists.
+ * Matches games by:
+ * 1) id
+ * 2) fileName (case-insensitive)
+ * 3) title (case-insensitive) + core
+ * 4) crc32 (if present)
+ * Overwrites existing entries instead of duplicating.
+ */
+export function mergeAndDeduplicateGames(localList: any[], remoteList: any[] = [], preferRemote = true): any[] {
+  const result: any[] = [];
+
+  const getKey = (g: any) => {
+    const titleKey = g?.title && g?.core ? `${String(g.title).trim().toLowerCase()}::${String(g.core).toLowerCase()}` : null;
+    const fileKey = g?.fileName ? String(g.fileName).trim().toLowerCase() : null;
+    const idKey = g?.id ? String(g.id).trim().toLowerCase() : null;
+    const crcKey = g?.crc32 ? String(g.crc32).trim().toLowerCase() : null;
+    return { idKey, fileKey, titleKey, crcKey };
+  };
+
+  const findExistingIndex = (g: any): number => {
+    if (!g) return -1;
+    const gKeys = getKey(g);
+    return result.findIndex((item) => {
+      const itemKeys = getKey(item);
+      if (gKeys.idKey && itemKeys.idKey && gKeys.idKey === itemKeys.idKey) return true;
+      if (gKeys.fileKey && itemKeys.fileKey && gKeys.fileKey === itemKeys.fileKey) return true;
+      if (gKeys.titleKey && itemKeys.titleKey && gKeys.titleKey === itemKeys.titleKey) return true;
+      if (gKeys.crcKey && itemKeys.crcKey && gKeys.crcKey === itemKeys.crcKey) return true;
+      return false;
+    });
+  };
+
+  const primary = preferRemote ? remoteList : localList;
+  const secondary = preferRemote ? localList : remoteList;
+
+  if (Array.isArray(primary)) {
+    for (const g of primary) {
+      if (!g || !g.id) continue;
+      const idx = findExistingIndex(g);
+      if (idx >= 0) {
+        result[idx] = { ...result[idx], ...g };
+      } else {
+        result.push({ ...g });
+      }
+    }
+  }
+
+  if (Array.isArray(secondary)) {
+    for (const g of secondary) {
+      if (!g || !g.id) continue;
+      const idx = findExistingIndex(g);
+      if (idx >= 0) {
+        if (!preferRemote) {
+          result[idx] = { ...result[idx], ...g };
+        }
+      } else {
+        result.push({ ...g });
+      }
+    }
+  }
+
+  return result;
 }
 
 // Binary Normalizer & Base64 converters
@@ -394,7 +466,7 @@ export async function syncNow(): Promise<{
       }
     } catch (networkErr: any) {
       console.warn('[CloudSync] Network request failed:', networkErr);
-      const isPlaceholder = endpoint.includes('retro-vault.workers.dev');
+      const isPlaceholder = endpoint === 'https://retro-vault.workers.dev';
       const errorMsg = isPlaceholder
         ? 'Vault worker not deployed yet. Deploy your free worker or paste your URL below.'
         : `Could not reach sync vault (${networkErr.message || 'network error'})`;
@@ -444,11 +516,8 @@ export async function syncNow(): Promise<{
                 localGamesList = JSON.parse(localStorage.getItem('retro_games') || '[]');
               } catch (e) {}
 
-              // Additive merge by ID
-              const mergedMap = new Map<string, any>();
-              localGamesList.forEach((g: any) => g?.id && mergedMap.set(g.id, g));
-              remoteGamesList.forEach((g: any) => g?.id && mergedMap.set(g.id, g));
-              const merged = Array.from(mergedMap.values());
+              // Overwrite existing games by ID, fileName, title+core, or CRC instead of duplicating
+              const merged = mergeAndDeduplicateGames(localGamesList, remoteGamesList, true);
 
               localStorage.setItem('retro_games', JSON.stringify(merged));
               await idbPut('library_games', merged.filter((g: any) => g.real && g.id !== 'pokemon_gold')).catch(() => {});
@@ -458,9 +527,12 @@ export async function syncNow(): Promise<{
             if (typeof rItem.data === 'string') {
               const rawBytes = base64ToUint8(rItem.data);
               const blob = new Blob([rawBytes as any], { type: 'application/octet-stream' });
-              await idbPut(rKey, blob);
+              const canonicalKey = rKey.startsWith('rom:') ? rKey.slice(4) : rKey;
+              // Overwrite canonical key in IndexedDB
+              await idbPut(canonicalKey, blob);
+              // Clean up legacy duplicated key if rKey was prefixed with rom:
               if (rKey.startsWith('rom:')) {
-                await idbPut(rKey.slice(4), blob).catch(() => {});
+                await idbDelete(rKey).catch(() => {});
               }
             }
           } else if (rKey.startsWith('state:')) {
@@ -523,10 +595,11 @@ export async function syncNow(): Promise<{
             try {
               localGames = JSON.parse(localStorage.getItem('retro_games') || '[]');
             } catch (e) {}
-            if (localGames.length > 0) {
+            const cleanGames = mergeAndDeduplicateGames(localGames, [], false);
+            if (cleanGames.length > 0) {
               itemsToUpload[key] = {
                 key,
-                data: localGames,
+                data: cleanGames,
                 updatedAt: Date.now(),
                 isBinary: false,
               };
@@ -534,9 +607,10 @@ export async function syncNow(): Promise<{
           } else if (key === 'library_games') {
             const libGames = await idbGet('library_games');
             if (Array.isArray(libGames) && libGames.length > 0) {
+              const cleanLib = mergeAndDeduplicateGames(libGames, [], false);
               itemsToUpload[key] = {
                 key,
-                data: libGames,
+                data: cleanLib,
                 updatedAt: Date.now(),
                 isBinary: false,
               };
@@ -567,6 +641,10 @@ export async function syncNow(): Promise<{
               };
             }
           } else if (key.startsWith('rom_') || key.startsWith('rom:')) {
+            if (key.startsWith('rom:rom_')) {
+              await idbDelete(key).catch(() => {});
+              continue;
+            }
             const romData = await idbGet(key);
             if (romData) {
               let bytes: Uint8Array | null = null;

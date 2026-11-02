@@ -17,6 +17,15 @@ export function buildPlayerHtml(core: string, romUrl: string, title?: string): s
     'width:0!important;height:0!important;overflow:hidden!important}' +
     '</style></head><body>' +
     '<div id="game"></div><script>' +
+    '(function(){' +
+    '  var _ogc=HTMLCanvasElement.prototype.getContext;' +
+    '  HTMLCanvasElement.prototype.getContext=function(t,a){' +
+    '    if(t==="webgl"||t==="experimental-webgl"||t==="webgl2"){' +
+    '      a=Object.assign({},a||{},{preserveDrawingBuffer:true});' +
+    '    }' +
+    '    return _ogc.call(this,t,a);' +
+    '  };' +
+    '})();' +
     'window.EJS_player="#game";' +
     'window.EJS_core=' + JSON.stringify(core) + ';' +
     'window.EJS_gameUrl=' + JSON.stringify(romUrl) + ';' +
@@ -251,6 +260,76 @@ export function buildPlayerHtml(core: string, romUrl: string, title?: string): s
     '    var st=window.EJS_emulator.gameManager.getState();' +
     '    return st?new Uint8Array(st).slice():null;' +
     '  }catch(e){return null;}' +
+    '};' +
+    'window.captureGameScreenshot=async function(){' +
+    '  try{' +
+    '    var downscale=function(source){' +
+    '      if(!source)return null;' +
+    '      var maxW=320;' +
+    '      var w=source.width||320,h=source.height||240;' +
+    '      if(w>maxW){var s=maxW/w;w=Math.round(w*s);h=Math.round(h*s);}' +
+    '      var thumb=document.createElement("canvas");' +
+    '      thumb.width=w;thumb.height=h;' +
+    '      var ctx=thumb.getContext("2d");' +
+    '      if(!ctx)return null;' +
+    '      ctx.imageSmoothingEnabled=true;' +
+    '      ctx.drawImage(source,0,0,w,h);' +
+    '      return thumb.toDataURL("image/jpeg",0.85);' +
+    '    };' +
+    '    var emu=window.EJS_emulator;' +
+    '    if(emu&&typeof emu.takeScreenshot==="function"){' +
+    '      try{' +
+    '        var res=await Promise.race([' +
+    '          emu.takeScreenshot("canvas","jpeg",1),' +
+    '          new Promise(function(r){setTimeout(function(){r(null);},500);})' +
+    '        ]);' +
+    '        if(res&&res.blob){' +
+    '          var blobUrl=URL.createObjectURL(res.blob);' +
+    '          var shot=await new Promise(function(resolve){' +
+    '            var img=new Image();' +
+    '            img.onload=function(){var d=downscale(img);URL.revokeObjectURL(blobUrl);resolve(d);};' +
+    '            img.onerror=function(){URL.revokeObjectURL(blobUrl);resolve(null);};' +
+    '            img.src=blobUrl;' +
+    '          });' +
+    '          if(shot)return shot;' +
+    '        }' +
+    '      }catch(e){}' +
+    '    }' +
+    '    if(emu&&emu.gameManager&&typeof emu.gameManager.screenshot==="function"){' +
+    '      try{' +
+    '        var u8=await Promise.race([' +
+    '          emu.gameManager.screenshot(),' +
+    '          new Promise(function(r){setTimeout(function(){r(null);},500);})' +
+    '        ]);' +
+    '        if(u8&&u8.length>0){' +
+    '          var blob=new Blob([u8],{type:"image/png"});' +
+    '          var bUrl=URL.createObjectURL(blob);' +
+    '          var shot2=await new Promise(function(resolve){' +
+    '            var img=new Image();' +
+    '            img.onload=function(){var d=downscale(img);URL.revokeObjectURL(bUrl);resolve(d);};' +
+    '            img.onerror=function(){URL.revokeObjectURL(bUrl);resolve(null);};' +
+    '            img.src=bUrl;' +
+    '          });' +
+    '          if(shot2)return shot2;' +
+    '        }' +
+    '      }catch(e){}' +
+    '    }' +
+    '    var canvases=Array.from(document.querySelectorAll("canvas"));' +
+    '    var best=null,maxArea=0;' +
+    '    for(var i=0;i<canvases.length;i++){' +
+    '      var c=canvases[i];' +
+    '      var area=(c.width||0)*(c.height||0);' +
+    '      if(area>maxArea&&c.style.display!=="none"){maxArea=area;best=c;}' +
+    '    }' +
+    '    if(!best&&emu&&emu.canvas)best=emu.canvas;' +
+    '    if(!best)best=document.querySelector("canvas");' +
+    '    if(best&&best.width>0&&best.height>0){' +
+    '      var dShot=downscale(best);' +
+    '      if(dShot)return dShot;' +
+    '      return best.toDataURL("image/jpeg",0.85);' +
+    '    }' +
+    '  }catch(e){console.error("captureGameScreenshot err",e);}' +
+    '  return null;' +
     '};' +
     'var _lastSrmHash=0;' +
     'window._userInteracted=false;' +

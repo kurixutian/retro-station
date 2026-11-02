@@ -14,6 +14,8 @@ import {
   ArrowRight,
   ChevronDown,
   ChevronUp,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { Theme } from '../../types';
 import {
@@ -51,7 +53,21 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   const [isSyncing, setIsSyncing] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [endpointInput, setEndpointInput] = useState(getSyncEndpoint());
+  const [showEndpoint, setShowEndpoint] = useState(false);
+
+  const getCustomEndpoint = () => {
+    try {
+      const custom = localStorage.getItem('retro_sync_endpoint')?.trim().replace(/\/+$/, '');
+      if (custom && custom !== DEFAULT_SYNC_ENDPOINT.replace(/\/+$/, '')) {
+        return custom;
+      }
+      return '';
+    } catch (e) {
+      return '';
+    }
+  };
+
+  const [endpointInput, setEndpointInput] = useState(getCustomEndpoint);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -60,7 +76,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     setSyncStatus(current.status);
     setStatusDetails(current.details);
     setLastSyncTime(current.lastSyncTime);
-    setEndpointInput(getSyncEndpoint());
+    setEndpointInput(getCustomEndpoint());
 
     const unsub = subscribeSyncStatus((status, details) => {
       setSyncStatus(status);
@@ -173,8 +189,8 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   };
 
   const handleResetEndpoint = () => {
-    setSyncEndpoint(DEFAULT_SYNC_ENDPOINT);
-    setEndpointInput(DEFAULT_SYNC_ENDPOINT);
+    setSyncEndpoint('');
+    setEndpointInput('');
     showToast('Reset vault endpoint to default');
   };
 
@@ -188,7 +204,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
         paddingRight: 'max(env(safe-area-inset-right, 0px) + 12px, 16px)',
       }}
     >
-      <div className="w-full max-w-lg max-h-[90vh] flex flex-col rounded-3xl bg-zinc-950 border border-zinc-800 shadow-2xl overflow-hidden my-auto">
+      <div className="w-full max-w-lg max-h-[90vh] flex flex-col rounded-3xl bg-zinc-950 border border-zinc-800 shadow-2xl overflow-hidden my-auto hardware-panel">
         {/* Header */}
         <div className="flex-none flex items-center justify-between px-5 py-4 border-b border-zinc-800 bg-zinc-950">
           <div className="flex items-center gap-2.5">
@@ -204,7 +220,8 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-full bg-zinc-900 hover:bg-zinc-800 text-zinc-300 transition"
+            className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white tactile-btn border border-zinc-800"
+            aria-label="Close Cloud Save Vault"
           >
             <X className="w-4 h-4" />
           </button>
@@ -283,7 +300,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                 {syncStatus === 'error' && (
                   <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-[11px] text-rose-300 leading-snug space-y-1">
                     <div className="font-extrabold flex items-center gap-1.5 text-rose-200">
-                      <span>⚠️ Sync Notice:</span>
+                      <span>Sync Notice:</span>
                     </div>
                     <p>{statusDetails || 'Could not connect to cloud vault.'}</p>
                     <p className="text-zinc-400 text-[10px] pt-1">
@@ -407,13 +424,28 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                   By default, RetroStation uses the community Cloudflare Worker vault. If you deployed your own private Cloudflare Worker, paste your worker URL below:
                 </p>
                 <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={endpointInput}
-                    onChange={(e) => setEndpointInput(e.target.value)}
-                    placeholder="https://your-worker.your-subdomain.workers.dev"
-                    className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-1.5 text-[11px] font-mono text-zinc-200 outline-none focus:border-zinc-700"
-                  />
+                  <div className="relative flex-1 flex items-center">
+                    <input
+                      type={showEndpoint ? 'text' : 'password'}
+                      value={endpointInput}
+                      onChange={(e) => setEndpointInput(e.target.value)}
+                      placeholder="https://your-worker.your-subdomain.workers.dev"
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-lg pl-3 pr-8 py-1.5 text-[11px] font-mono text-zinc-200 outline-none focus:border-zinc-700"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowEndpoint((v) => !v)}
+                      className="absolute right-2 text-zinc-500 hover:text-zinc-300 p-0.5 transition"
+                      title={showEndpoint ? 'Hide Worker URL' : 'Show Worker URL'}
+                      aria-label={showEndpoint ? 'Hide Worker URL' : 'Show Worker URL'}
+                    >
+                      {showEndpoint ? (
+                        <EyeOff className="w-3.5 h-3.5" />
+                      ) : (
+                        <Eye className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  </div>
                   <button
                     onClick={handleSaveEndpoint}
                     className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-[11px] font-bold transition"

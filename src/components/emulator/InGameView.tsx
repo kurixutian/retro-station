@@ -205,7 +205,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
   const renderDpad = () => (
     <div
       ref={dpadContainerRef}
-      className="relative w-32 h-32 select-none touch-none"
+      className="relative w-32 h-32 select-none touch-none dpad-cross rounded-2xl"
       style={{ touchAction: 'none', WebkitTouchCallout: 'none' }}
       onPointerDown={(e) => {
         if (customizing) return;
@@ -231,45 +231,45 @@ export const InGameView: React.FC<InGameViewProps> = ({
       <button
         type="button"
         {...bindPadButton('up')}
-        className={`absolute top-0 left-10 w-11 h-11 rounded-t-xl border flex items-center justify-center shadow-md touch-none select-none ${theme.dpadBg}`}
+        className={`absolute top-0 left-10 w-12 h-12 rounded-t-xl border flex items-center justify-center shadow-md touch-none select-none dpad-arm ${theme.dpadBg}`}
         aria-label="Up"
       >
-        <ChevronUp className="w-6 h-6" />
+        <ChevronUp className="w-6 h-6 stroke-[2.5]" />
       </button>
       {/* Down */}
       <button
         type="button"
         {...bindPadButton('down')}
-        className={`absolute bottom-0 left-10 w-11 h-11 rounded-b-xl border flex items-center justify-center shadow-md touch-none select-none ${theme.dpadBg}`}
+        className={`absolute bottom-0 left-10 w-12 h-12 rounded-b-xl border flex items-center justify-center shadow-md touch-none select-none dpad-arm ${theme.dpadBg}`}
         aria-label="Down"
       >
-        <ChevronDown className="w-6 h-6" />
+        <ChevronDown className="w-6 h-6 stroke-[2.5]" />
       </button>
       {/* Left */}
       <button
         type="button"
         {...bindPadButton('left')}
-        className={`absolute top-10 left-0 w-11 h-11 rounded-l-xl border flex items-center justify-center shadow-md touch-none select-none ${theme.dpadBg}`}
+        className={`absolute top-10 left-0 w-12 h-12 rounded-l-xl border flex items-center justify-center shadow-md touch-none select-none dpad-arm ${theme.dpadBg}`}
         aria-label="Left"
       >
-        <ChevronLeft className="w-6 h-6" />
+        <ChevronLeft className="w-6 h-6 stroke-[2.5]" />
       </button>
       {/* Right */}
       <button
         type="button"
         {...bindPadButton('right')}
-        className={`absolute top-10 right-0 w-11 h-11 rounded-r-xl border flex items-center justify-center shadow-md touch-none select-none ${theme.dpadBg}`}
+        className={`absolute top-10 right-0 w-12 h-12 rounded-r-xl border flex items-center justify-center shadow-md touch-none select-none dpad-arm ${theme.dpadBg}`}
         aria-label="Right"
       >
-        <ChevronRight className="w-6 h-6" />
+        <ChevronRight className="w-6 h-6 stroke-[2.5]" />
       </button>
-      {/* Center Pivot */}
+      {/* Molded Center Pivot Dish */}
       <div
-        className={`absolute top-10 left-10 w-11 h-11 ${
+        className={`absolute top-10 left-10 w-12 h-12 ${
           shaders.amoled ? 'bg-black border-black' : 'bg-zinc-900 border-zinc-800'
-        } flex items-center justify-center pointer-events-none`}
+        } flex items-center justify-center pointer-events-none shadow-inner`}
       >
-        <div className={`w-4 h-4 rounded-full ${shaders.amoled ? 'bg-zinc-900' : 'bg-zinc-800'}`} />
+        <div className={`w-5 h-5 rounded-full ${shaders.amoled ? 'bg-zinc-950' : 'bg-zinc-800'} shadow-inner border border-black/40`} />
       </div>
     </div>
   );
@@ -280,7 +280,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
       <button
         type="button"
         {...bindPadButton('actionX')}
-        className={`absolute top-0 left-12 w-12 h-12 rounded-full border-2 font-black text-sm shadow-lg flex items-center justify-center transition active:scale-90 touch-none select-none ${theme.btnXY}`}
+        className={`absolute top-0 left-12 w-12 h-12 rounded-full border-2 font-black text-sm shadow-xl flex items-center justify-center tactile-btn touch-none select-none ${theme.btnXY}`}
         aria-label="Button X"
       >
         X
@@ -289,7 +289,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
       <button
         type="button"
         {...bindPadButton('actionY')}
-        className={`absolute top-10 left-1 w-12 h-12 rounded-full border-2 font-black text-sm shadow-lg flex items-center justify-center transition active:scale-90 touch-none select-none ${theme.btnXY}`}
+        className={`absolute top-10 left-1 w-12 h-12 rounded-full border-2 font-black text-sm shadow-xl flex items-center justify-center tactile-btn touch-none select-none ${theme.btnXY}`}
         aria-label="Button Y"
       >
         Y
@@ -298,7 +298,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
       <button
         type="button"
         {...bindPadButton('actionB')}
-        className={`absolute bottom-0 left-12 w-12 h-12 rounded-full border-2 font-black text-base shadow-xl flex items-center justify-center transition active:scale-90 touch-none select-none ${theme.btnB}`}
+        className={`absolute bottom-0 left-12 w-12 h-12 rounded-full border-2 font-black text-base shadow-2xl flex items-center justify-center tactile-btn touch-none select-none ${theme.btnB}`}
         aria-label="Button B"
       >
         B
@@ -307,7 +307,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
       <button
         type="button"
         {...bindPadButton('actionA')}
-        className={`absolute top-10 right-1 w-12 h-12 rounded-full border-2 font-black text-base shadow-xl flex items-center justify-center transition active:scale-90 touch-none select-none ${theme.btnA}`}
+        className={`absolute top-10 right-1 w-12 h-12 rounded-full border-2 font-black text-base shadow-2xl flex items-center justify-center tactile-btn touch-none select-none ${theme.btnA}`}
         aria-label="Button A"
       >
         A
@@ -320,14 +320,14 @@ export const InGameView: React.FC<InGameViewProps> = ({
       <button
         type="button"
         {...bindPadButton('select')}
-        className="flex flex-col items-center gap-1 group touch-none select-none"
+        className="flex flex-col items-center gap-1 group touch-none select-none tactile-btn"
       >
         <div
           className={`w-12 h-3.5 rounded-full ${
             shaders.amoled ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-800 border-zinc-600'
           } group-active:bg-emerald-400 border shadow-inner -rotate-12 transition`}
         />
-        <span className="text-[9px] font-black tracking-widest text-zinc-400 uppercase">
+        <span className="text-[9px] font-mono font-bold tracking-widest text-zinc-400 uppercase">
           SELECT
         </span>
       </button>
@@ -335,14 +335,14 @@ export const InGameView: React.FC<InGameViewProps> = ({
       <button
         type="button"
         {...bindPadButton('start')}
-        className="flex flex-col items-center gap-1 group touch-none select-none"
+        className="flex flex-col items-center gap-1 group touch-none select-none tactile-btn"
       >
         <div
           className={`w-12 h-3.5 rounded-full ${
             shaders.amoled ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-800 border-zinc-600'
           } group-active:bg-emerald-400 border shadow-inner -rotate-12 transition`}
         />
-        <span className="text-[9px] font-black tracking-widest text-zinc-400 uppercase">
+        <span className="text-[9px] font-mono font-bold tracking-widest text-zinc-400 uppercase">
           START
         </span>
       </button>
@@ -835,10 +835,10 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 <button
                   type="button"
                   {...bindPadButton('btnL')}
-                  className={`w-20 h-10 rounded-xl font-black text-xs border-2 shadow-lg flex items-center justify-center transition active:scale-90 touch-none select-none ${
+                  className={`w-20 h-10 rounded-xl font-mono font-black text-xs border-2 shadow-lg flex items-center justify-center tactile-btn cartridge-grip touch-none select-none ${
                     shaders.amoled
-                      ? 'bg-zinc-900 text-zinc-100 border-zinc-700 active:bg-zinc-800'
-                      : 'bg-zinc-800/90 text-zinc-100 border-white/20 active:bg-zinc-700'
+                      ? 'bg-zinc-900 text-zinc-100 border-zinc-700'
+                      : 'bg-zinc-800/90 text-zinc-100 border-white/20'
                   }`}
                   aria-label="L Shoulder"
                 >
@@ -890,10 +890,10 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 <button
                   type="button"
                   {...bindPadButton('btnR')}
-                  className={`w-20 h-10 rounded-xl font-black text-xs border-2 shadow-lg flex items-center justify-center transition active:scale-90 touch-none select-none ${
+                  className={`w-20 h-10 rounded-xl font-mono font-black text-xs border-2 shadow-lg flex items-center justify-center tactile-btn cartridge-grip touch-none select-none ${
                     shaders.amoled
-                      ? 'bg-zinc-900 text-zinc-100 border-zinc-700 active:bg-zinc-800'
-                      : 'bg-zinc-800/90 text-zinc-100 border-white/20 active:bg-zinc-700'
+                      ? 'bg-zinc-900 text-zinc-100 border-zinc-700'
+                      : 'bg-zinc-800/90 text-zinc-100 border-white/20'
                   }`}
                   aria-label="R Shoulder"
                 >
@@ -952,7 +952,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 <button
                   type="button"
                   {...bindPadButton('btnL')}
-                  className={`w-14 h-8 rounded-xl font-black text-xs border shadow-md pointer-events-auto flex items-center justify-center transition active:scale-90 touch-none select-none ${
+                  className={`w-16 h-8 rounded-xl font-mono font-black text-xs border shadow-md pointer-events-auto flex items-center justify-center tactile-btn cartridge-grip touch-none select-none ${
                     shaders.amoled
                       ? 'bg-zinc-900 text-zinc-200 border-zinc-800'
                       : 'bg-zinc-800/90 text-zinc-100 border-white/10'
@@ -964,7 +964,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 <button
                   type="button"
                   {...bindPadButton('btnR')}
-                  className={`w-14 h-8 rounded-xl font-black text-xs border shadow-md pointer-events-auto flex items-center justify-center transition active:scale-90 touch-none select-none ${
+                  className={`w-14 h-8 rounded-xl font-mono font-black text-xs border shadow-md pointer-events-auto flex items-center justify-center tactile-btn cartridge-grip touch-none select-none ${
                     shaders.amoled
                       ? 'bg-zinc-900 text-zinc-200 border-zinc-800'
                       : 'bg-zinc-800/90 text-zinc-100 border-white/10'

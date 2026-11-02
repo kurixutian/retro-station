@@ -71,7 +71,7 @@ This session accomplished a major transformation of RetroStation across three co
     - `DELETE /api/sync/:code` — Purges saved vault.
   - Deployment configuration provided in `worker/wrangler.toml` and documentation in `worker/README.md`.
 - **Live Deployment:**
-  - Successfully deployed to `https://retro-vault.xtian-xtn.workers.dev/`.
+  - Successfully deployed to Cloudflare Worker endpoint (`https://<your-worker>.<subdomain>.workers.dev/`).
   - Configured as default endpoint in `src/cloudSync.ts`.
 - **Commits:** `7ff5346`, `ad91453`
 
@@ -138,7 +138,7 @@ flowchart TD
 
 ## 5. Live Vault Verification
 
-Verified via direct API probe against `https://retro-vault.xtian-xtn.workers.dev/api/sync/RETRO-DN4S-JB6G`:
+Verified via direct API probe against Cloudflare Worker API:
 
 * **HTTP Status:** 200 OK
 * **Storage Backend:** Cloudflare KV (`RETRO_VAULT`)
