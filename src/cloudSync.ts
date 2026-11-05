@@ -248,6 +248,8 @@ export function isSyncableKey(key: string): boolean {
   );
 }
 
+const isStateLikeKey = (key: string) => key.startsWith('state:');
+
 /**
  * Deduplicates and merges game lists.
  * Matches games by:
@@ -570,7 +572,12 @@ export async function syncNow(): Promise<{
 
       const isGamesKey = rKey === 'retro_games' || rKey === 'library_games';
       const isDeletedKey = rKey === DELETED_GAMES_KEY || rKey === 'deleted_games';
-      const shouldDownload = isGamesKey || isDeletedKey || remoteUpdatedAt > localUpdatedAt || !localMeta;
+      // Only pull when local pending changes are not waiting to push — if the user
+      // modified this key locally, their change wins and gets uploaded below.
+      // Otherwise compare only remote timestamps against each other (never local clocks).
+      const localPending = metaMap[rKey]?.pendingUpload;
+      const shouldDownload =
+        isGamesKey || isDeletedKey || (!localPending && (remoteUpdatedAt > localUpdatedAt || !localMeta));
 
       // If remote has newer data (or local never had it, or game library / tombstone sync)
       if (shouldDownload) {
@@ -648,8 +655,8 @@ export async function syncNow(): Promise<{
                 pulledCount++;
               }
             }
-          } else if (rKey.startsWith('state:')) {
-            // Save state slot JSON or object
+          } else if (isStateLikeKey(rKey)) {
+            // Save slot JSON
             let valToSave = rItem.data;
             if (valToSave && typeof valToSave === 'object') {
               // Unpack base64 emuState back if present
@@ -660,12 +667,24 @@ export async function syncNow(): Promise<{
                 valToSave.stateData.emuState = base64ToUint8(valToSave.stateData.emuStateBase64);
               }
               await idbPut(rKey, valToSave);
+
+              // Invalidate any stale local autosave for this game so it doesn't mask the state
+              const parts = rKey.split(':');
+              const gId = parts.length > 2 ? parts.slice(1, parts.length - 1).join(':') : parts[1];
+              if (gId) {
+                await idbDelete(`autosave:${gId}`).catch(() => {});
+              }
             }
             updatedLocalKeys.push(rKey);
             pulledCount++;
           } else if (rItem.isBinary && typeof rItem.data === 'string') {
             const rawBytes = base64ToUint8(rItem.data);
             await idbPut(rKey, rawBytes);
+            // When newer battery save progress arrives, wipe stale local autosave
+            if (rKey.startsWith('srm:')) {
+              const gId = rKey.replace('srm:', '');
+              await idbDelete(`autosave:${gId}`).catch(() => {});
+            }
             updatedLocalKeys.push(rKey);
             pulledCount++;
           } else {
@@ -697,7 +716,7 @@ export async function syncNow(): Promise<{
       const remoteCorrupt =
         remoteItem &&
         ((key === 'retro_games' && (!Array.isArray(remoteItem.data) || remoteItem.isBinary)) ||
-         (key.startsWith('state:') && (typeof remoteItem.data !== 'object' || remoteItem.isBinary)));
+         (isStateLikeKey(key) && (typeof remoteItem.data !== 'object' || remoteItem.isBinary)));
 
       const needsPush =
         localMeta?.pendingUpload ||
@@ -744,7 +763,7 @@ export async function syncNow(): Promise<{
                 isBinary: false,
               };
             }
-          } else if (key.startsWith('state:')) {
+          } else if (isStateLikeKey(key)) {
             const slotData = await idbGet(key);
             if (slotData && typeof slotData === 'object') {
               const serializable = { ...slotData };

@@ -201,8 +201,8 @@ export default function App() {
           for (const key of keys) {
             if (key.startsWith('state:')) {
               const parts = key.split(':');
-              const gId = parts[1];
-              const slotN = parseInt(parts[2], 10);
+              const slotN = parseInt(parts[parts.length - 1], 10);
+              const gId = parts.slice(1, parts.length - 1).join(':');
               const val = await idbGet(key).catch(() => null);
               if (val && gId && slotN) {
                 const emuSt = normalizeBinaryData(val.emuState || val.emuStateBase64 || val.stateData?.emuState || val.stateData?.emuStateBase64);
@@ -294,8 +294,8 @@ export default function App() {
             const key = String(cursor.key);
             if (key.startsWith('state:')) {
               const parts = key.split(':');
-              const gId = parts[1];
-              const slotN = parseInt(parts[2], 10);
+              const slotN = parseInt(parts[parts.length - 1], 10);
+              const gId = parts.slice(1, parts.length - 1).join(':');
               const val = cursor.value;
               if (val && gId && slotN) {
                 const emuSt = normalizeBinaryData(val.emuState || val.emuStateBase64 || val.stateData?.emuState || val.stateData?.emuStateBase64);
@@ -542,6 +542,7 @@ export default function App() {
           const srmArr = normalizeBinaryData(e.data.save);
           if (srmArr) {
             idbPut(`srm:${activeGame.id}`, srmArr).catch(() => {});
+            markLocalSaveModified(`srm:${activeGame.id}`).catch(() => {});
           }
         }
         return;
@@ -868,7 +869,9 @@ export default function App() {
         pendingStateRef.current = normalizeBinaryData(optionalStateData?.emuState) || null;
         pendingSrmRef.current = srm ? normalizeBinaryData(srm) : null;
         pendingRtcRef.current = rtc ? normalizeBinaryData(rtc) : null;
-        if (!pendingStateRef.current && autoSt) pendingStateRef.current = normalizeBinaryData(autoSt);
+        if (!pendingStateRef.current && !pendingSrmRef.current && autoSt) {
+          pendingStateRef.current = normalizeBinaryData(autoSt);
+        }
 
         rewindBufferRef.current = [];
         setIsPaused(false);

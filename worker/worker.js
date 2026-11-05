@@ -171,7 +171,7 @@ export default {
           }
         }
 
-        // Clean up any oversized legacy rom_ or autosave: keys from vault to ensure instant sub-second sync
+        // Clean up oversized legacy raw ROM binaries or ephemeral autosaves from the vault to ensure instant sub-second sync
         for (const vKey of Object.keys(vault.items)) {
           if (vKey.startsWith('rom_') || vKey.startsWith('rom:') || vKey.startsWith('autosave:')) {
             delete vault.items[vKey];
@@ -184,7 +184,10 @@ export default {
           if (key.startsWith('rom_') || key.startsWith('rom:') || key.startsWith('autosave:')) {
             continue;
           }
-          if (typeof item?.data === 'string' && item.data.length > 1024 * 1024) {
+          if (
+            (typeof item?.data === 'string' && item.data.length > 1024 * 1024) ||
+            (typeof item?.data === 'object' && JSON.stringify(item.data).length > 1024 * 1024)
+          ) {
             continue;
           }
 
