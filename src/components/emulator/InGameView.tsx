@@ -21,10 +21,24 @@ import {
   Minimize,
   RefreshCw,
   Gamepad2,
+  GripHorizontal,
+  Layers,
+  Pencil,
+  Check,
 } from 'lucide-react';
 import { Game, Theme, PadLayout, PadGroupId } from '../../types';
 import { coreRatio, formatGameTitle, EJS_CORES } from '../../constants/cores';
-import { DEFAULT_PAD_LAYOUT, PAD_LABELS } from '../../constants/controls';
+import {
+  DEFAULT_PAD_LAYOUT,
+  DEFAULT_LANDSCAPE_PAD_LAYOUT,
+  DEFAULT_NDS_PAD_LAYOUT,
+  DEFAULT_NDS_LANDSCAPE_PAD_LAYOUT,
+  PAD_LABELS,
+  LayoutSlot,
+  getLayoutNames,
+  setLayoutName,
+} from '../../constants/controls';
+import { getComputedGameFilter } from '../../constants/shaders';
 import { buildPlayerHtml } from '../../services/emulator/playerBridge';
 import { haptics } from '../../services/haptics';
 import { PadGroup } from '../controls/PadGroup';
@@ -57,14 +71,18 @@ interface InGameViewProps {
   emuFrameRef: React.RefObject<HTMLIFrameElement | null>;
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
   deckRef: React.RefObject<HTMLDivElement | null>;
-  padLayout: PadLayout;
-  setPadLayout: React.Dispatch<React.SetStateAction<PadLayout>>;
+  slotPortrait: LayoutSlot;
+  setSlotPortrait: (slot: LayoutSlot) => void;
+  slotLandscape: LayoutSlot;
+  setSlotLandscape: (slot: LayoutSlot) => void;
+  padLayoutPortrait: PadLayout;
+  setPadLayoutPortrait: React.Dispatch<React.SetStateAction<PadLayout>>;
+  padLayoutLandscape: PadLayout;
+  setPadLayoutLandscape: React.Dispatch<React.SetStateAction<PadLayout>>;
   customizing: boolean;
   setCustomizing: (c: boolean) => void;
   selectedPad: PadGroupId;
   setSelectedPad: (id: PadGroupId) => void;
-  movePad: (id: PadGroupId, x: number, y: number) => void;
-  scalePad: (id: PadGroupId, s: number) => void;
   hidePad: boolean;
   setHidePad: (h: boolean) => void;
   bindPadButton: (name: string) => Record<string, any>;
@@ -73,7 +91,10 @@ interface InGameViewProps {
   topBarTimer: React.MutableRefObject<any>;
   fps?: number;
   launchGame?: (game: Game) => void;
+  systemKey?: string;
   onOpenControls?: () => void;
+  toggleShader?: (key: string) => void;
+  setColorProfile?: (profile: string) => void;
 }
 
 export const InGameView: React.FC<InGameViewProps> = ({
@@ -103,14 +124,18 @@ export const InGameView: React.FC<InGameViewProps> = ({
   emuFrameRef,
   canvasRef,
   deckRef,
-  padLayout,
-  setPadLayout,
+  slotPortrait,
+  setSlotPortrait,
+  slotLandscape,
+  setSlotLandscape,
+  padLayoutPortrait,
+  setPadLayoutPortrait,
+  padLayoutLandscape,
+  setPadLayoutLandscape,
   customizing,
   setCustomizing,
   selectedPad,
   setSelectedPad,
-  movePad,
-  scalePad,
   hidePad,
   setHidePad,
   bindPadButton,
@@ -119,9 +144,13 @@ export const InGameView: React.FC<InGameViewProps> = ({
   topBarTimer,
   fps,
   launchGame,
+  systemKey,
   onOpenControls,
+  toggleShader,
+  setColorProfile,
 }) => {
   const dpadContainerRef = React.useRef<HTMLDivElement | null>(null);
+  const landscapeDeckRef = React.useRef<HTMLDivElement | null>(null);
   const activeDpadPointerId = React.useRef<number | null>(null);
   const activeDpadDirs = React.useRef<Record<string, boolean>>({
     up: false,
@@ -153,6 +182,62 @@ export const InGameView: React.FC<InGameViewProps> = ({
     };
   }, []);
 
+  // ── Orientation-specific Pad Layout & Controls ────────────────────────────
+  const activeSlot = isLandscape ? slotLandscape : slotPortrait;
+  const setActiveSlotHandler = isLandscape ? setSlotLandscape : setSlotPortrait;
+  const padLayout = isLandscape ? padLayoutLandscape : padLayoutPortrait;
+  const setPadLayout = isLandscape ? setPadLayoutLandscape : setPadLayoutPortrait;
+
+  const movePad = React.useCallback(
+    (id: PadGroupId, x: number, y: number) => {
+      setPadLayout((l) => ({ ...l, [id]: { ...l[id], x, y } }));
+    },
+    [setPadLayout]
+  );
+
+  const scalePad = React.useCallback(
+    (id: PadGroupId, s: number) => {
+      setPadLayout((l) => ({ ...l, [id]: { ...l[id], s } }));
+    },
+    [setPadLayout]
+  );
+
+  const safeBindPadButton = React.useCallback(
+    (name: string) => {
+      if (customizing) {
+        return {
+          onPointerDown: (e: React.SyntheticEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+          },
+          onPointerUp: (e: React.SyntheticEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+          },
+          onPointerCancel: (e: React.SyntheticEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+          },
+          onTouchStart: (e: React.SyntheticEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+          },
+          onTouchEnd: (e: React.SyntheticEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+          },
+          onTouchCancel: (e: React.SyntheticEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+          },
+          onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
+        };
+      }
+      return bindPadButton(name);
+    },
+    [customizing, bindPadButton]
+  );
+
   React.useEffect(() => {
     const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
     document.addEventListener('fullscreenchange', onFsChange);
@@ -170,6 +255,64 @@ export const InGameView: React.FC<InGameViewProps> = ({
       document.exitFullscreen().catch(() => {});
     }
   }, []);
+
+  // ── Draggable customizer state ───────────────────────────────────────────
+  const [customizerPos, setCustomizerPos] = React.useState<{ x: number; y: number } | null>(null);
+  const customizerRef = React.useRef<HTMLDivElement | null>(null);
+  const isDraggingCustomizer = React.useRef(false);
+  const dragStartOffset = React.useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  const handleCustomizerDragStart = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const el = customizerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    dragStartOffset.current = {
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    };
+    isDraggingCustomizer.current = true;
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch (err) {}
+    setCustomizerPos({ x: rect.left, y: rect.top });
+  };
+
+  const handleCustomizerDragMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDraggingCustomizer.current) return;
+    const el = customizerRef.current;
+    const width = el ? el.offsetWidth : 320;
+    const height = el ? el.offsetHeight : 120;
+    const newX = Math.max(8, Math.min(window.innerWidth - width - 8, e.clientX - dragStartOffset.current.x));
+    const newY = Math.max(8, Math.min(window.innerHeight - height - 8, e.clientY - dragStartOffset.current.y));
+    setCustomizerPos({ x: newX, y: newY });
+  };
+
+  const handleCustomizerDragEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (isDraggingCustomizer.current) {
+      isDraggingCustomizer.current = false;
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch (err) {}
+    }
+  };
+
+  // ── Layout names and inline renaming ──────────────────────────────────────
+  const [layoutNames, setLayoutNames] = React.useState<Record<LayoutSlot, string>>(() => getLayoutNames(isLandscape, systemKey));
+  const [editingLayoutName, setEditingLayoutName] = React.useState(false);
+  const [nameInput, setNameInput] = React.useState('');
+
+  React.useEffect(() => {
+    setLayoutNames(getLayoutNames(isLandscape, systemKey));
+  }, [isLandscape, systemKey]);
+
+  React.useEffect(() => {
+    const handleLayoutUpdate = () => {
+      setLayoutNames(getLayoutNames(isLandscape, systemKey));
+    };
+    window.addEventListener('retro_layout_updated', handleLayoutUpdate);
+    return () => window.removeEventListener('retro_layout_updated', handleLayoutUpdate);
+  }, [isLandscape, systemKey]);
 
   const updateDpadByCoords = React.useCallback((clientX: number, clientY: number) => {
     if (!dpadContainerRef.current || !setButtonDown || !setButtonUp) return;
@@ -238,7 +381,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
       {/* Up */}
       <button
         type="button"
-        {...bindPadButton('up')}
+        {...safeBindPadButton('up')}
         className={`absolute top-0 left-10 w-12 h-12 rounded-t-xl border flex items-center justify-center shadow-md touch-none select-none dpad-arm ${theme.dpadBg}`}
         aria-label="Up"
       >
@@ -247,7 +390,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
       {/* Down */}
       <button
         type="button"
-        {...bindPadButton('down')}
+        {...safeBindPadButton('down')}
         className={`absolute bottom-0 left-10 w-12 h-12 rounded-b-xl border flex items-center justify-center shadow-md touch-none select-none dpad-arm ${theme.dpadBg}`}
         aria-label="Down"
       >
@@ -256,7 +399,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
       {/* Left */}
       <button
         type="button"
-        {...bindPadButton('left')}
+        {...safeBindPadButton('left')}
         className={`absolute top-10 left-0 w-12 h-12 rounded-l-xl border flex items-center justify-center shadow-md touch-none select-none dpad-arm ${theme.dpadBg}`}
         aria-label="Left"
       >
@@ -265,7 +408,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
       {/* Right */}
       <button
         type="button"
-        {...bindPadButton('right')}
+        {...safeBindPadButton('right')}
         className={`absolute top-10 right-0 w-12 h-12 rounded-r-xl border flex items-center justify-center shadow-md touch-none select-none dpad-arm ${theme.dpadBg}`}
         aria-label="Right"
       >
@@ -287,7 +430,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
       {/* X (Top) */}
       <button
         type="button"
-        {...bindPadButton('actionX')}
+        {...safeBindPadButton('actionX')}
         className={`absolute top-0 left-12 w-12 h-12 rounded-full border-2 font-black text-sm shadow-xl flex items-center justify-center tactile-btn touch-none select-none ${theme.btnXY}`}
         aria-label="Button X"
       >
@@ -296,7 +439,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
       {/* Y (Left) */}
       <button
         type="button"
-        {...bindPadButton('actionY')}
+        {...safeBindPadButton('actionY')}
         className={`absolute top-10 left-1 w-12 h-12 rounded-full border-2 font-black text-sm shadow-xl flex items-center justify-center tactile-btn touch-none select-none ${theme.btnXY}`}
         aria-label="Button Y"
       >
@@ -305,7 +448,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
       {/* B (Bottom) */}
       <button
         type="button"
-        {...bindPadButton('actionB')}
+        {...safeBindPadButton('actionB')}
         className={`absolute bottom-0 left-12 w-12 h-12 rounded-full border-2 font-black text-base shadow-2xl flex items-center justify-center tactile-btn touch-none select-none ${theme.btnB}`}
         aria-label="Button B"
       >
@@ -314,7 +457,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
       {/* A (Right) */}
       <button
         type="button"
-        {...bindPadButton('actionA')}
+        {...safeBindPadButton('actionA')}
         className={`absolute top-10 right-1 w-12 h-12 rounded-full border-2 font-black text-base shadow-2xl flex items-center justify-center tactile-btn touch-none select-none ${theme.btnA}`}
         aria-label="Button A"
       >
@@ -327,7 +470,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
     <div className="flex items-center justify-center gap-6 pt-1 pb-1 select-none touch-none">
       <button
         type="button"
-        {...bindPadButton('select')}
+        {...safeBindPadButton('select')}
         className="flex flex-col items-center gap-1 group touch-none select-none tactile-btn"
       >
         <div
@@ -342,7 +485,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
 
       <button
         type="button"
-        {...bindPadButton('start')}
+        {...safeBindPadButton('start')}
         className="flex flex-col items-center gap-1 group touch-none select-none tactile-btn"
       >
         <div
@@ -358,12 +501,16 @@ export const InGameView: React.FC<InGameViewProps> = ({
   );
 
   const renderTransport = (compact = false) => (
-    <div className={`flex items-center justify-center ${compact ? 'gap-1.5' : 'gap-2 w-[300px] grid grid-cols-3'} select-none touch-none`}>
+    <div className={`flex items-center justify-center ${compact ? 'gap-[72px]' : 'gap-2 w-[300px] grid grid-cols-3'} select-none touch-none`}>
       {/* Pause Toggle */}
       <button
         type="button"
         onPointerDown={(e) => {
           e.preventDefault();
+          if (customizing) {
+            setSelectedPad('transport');
+            return;
+          }
           haptics.toggle();
           setIsPaused((p) => {
             const next = !p;
@@ -375,9 +522,9 @@ export const InGameView: React.FC<InGameViewProps> = ({
             return next;
           });
         }}
-        className={`flex items-center justify-center gap-1.5 ${
-          compact ? 'py-1.5 px-3 min-h-[36px] rounded-lg text-xs' : 'py-2.5 px-3 min-h-[44px] rounded-xl text-xs'
-        } font-bold border transition active:scale-95 touch-none select-none tactile-btn ${
+        className={`relative flex items-center justify-center gap-1.5 ${
+          compact ? 'h-[20px] min-w-[92px] px-3.5 rounded-md before:content-[\'\'] before:absolute before:-top-5 before:-bottom-5 before:-inset-x-2' : 'py-2.5 px-3 min-h-[44px] rounded-xl text-xs font-bold'
+        } border transition active:scale-95 touch-none select-none tactile-btn ${
           isPaused
             ? 'bg-amber-500 text-zinc-950 border-amber-300 shadow-lg'
             : shaders.amoled
@@ -386,8 +533,8 @@ export const InGameView: React.FC<InGameViewProps> = ({
         }`}
         title={isPaused ? 'Resume' : 'Pause'}
       >
-        {isPaused ? <Play className="w-3.5 h-3.5 fill-current" /> : <Pause className="w-3.5 h-3.5" />}
-        <span>{isPaused ? 'Resume' : 'Pause'}</span>
+        {isPaused ? <Play className={`${compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} fill-current`} /> : <Pause className={compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} />}
+        {!compact && <span>{isPaused ? 'Resume' : 'Pause'}</span>}
       </button>
 
       {/* Hold Rewind */}
@@ -395,15 +542,36 @@ export const InGameView: React.FC<InGameViewProps> = ({
         type="button"
         onPointerDown={(e) => {
           e.preventDefault();
+          if (customizing) {
+            setSelectedPad('transport');
+            return;
+          }
+          try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch (err) {}
           haptics.toggle();
           setIsRewinding(true);
         }}
-        onPointerUp={() => setIsRewinding(false)}
-        onPointerLeave={() => setIsRewinding(false)}
-        onPointerCancel={() => setIsRewinding(false)}
-        className={`flex items-center justify-center gap-1.5 ${
-          compact ? 'py-1.5 px-3 min-h-[36px] rounded-lg text-xs' : 'py-2.5 px-3 min-h-[44px] rounded-xl text-xs'
-        } font-bold border transition active:scale-95 touch-none select-none tactile-btn ${
+        onPointerUp={(e) => {
+          try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch (err) {}
+          if (!customizing) setIsRewinding(false);
+        }}
+        onPointerCancel={(e) => {
+          try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch (err) {}
+          if (!customizing) setIsRewinding(false);
+        }}
+        onPointerLeave={(e) => {
+          try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch (err) {}
+          if (!customizing) setIsRewinding(false);
+        }}
+        onTouchEnd={() => {
+          if (!customizing) setIsRewinding(false);
+        }}
+        onTouchCancel={() => {
+          if (!customizing) setIsRewinding(false);
+        }}
+        onContextMenu={(e) => e.preventDefault()}
+        className={`relative flex items-center justify-center gap-1.5 ${
+          compact ? 'h-[20px] min-w-[92px] px-3.5 rounded-md before:content-[\'\'] before:absolute before:-top-5 before:-bottom-5 before:-inset-x-2' : 'py-2.5 px-3 min-h-[44px] rounded-xl text-xs font-bold'
+        } border transition active:scale-95 touch-none select-none tactile-btn ${
           isRewinding
             ? 'bg-amber-400 text-zinc-950 border-amber-200 shadow-lg'
             : shaders.amoled
@@ -412,8 +580,8 @@ export const InGameView: React.FC<InGameViewProps> = ({
         }`}
         title="Hold to Rewind"
       >
-        <Rewind className="w-3.5 h-3.5" />
-        <span>Rewind</span>
+        <Rewind className={compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} />
+        {!compact && <span>Rewind</span>}
       </button>
 
       {/* Fast-Forward Speed Picker: OFF | 2x | 4x | 8x (cycles on tap) */}
@@ -421,6 +589,10 @@ export const InGameView: React.FC<InGameViewProps> = ({
         type="button"
         onPointerDown={(e) => {
           e.preventDefault();
+          if (customizing) {
+            setSelectedPad('transport');
+            return;
+          }
           haptics.toggle();
           setFfSpeed((s) => {
             if (s === 0) return 2;
@@ -429,49 +601,64 @@ export const InGameView: React.FC<InGameViewProps> = ({
             return 0;
           });
         }}
-        className={`flex items-center justify-center gap-1.5 ${
-          compact ? 'py-1.5 px-3 min-h-[36px] rounded-lg text-xs' : 'py-2.5 px-3 min-h-[44px] rounded-xl text-xs'
-        } font-bold border transition active:scale-95 touch-none select-none tactile-btn ${
+        className={`relative flex items-center justify-center gap-1.5 ${
+          compact ? 'h-[20px] min-w-[92px] px-3.5 rounded-md before:content-[\'\'] before:absolute before:-top-5 before:-bottom-5 before:-inset-x-2' : 'py-2.5 px-3 min-h-[44px] rounded-xl text-xs font-bold'
+        } border transition active:scale-95 touch-none select-none tactile-btn ${
           isFastForward
             ? 'bg-sky-400 text-zinc-950 border-sky-200 shadow-lg'
             : shaders.amoled
               ? 'bg-black text-zinc-200 border-zinc-800 hover:bg-zinc-900'
               : 'bg-zinc-950/80 text-zinc-200 border-white/10 hover:bg-zinc-900'
         }`}
-        title="Fast Forward (Cycles 1x -> 2x -> 4x -> 8x)"
+        title={isFastForward ? `Fast Forward (${ffSpeed}x)` : 'Fast Forward'}
       >
-        <FastForward className="w-3.5 h-3.5" />
-        <span>{isFastForward ? `${ffSpeed}x` : '1x'}</span>
+        <FastForward className={compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} />
+        {!compact && <span>{isFastForward ? `${ffSpeed}x` : '1x'}</span>}
       </button>
     </div>
   );
 
-  const renderGameScreen = () => (
-    <>
-      {activeGame.real ? (
-        romUrl ? (
-          <iframe
-            key={romUrl}
-            ref={emuFrameRef}
-            title="emulator"
-            className="w-full h-full block border-0 pointer-events-none bg-black"
-            allow="autoplay; gamepad"
-            srcDoc={buildPlayerHtml(EJS_CORES[activeGame.core] || 'gb', romUrl, activeGame.title)}
-          />
+  const renderGameScreen = () => {
+    const gameFilter = getComputedGameFilter(shaders);
+    const isNds = activeGame.core === 'melonds' || activeGame.core === 'desmume' || activeGame.core === 'nds';
+
+    return (
+      <>
+        {activeGame.real ? (
+          romUrl ? (
+            <iframe
+              key={romUrl}
+              ref={emuFrameRef}
+              title="emulator"
+              className={`w-full h-full block border-0 bg-black ${isNds && !customizing ? 'pointer-events-auto' : 'pointer-events-none'}`}
+              allow="autoplay; gamepad"
+              style={{ filter: gameFilter }}
+              srcDoc={buildPlayerHtml(EJS_CORES[activeGame.core] || 'gb', romUrl, activeGame.title)}
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-xs font-mono text-zinc-400">
+              Loading ROM...
+            </div>
+          )
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-xs font-mono text-zinc-400">
-            Loading ROM...
+          <canvas
+            ref={canvasRef}
+            width={320}
+            height={240}
+            className="w-full h-full object-fill block"
+            style={{ imageRendering: 'pixelated', filter: gameFilter }}
+          />
+        )}
+
+        {/* NDS Hardware Separator Hinge (subtle divider between top and bottom screens) */}
+        {isNds && (
+          <div
+            className="absolute left-0 right-0 pointer-events-none z-10 flex items-center justify-center"
+            style={{ top: '50%', transform: 'translateY(-50%)', height: '4px' }}
+          >
+            <div className="w-full h-0.5 bg-zinc-950/90 border-t border-b border-black shadow-sm" />
           </div>
-        )
-      ) : (
-        <canvas
-          ref={canvasRef}
-          width={320}
-          height={240}
-          className="w-full h-full object-fill block"
-          style={{ imageRendering: 'pixelated' }}
-        />
-      )}
+        )}
 
       {/* Shader Layer 1: CRT Horizontal Scanlines */}
       {shaders.scanlines && (
@@ -509,58 +696,232 @@ export const InGameView: React.FC<InGameViewProps> = ({
         />
       )}
 
-      {/* Pause Overlay */}
-      {isPaused && (
+        {isPaused && (
+          <div
+            onClick={() => revealTopBar(5000)}
+            className="absolute inset-0 z-20 bg-black/70 backdrop-blur-xs flex flex-col items-center justify-center gap-2 cursor-pointer select-none"
+          >
+            <Pause className="w-8 h-8 text-amber-400" />
+            <span className="font-mono font-black text-sm tracking-widest text-white">
+              EMULATION PAUSED
+            </span>
+            <span className="text-[10px] text-zinc-400 font-sans tracking-normal">
+              Tap screen to show menu • Tap Resume to play
+            </span>
+          </div>
+        )}
+      </>
+    );
+  };
+
+  const transportScale = padLayout.transport?.s ?? 1;
+  const screenScale = padLayout.screen?.s ?? 1;
+
+  const renderCustomizer = () => {
+    const activeKey = selectedPad;
+    const currentScale = padLayout[activeKey]?.s || 1;
+    const isTransport = activeKey === 'transport';
+    const isScreen = activeKey === 'screen';
+
+    return (
+      <div
+        ref={customizerRef}
+        className="fixed z-50 w-[320px] max-w-[calc(100vw-20px)] rounded-2xl bg-zinc-950/95 backdrop-blur-md border border-zinc-700 p-3 shadow-2xl space-y-2.5 select-none"
+        style={
+          customizerPos
+            ? { left: `${customizerPos.x}px`, top: `${customizerPos.y}px` }
+            : isLandscape
+              ? { bottom: '16px', right: '16px' }
+              : { bottom: '16px', left: '50%', transform: 'translateX(-50%)' }
+        }
+      >
+        {/* Drag handle header */}
         <div
-          onClick={() => revealTopBar(5000)}
-          className="absolute inset-0 z-20 bg-black/70 backdrop-blur-xs flex flex-col items-center justify-center gap-2 cursor-pointer select-none"
+          className="w-full flex items-center justify-between pb-1.5 border-b border-zinc-800/80 cursor-grab active:cursor-grabbing select-none touch-none"
+          onPointerDown={handleCustomizerDragStart}
+          onPointerMove={handleCustomizerDragMove}
+          onPointerUp={handleCustomizerDragEnd}
+          onPointerCancel={handleCustomizerDragEnd}
         >
-          <Pause className="w-8 h-8 text-amber-400" />
-          <span className="font-mono font-black text-sm tracking-widest text-white">
-            EMULATION PAUSED
-          </span>
-          <span className="text-[10px] text-zinc-400 font-sans tracking-normal">
-            Tap screen to show menu • Tap Resume to play
+          <div className="flex items-center gap-1.5">
+            <GripHorizontal className="w-4 h-4 text-emerald-400" />
+            <span className="font-extrabold text-xs text-emerald-300">
+              {PAD_LABELS[selectedPad]}
+            </span>
+            {systemKey === 'nds' && (
+              <span className="ml-1 text-[9px] font-mono px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                NDS
+              </span>
+            )}
+          </div>
+          <span className="text-[10px] text-zinc-400 font-mono">
+            {Math.round(currentScale * 100)}% • Drag dialog
           </span>
         </div>
-      )}
-    </>
-  );
 
-  const renderCustomizer = () => (
-    <div className="absolute left-2 right-2 bottom-2 z-40 rounded-2xl bg-zinc-950/95 border border-zinc-700 p-2.5 shadow-2xl space-y-2">
-      <div className="flex items-center justify-between text-[11px]">
-        <span className="font-bold text-emerald-300">{PAD_LABELS[selectedPad]}</span>
-        <span className="text-zinc-400">Drag to move • slider to resize</span>
+        {/* Layout Slot Selector Dropdown (Call of Duty Mobile style with custom rename) */}
+        <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-xl bg-zinc-900/90 border border-zinc-800 text-xs">
+          {editingLayoutName ? (
+            <div className="flex items-center gap-1.5 w-full">
+              <input
+                type="text"
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const trimmed = nameInput.trim() || `Layout ${activeSlot}`;
+                    setLayoutName(isLandscape, activeSlot, trimmed);
+                    setLayoutNames(getLayoutNames(isLandscape));
+                    setEditingLayoutName(false);
+                    showToast(`Renamed to "${trimmed}"`);
+                  } else if (e.key === 'Escape') {
+                    setEditingLayoutName(false);
+                  }
+                }}
+                maxLength={20}
+                autoFocus
+                placeholder={`Layout ${activeSlot}`}
+                className="flex-1 bg-zinc-800 text-emerald-300 font-bold text-xs rounded-lg px-2 py-1 border border-emerald-500/50 outline-none"
+              />
+              <button
+                onClick={() => {
+                  const trimmed = nameInput.trim() || `Layout ${activeSlot}`;
+                  setLayoutName(isLandscape, activeSlot, trimmed, systemKey);
+                  setLayoutNames(getLayoutNames(isLandscape, systemKey));
+                  setEditingLayoutName(false);
+                  showToast(`Renamed to "${trimmed}"`);
+                }}
+                className="p-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold transition active:scale-95"
+                title="Save layout name"
+                aria-label="Save layout name"
+              >
+                <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+              </button>
+              <button
+                onClick={() => setEditingLayoutName(false)}
+                className="p-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white transition active:scale-95"
+                title="Cancel"
+                aria-label="Cancel rename"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-1.5 text-zinc-400 font-mono font-bold text-[11px] shrink-0">
+                <Layers className="w-3.5 h-3.5 text-emerald-400" />
+                <span>LAYOUT</span>
+              </div>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <select
+                  value={activeSlot}
+                  onChange={(e) => {
+                    const newSlot = parseInt(e.target.value, 10) as LayoutSlot;
+                    setActiveSlotHandler(newSlot);
+                    showToast(`Loaded ${layoutNames[newSlot] || `Layout ${newSlot}`} (${isLandscape ? 'Landscape' : 'Portrait'})`);
+                  }}
+                  className="bg-zinc-800 hover:bg-zinc-700 text-emerald-300 font-bold text-xs rounded-lg px-2.5 py-1 border border-zinc-700 outline-none cursor-pointer transition max-w-[145px] truncate"
+                >
+                  <option value={1}>{layoutNames[1] || 'Layout 1'}</option>
+                  <option value={2}>{layoutNames[2] || 'Layout 2'}</option>
+                  <option value={3}>{layoutNames[3] || 'Layout 3'}</option>
+                </select>
+                <button
+                  onClick={() => {
+                    setNameInput(layoutNames[activeSlot] || `Layout ${activeSlot}`);
+                    setEditingLayoutName(true);
+                  }}
+                  className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white border border-zinc-700 transition active:scale-95 shrink-0"
+                  title="Rename this layout"
+                  aria-label="Rename layout"
+                >
+                  <Pencil className="w-3 h-3" />
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Resizing slider */}
+        <div className="flex items-center gap-2 pt-0.5">
+          <input
+            type="range"
+            min={isTransport ? '0.65' : isScreen ? '0.6' : '0.5'}
+            max={isTransport ? '1.5' : isScreen ? '1.5' : '1.8'}
+            step="0.05"
+            value={currentScale}
+            onChange={(e) => scalePad(activeKey, parseFloat(e.target.value))}
+            className="flex-1 accent-emerald-500 cursor-pointer"
+          />
+          <button
+            onClick={() => {
+              if (isLandscape) {
+                setPadLayoutLandscape(systemKey === 'nds' ? DEFAULT_NDS_LANDSCAPE_PAD_LAYOUT : DEFAULT_LANDSCAPE_PAD_LAYOUT);
+              } else {
+                setPadLayoutPortrait(systemKey === 'nds' ? DEFAULT_NDS_PAD_LAYOUT : DEFAULT_PAD_LAYOUT);
+              }
+              showToast(`Reset Layout ${activeSlot} to default`);
+            }}
+            className="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold transition active:scale-95"
+            title="Reset layout to default"
+          >
+            Reset
+          </button>
+          <button
+            onClick={() => {
+              setCustomizing(false);
+              setCustomizerPos(null);
+              showToast('Controls saved');
+            }}
+            className="px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-zinc-950 text-xs font-black transition active:scale-95"
+          >
+            Done
+          </button>
+        </div>
+
+        {/* Pad Selection Pills (both portrait and landscape) */}
+        <div className="grid grid-cols-5 gap-1 pt-1 border-t border-zinc-800/80">
+          {(['screen', 'dpad', 'actions', 'system', 'transport'] as PadGroupId[]).map((key) => (
+            <button
+              key={key}
+              onClick={() => setSelectedPad(key)}
+              className={`py-1 px-1 rounded-lg text-[10px] font-bold border transition ${
+                selectedPad === key
+                  ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
+                  : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              {key === 'screen'
+                ? 'Screen'
+                : key === 'dpad'
+                ? 'D-Pad'
+                : key === 'actions'
+                ? 'ABXY'
+                : key === 'system'
+                ? 'System'
+                : '3-Btn'}
+            </button>
+          ))}
+        </div>
+
+        {selectedPad === 'screen' && (
+          <div className="text-[10px] text-zinc-400 text-center">
+            Adjust slider to resize the game screen
+          </div>
+        )}
+        {selectedPad === 'transport' && (
+          <div className="text-[10px] text-zinc-400 text-center">
+            Resizing 3-button bar dynamically fits the controls
+          </div>
+        )}
+        {selectedPad !== 'transport' && selectedPad !== 'screen' && (
+          <div className="text-[10px] text-zinc-400 text-center">
+            Drag the {PAD_LABELS[selectedPad]} on screen to move it
+          </div>
+        )}
       </div>
-      <div className="flex items-center gap-2">
-        <input
-          type="range"
-          min="0.5"
-          max="1.8"
-          step="0.05"
-          value={padLayout[selectedPad]?.s || 1}
-          onChange={(e) => scalePad(selectedPad, parseFloat(e.target.value))}
-          className="flex-1"
-        />
-        <button
-          onClick={() => setPadLayout(DEFAULT_PAD_LAYOUT)}
-          className="px-2.5 py-1.5 rounded-lg bg-zinc-800 text-zinc-200 text-xs font-bold"
-        >
-          Reset
-        </button>
-        <button
-          onClick={() => {
-            setCustomizing(false);
-            showToast('Controls saved');
-          }}
-          className="px-3 py-1.5 rounded-lg bg-emerald-500 text-zinc-950 text-xs font-black"
-        >
-          Done
-        </button>
-      </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div
@@ -611,10 +972,11 @@ export const InGameView: React.FC<InGameViewProps> = ({
               setInGameMenuOpen(false);
               setCurrentView('home');
             }}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-zinc-200 border border-white/10 text-xs font-bold transition active:scale-95 tactile-btn"
+            className="p-2 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-zinc-200 border border-white/10 text-xs font-bold transition active:scale-95 tactile-btn"
+            aria-label="Library"
+            title="Library"
           >
             <Home className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Library</span>
           </button>
 
           <div className="flex flex-col items-center text-center truncate px-2">
@@ -624,7 +986,9 @@ export const InGameView: React.FC<InGameViewProps> = ({
             <div className="flex items-center gap-1.5 text-[9px] font-mono text-zinc-400">
               <span className="px-1.5 py-0.2 rounded bg-zinc-800 text-amber-300 font-bold uppercase">{activeGame.core}</span>
               <span>•</span>
-              <span className="text-emerald-400 font-bold">{fps || 60} FPS</span>
+              <span className="text-emerald-400 font-bold">
+                {fps || 60} FPS
+              </span>
               {isMuted && (
                 <>
                   <span>•</span>
@@ -651,9 +1015,10 @@ export const InGameView: React.FC<InGameViewProps> = ({
                   ? theme.accentBg
                   : 'bg-zinc-900/90 hover:bg-zinc-800 text-zinc-100 border-white/10'
               }`}
+              aria-label="Menu"
+              title="Menu"
             >
               <Settings className="w-4 h-4" />
-              <span>Menu</span>
             </button>
           </div>
         </div>
@@ -826,51 +1191,129 @@ export const InGameView: React.FC<InGameViewProps> = ({
           }`}
           style={{
             order: 0,
-            paddingTop: isLandscape ? '8px' : 'max(env(safe-area-inset-top, 0px), 24px)',
+            paddingTop: isLandscape ? '6px' : 'max(env(safe-area-inset-top, 0px), 24px)',
+            paddingBottom: isLandscape ? 'max(env(safe-area-inset-bottom, 0px), 6px)' : undefined,
           }}
         >
-          {/* Floating Compact Transport Bar (Landscape only) */}
-          {isLandscape && (
-            <div className="absolute top-2 z-20 flex items-center justify-center pointer-events-auto">
-              <div className="bg-black/85 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10 shadow-xl">
-                {renderTransport(true)}
-              </div>
-            </div>
-          )}
-
           <div
+            onClick={() => {
+              if (customizing) {
+                setSelectedPad('screen');
+              }
+            }}
             className={`relative bg-black overflow-hidden border-2 ${
-              shaders.amoled ? 'border-zinc-900 shadow-none' : 'border-zinc-800 shadow-inner'
+              customizing && selectedPad === 'screen'
+                ? 'border-emerald-400 ring-2 ring-emerald-400/50 cursor-pointer'
+                : customizing
+                ? 'border-white/30 cursor-pointer'
+                : shaders.amoled
+                ? 'border-zinc-900 shadow-none'
+                : 'border-zinc-800 shadow-inner'
             } ${
               shaders.crtCurve ? 'rounded-2xl scale-[0.99]' : 'rounded-lg'
             }`}
             style={{
-              aspectRatio: String(coreRatio(activeGame.core)),
+              aspectRatio: String(coreRatio(activeGame.core, isLandscape)),
               maxWidth: '100%',
-              maxHeight: isLandscape ? 'calc(100lvh - 16px)' : undefined,
-              width: isLandscape ? 'auto' : `min(100%, ${(48 * coreRatio(activeGame.core)).toFixed(2)}lvh)`,
-              height: isLandscape ? 'calc(100lvh - 16px)' : undefined,
+              maxHeight: isLandscape
+                ? `calc((100lvh - ${Math.round(22 * transportScale + 10)}px) * ${screenScale})`
+                : (activeGame.core === 'melonds' || activeGame.core === 'desmume' || activeGame.core === 'nds')
+                ? `calc(50lvh * ${screenScale})`
+                : `calc(48lvh * ${screenScale})`,
+              width: isLandscape
+                ? `min(100%, calc(${(coreRatio(activeGame.core, isLandscape) * 92).toFixed(2)}lvh * ${screenScale}))`
+                : `min(100%, calc(${(50 * coreRatio(activeGame.core, isLandscape)).toFixed(2)}lvh * ${screenScale}))`,
+              height: isLandscape
+                ? `calc((100lvh - ${Math.round(22 * transportScale + 10)}px) * ${screenScale})`
+                : (activeGame.core === 'melonds' || activeGame.core === 'desmume' || activeGame.core === 'nds')
+                ? `calc(50lvh * ${screenScale})`
+                : `calc(48lvh * ${screenScale})`,
               boxShadow: !shaders.amoled && shaders.rgbBloom
                 ? `0 0 28px ${theme.hex}33, inset 0 0 18px rgba(0,0,0,0.75)`
                 : 'none',
-              filter: !shaders.amoled && shaders.rgbBloom
-                ? 'contrast(1.08) saturate(1.18) brightness(1.04)'
-                : 'none'
+              filter: 'none'
             }}
           >
             {renderGameScreen()}
           </div>
 
-          {/* In landscape mode, if customizing controls: show scaling panel */}
-          {isLandscape && customizing && renderCustomizer()}
+          {/* Compact Transport Bar in Landscape: Positioned cleanly BELOW screen so it never obscures game content */}
+          {isLandscape && (
+            <div
+              className="relative z-30 flex items-center justify-center pointer-events-auto shrink-0 select-none"
+              style={{
+                height: `${Math.round(22 * transportScale)}px`,
+                marginTop: '2px',
+              }}
+            >
+              <div
+                onClick={() => {
+                  if (customizing) {
+                    setSelectedPad('transport');
+                  }
+                }}
+                className={`bg-black/90 backdrop-blur-md px-2.5 py-0.5 rounded-lg border ${
+                  customizing && selectedPad === 'transport'
+                    ? 'border-emerald-400 ring-2 ring-emerald-400/50 bg-emerald-950/20 cursor-pointer'
+                    : customizing
+                    ? 'border-white/30 cursor-pointer'
+                    : 'border-white/10'
+                } shadow-xl flex items-center transition-all origin-center`}
+                style={{
+                  transform: `scale(${transportScale})`,
+                  transformOrigin: 'center center',
+                }}
+              >
+                {renderTransport(true)}
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* 3. LANDSCAPE CONTROLS: LEFT FLANK & RIGHT FLANK */}
+        {/* 3. LANDSCAPE CONTROLS: MOVABLE CONTROLS OVERLAY */}
+        {isLandscape && (!hidePad || customizing) && (
+          <div
+            ref={landscapeDeckRef}
+            className="absolute inset-0 pointer-events-none z-20 overflow-hidden select-none"
+          >
+            {/* Movable D-Pad */}
+            <PadGroup
+              id="dpad"
+              layout={padLayout}
+              customizing={customizing}
+              selected={customizing && selectedPad === 'dpad'}
+              onSelect={setSelectedPad}
+              onMove={movePad}
+              deckRef={landscapeDeckRef}
+            >
+              <div className="pointer-events-auto">
+                {renderDpad()}
+              </div>
+            </PadGroup>
+
+            {/* Movable Actions */}
+            <PadGroup
+              id="actions"
+              layout={padLayout}
+              customizing={customizing}
+              selected={customizing && selectedPad === 'actions'}
+              onSelect={setSelectedPad}
+              onMove={movePad}
+              deckRef={landscapeDeckRef}
+            >
+              <div className="pointer-events-auto">
+                {renderActions()}
+              </div>
+            </PadGroup>
+          </div>
+        )}
+
+        {/* 4. LANDSCAPE FLANKS: BEZELS, SHOULDERS & SYSTEM BUTTONS */}
         {isLandscape && (!hidePad || customizing) && (
           <>
             {/* Left Flank (order: -1 -> placed visually on the LEFT) */}
             <div
-              className={`flex-none w-[160px] sm:w-[180px] md:w-[200px] h-full flex flex-col justify-between items-center py-3 px-2 select-none touch-none z-20 ${
+              className={`flex-none w-[160px] sm:w-[180px] md:w-[200px] h-full flex flex-col justify-between items-center py-3 px-2 select-none touch-none z-10 ${
                 shaders.amoled ? 'bg-black border-r border-zinc-900' : `${theme.deckBg} border-r border-white/5`
               }`}
               style={{
@@ -881,10 +1324,10 @@ export const InGameView: React.FC<InGameViewProps> = ({
               }}
             >
               {/* L Shoulder Button */}
-              <div className="w-full flex justify-start pl-1">
+              <div className="w-full flex justify-start pl-1 pointer-events-auto">
                 <button
                   type="button"
-                  {...bindPadButton('btnL')}
+                  {...safeBindPadButton('btnL')}
                   className={`w-20 h-10 rounded-xl font-mono font-black text-xs border-2 shadow-lg flex items-center justify-center tactile-btn cartridge-grip touch-none select-none ${
                     shaders.amoled
                       ? 'bg-zinc-900 text-zinc-100 border-zinc-700'
@@ -896,19 +1339,14 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 </button>
               </div>
 
-              {/* D-Pad */}
-              <div
-                className="my-auto select-none touch-none"
-                style={{ transform: `scale(${padLayout.dpad.s})` }}
-              >
-                {renderDpad()}
-              </div>
+              {/* Flex spacer for center area where D-pad floats */}
+              <div className="flex-1" />
 
               {/* SELECT Button */}
-              <div className="pb-1">
+              <div className="pb-1 pointer-events-auto" style={{ transform: `scale(${padLayout.system?.s || 1})` }}>
                 <button
                   type="button"
-                  {...bindPadButton('select')}
+                  {...safeBindPadButton('select')}
                   className="flex flex-col items-center gap-1 group touch-none select-none"
                 >
                   <div
@@ -925,7 +1363,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
 
             {/* Right Flank (order: 1 -> placed visually on the RIGHT) */}
             <div
-              className={`flex-none w-[160px] sm:w-[180px] md:w-[200px] h-full flex flex-col justify-between items-center py-3 px-2 select-none touch-none z-20 ${
+              className={`flex-none w-[160px] sm:w-[180px] md:w-[200px] h-full flex flex-col justify-between items-center py-3 px-2 select-none touch-none z-10 ${
                 shaders.amoled ? 'bg-black border-l border-zinc-900' : `${theme.deckBg} border-l border-white/5`
               }`}
               style={{
@@ -936,10 +1374,10 @@ export const InGameView: React.FC<InGameViewProps> = ({
               }}
             >
               {/* R Shoulder Button */}
-              <div className="w-full flex justify-end pr-1">
+              <div className="w-full flex justify-end pr-1 pointer-events-auto">
                 <button
                   type="button"
-                  {...bindPadButton('btnR')}
+                  {...safeBindPadButton('btnR')}
                   className={`w-20 h-10 rounded-xl font-mono font-black text-xs border-2 shadow-lg flex items-center justify-center tactile-btn cartridge-grip touch-none select-none ${
                     shaders.amoled
                       ? 'bg-zinc-900 text-zinc-100 border-zinc-700'
@@ -951,19 +1389,14 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 </button>
               </div>
 
-              {/* Action Buttons (A, B, X, Y) */}
-              <div
-                className="my-auto select-none touch-none"
-                style={{ transform: `scale(${padLayout.actions.s})` }}
-              >
-                {renderActions()}
-              </div>
+              {/* Flex spacer for center area where Actions float */}
+              <div className="flex-1" />
 
               {/* START Button */}
-              <div className="pb-1">
+              <div className="pb-1 pointer-events-auto" style={{ transform: `scale(${padLayout.system?.s || 1})` }}>
                 <button
                   type="button"
-                  {...bindPadButton('start')}
+                  {...safeBindPadButton('start')}
                   className="flex flex-col items-center gap-1 group touch-none select-none"
                 >
                   <div
@@ -1001,7 +1434,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
               <div className="absolute top-2.5 left-4 right-4 z-20 flex justify-between pointer-events-none">
                 <button
                   type="button"
-                  {...bindPadButton('btnL')}
+                  {...safeBindPadButton('btnL')}
                   className={`w-16 h-8 rounded-xl font-mono font-black text-xs border shadow-md pointer-events-auto flex items-center justify-center tactile-btn cartridge-grip touch-none select-none ${
                     shaders.amoled
                       ? 'bg-zinc-900 text-zinc-200 border-zinc-800'
@@ -1013,8 +1446,8 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 </button>
                 <button
                   type="button"
-                  {...bindPadButton('btnR')}
-                  className={`w-14 h-8 rounded-xl font-mono font-black text-xs border shadow-md pointer-events-auto flex items-center justify-center tactile-btn cartridge-grip touch-none select-none ${
+                  {...safeBindPadButton('btnR')}
+                  className={`w-16 h-8 rounded-xl font-mono font-black text-xs border shadow-md pointer-events-auto flex items-center justify-center tactile-btn cartridge-grip touch-none select-none ${
                     shaders.amoled
                       ? 'bg-zinc-900 text-zinc-200 border-zinc-800'
                       : 'bg-zinc-800/90 text-zinc-100 border-white/10'
@@ -1079,10 +1512,11 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 {renderSystem()}
               </PadGroup>
             )}
-
-            {customizing && renderCustomizer()}
           </div>
         )}
+
+        {/* Draggable Customizer Dialog (visible across all orientations, floats above all layers) */}
+        {customizing && renderCustomizer()}
       </div>
     </div>
   );

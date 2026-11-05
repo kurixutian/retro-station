@@ -171,17 +171,20 @@ export default {
           }
         }
 
-        // Clean up any oversized legacy rom_ keys from vault to ensure instant sub-second sync
+        // Clean up any oversized legacy rom_ or autosave: keys from vault to ensure instant sub-second sync
         for (const vKey of Object.keys(vault.items)) {
-          if (vKey.startsWith('rom_') || vKey.startsWith('rom:')) {
+          if (vKey.startsWith('rom_') || vKey.startsWith('rom:') || vKey.startsWith('autosave:')) {
             delete vault.items[vKey];
           }
         }
 
         // Timestamp-based atomic merge (newer revision wins per save item)
         for (const [key, item] of Object.entries(incomingItems)) {
-          // Never store raw ROM binaries in vault to keep sync fast
-          if (key.startsWith('rom_') || key.startsWith('rom:')) {
+          // Never store raw ROM binaries or ephemeral autosaves in vault to keep sync fast
+          if (key.startsWith('rom_') || key.startsWith('rom:') || key.startsWith('autosave:')) {
+            continue;
+          }
+          if (typeof item?.data === 'string' && item.data.length > 1024 * 1024) {
             continue;
           }
 

@@ -355,6 +355,6 @@ export function drawGameCanvas(
     const mult = typeof isFastForward === 'number' ? isFastForward : 2;
     ctx.fillStyle = '#38bdf8';
     ctx.font = 'bold 9px monospace';
-    ctx.fillText(`⏩ ${mult}X TURBO`, 142, 12);
+    ctx.fillText(`${mult}x`, 142, 12);
   }
 }

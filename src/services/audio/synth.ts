@@ -42,6 +42,12 @@ export class RetroAudioSynth {
       gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
       osc.connect(gain);
       gain.connect(this.ctx.destination);
+      osc.onended = () => {
+        try {
+          osc.disconnect();
+          gain.disconnect();
+        } catch {}
+      };
       osc.start();
       osc.stop(this.ctx.currentTime + duration);
     } catch {

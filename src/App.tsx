@@ -4,7 +4,17 @@ import { Sparkles } from 'lucide-react';
 import { Game, SaveSlot, PadLayout, PadGroupId } from './types';
 import { CORE_MAP } from './constants/cores';
 import { THEMES } from './constants/themes';
-import { DEFAULT_PAD_LAYOUT, loadPadLayout, EMU_INPUT_MAP, PAD_KEYS } from './constants/controls';
+import {
+  DEFAULT_PAD_LAYOUT,
+  DEFAULT_LANDSCAPE_PAD_LAYOUT,
+  loadPadLayout,
+  savePadLayout,
+  getActiveSlot,
+  setActiveSlot,
+  LayoutSlot,
+  EMU_INPUT_MAP,
+  PAD_KEYS,
+} from './constants/controls';
 import { idbOpen, idbPut, idbGet, idbDelete } from './services/storage/idb';
 import { soundFX } from './services/audio/synth';
 import { haptics } from './services/haptics';
@@ -76,6 +86,18 @@ export default function App() {
   const pendingRtcRef = useRef<any>(null);
   const hasUserInteractedRef = useRef(false);
   const [romUrl, setRomUrl] = useState<string | null>(null);
+  const prevRomUrlRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (prevRomUrlRef.current && prevRomUrlRef.current !== romUrl) {
+      URL.revokeObjectURL(prevRomUrlRef.current);
+    }
+    prevRomUrlRef.current = romUrl;
+    return () => {
+      if (prevRomUrlRef.current) {
+        URL.revokeObjectURL(prevRomUrlRef.current);
+      }
+    };
+  }, [romUrl]);
   const [searchQuery, setSearchQuery] = useState('');
   const [systemFilter, setSystemFilter] = useState('ALL');
   const [showSearch, setShowSearch] = useState(false);
@@ -229,14 +251,16 @@ export default function App() {
     }
   });
 
-  const [shaders, setShaders] = useState(() => {
-    const defaultShaders: Record<string, boolean> = {
+  const [shaders, setShaders] = useState<Record<string, any>>(() => {
+    const defaultShaders: Record<string, any> = {
       scanlines: true,
       rgbBloom: true,
       bezelVignette: true,
       crtCurve: true,
       gbGrid: false,
       amoled: false,
+      colorCorrection: true,
+      colorProfile: 'vivid',
     };
     try {
       const saved = localStorage.getItem('retro_shaders');
@@ -338,15 +362,79 @@ export default function App() {
   const [isRewinding, setIsRewinding] = useState(false);
   // 0 = off; 2 / 3 / 4 / 8 = fast-forward multiplier
   const [ffSpeed, setFfSpeed] = useState<number>(0);
+  const isNdsActive = activeGame ? (activeGame.core === 'melonds' || activeGame.core === 'desmume' || activeGame.core === 'nds') : false;
+  const currentSystemKey = isNdsActive ? 'nds' : 'default';
+
   const [hidePad, setHidePad] = useState(false);
-  const [padLayout, setPadLayout] = useState<PadLayout>(loadPadLayout);
+  const [slotPortrait, setSlotPortrait] = useState<LayoutSlot>(() => getActiveSlot(false, currentSystemKey));
+  const [slotLandscape, setSlotLandscape] = useState<LayoutSlot>(() => getActiveSlot(true, currentSystemKey));
+  const [padLayoutPortrait, setPadLayoutPortrait] = useState<PadLayout>(() => loadPadLayout(false, getActiveSlot(false, currentSystemKey), currentSystemKey));
+  const [padLayoutLandscape, setPadLayoutLandscape] = useState<PadLayout>(() => loadPadLayout(true, getActiveSlot(true, currentSystemKey), currentSystemKey));
   const [customizing, setCustomizing] = useState(false);
   const [selectedPad, setSelectedPad] = useState<PadGroupId>('dpad');
   const deckRef = useRef<HTMLDivElement | null>(null);
 
+  // Sync layout state when active game changes between NDS and standard systems
   useEffect(() => {
-    try { localStorage.setItem('retro_pad_layout', JSON.stringify(padLayout)); } catch (e) {}
-  }, [padLayout]);
+    const sp = getActiveSlot(false, currentSystemKey);
+    const sl = getActiveSlot(true, currentSystemKey);
+    setSlotPortrait(sp);
+    setSlotLandscape(sl);
+    setPadLayoutPortrait(loadPadLayout(false, sp, currentSystemKey));
+    setPadLayoutLandscape(loadPadLayout(true, sl, currentSystemKey));
+  }, [currentSystemKey]);
+
+  useEffect(() => {
+    savePadLayout(false, slotPortrait, padLayoutPortrait, currentSystemKey);
+  }, [slotPortrait, padLayoutPortrait, currentSystemKey]);
+
+  useEffect(() => {
+    savePadLayout(true, slotLandscape, padLayoutLandscape, currentSystemKey);
+  }, [slotLandscape, padLayoutLandscape, currentSystemKey]);
+
+  useEffect(() => {
+    const handleLayoutUpdate = () => {
+      const sp = getActiveSlot(false, currentSystemKey);
+      const sl = getActiveSlot(true, currentSystemKey);
+      setSlotPortrait(sp);
+      setSlotLandscape(sl);
+      setPadLayoutPortrait(loadPadLayout(false, sp, currentSystemKey));
+      setPadLayoutLandscape(loadPadLayout(true, sl, currentSystemKey));
+    };
+    window.addEventListener('retro_layout_updated', handleLayoutUpdate);
+    return () => window.removeEventListener('retro_layout_updated', handleLayoutUpdate);
+  }, [currentSystemKey]);
+
+  const switchSlotPortrait = useCallback((slot: LayoutSlot) => {
+    setSlotPortrait(slot);
+    setActiveSlot(false, slot, currentSystemKey);
+    setPadLayoutPortrait(loadPadLayout(false, slot, currentSystemKey));
+  }, [currentSystemKey]);
+
+  const switchSlotLandscape = useCallback((slot: LayoutSlot) => {
+    setSlotLandscape(slot);
+    setActiveSlot(true, slot, currentSystemKey);
+    setPadLayoutLandscape(loadPadLayout(true, slot, currentSystemKey));
+  }, [currentSystemKey]);
+
+  const [recentGameIds, setRecentGameIds] = useState<string[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('retro_recent_games') || '[]');
+      return Array.isArray(saved) ? saved : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const recordRecentGame = useCallback((gameId: string) => {
+    setRecentGameIds((prev) => {
+      const next = [gameId, ...prev.filter((id) => id !== gameId)].slice(0, 10);
+      try {
+        localStorage.setItem('retro_recent_games', JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+  }, []);
 
   const isFirstMountRef = useRef(true);
 
@@ -426,7 +514,7 @@ export default function App() {
   }, [sendKey]);
 
   const setButtonUp = useCallback((name: string) => {
-    const minHold = 75; // 75ms minimum hold ensures emulator core / Libretro VBlank polls the key press even at 2x speed
+    const minHold = 75;
     const elapsed = performance.now() - (pressStartTimesRef.current[name] || 0);
 
     const performRelease = () => {
@@ -496,11 +584,6 @@ export default function App() {
     return () => window.removeEventListener('message', onMsg);
   }, [activeGame?.id, isMuted]);
 
-  const movePad = (id: PadGroupId, x: number, y: number) =>
-    setPadLayout((l) => ({ ...l, [id]: { ...l[id], x, y } }));
-  const scalePad = (id: PadGroupId, sc: number) =>
-    setPadLayout((l) => ({ ...l, [id]: { ...l[id], s: sc } }));
-
   const [fps, setFps] = useState(60);
   const [liveScore, setLiveScore] = useState(0);
   const [liveFrame, setLiveFrame] = useState(0);
@@ -556,7 +639,18 @@ export default function App() {
       try { localStorage.setItem('retro_shaders', JSON.stringify(next)); } catch (e) {}
       if (key === 'amoled') {
         showToast(next.amoled ? 'AMOLED Battery Saver Activated (Pure Black)' : 'AMOLED Mode Disabled');
+      } else if (key === 'colorCorrection') {
+        showToast(next.colorCorrection ? 'RetroArch Colors: Vivid Saturation & Contrast' : 'RetroArch Colors: Disabled (Raw RGB)');
       }
+      return next;
+    });
+  };
+
+  const setColorProfile = (profile: string) => {
+    setShaders((prev) => {
+      const next = { ...prev, colorProfile: profile, colorCorrection: profile !== 'off' };
+      try { localStorage.setItem('retro_shaders', JSON.stringify(next)); } catch (e) {}
+      showToast(`Color Profile: ${profile.toUpperCase()}`);
       return next;
     });
   };
@@ -666,7 +760,10 @@ export default function App() {
       fceumm: 'cyberrun',
       snes9x: 'starblade',
       genesis_plus_gx: 'starblade',
-      mgba: 'neondrift'
+      mgba: 'neondrift',
+      melonds: 'pokegold',
+      desmume: 'pokegold',
+      nds: 'pokegold'
     };
     const engineType = coreToEngine[detected.core] || 'pokegold';
 
@@ -739,6 +836,7 @@ export default function App() {
   };
 
   const launchGame = useCallback((game: Game, optionalStateData: any = null) => {
+    recordRecentGame(game.id);
     if (game.real) {
       Promise.all([
         idbGet(game.id).catch(() => null),
@@ -812,7 +910,7 @@ export default function App() {
     setInGameSaveModalMode(null);
     setCurrentView('ingame');
     soundFX.save();
-  }, [showToast]);
+  }, [recordRecentGame, showToast]);
 
   const saveStateToGameSlot = useCallback(async (game: Game, slotNumber: number) => {
     if (game.real) {
@@ -1207,56 +1305,23 @@ export default function App() {
       if (e.code === 'KeyR' || e.code === 'Backspace') setIsRewinding(false);
     };
 
+    const onBlur = () => {
+      setIsRewinding(false);
+    };
+
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
     };
   }, [currentView, setButtonDown, setButtonUp, activeGame, toggleAudio, saveStateToGameSlot, loadStateFromGameSlot]);
 
   // Gamepad API integration (W3C standard mapping for Bluetooth / USB gamepads)
   const prevGamepadButtonsRef = useRef<Record<string, boolean>>({});
   useEffect(() => {
-    let animId: number;
-    const pollGamepads = () => {
-      if (currentView === 'ingame') {
-        const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
-        const gp = gamepads[0] || gamepads[1] || gamepads[2] || gamepads[3];
-        if (gp) {
-          const btn = (idx: number) => Boolean(gp.buttons[idx]?.pressed);
-          const axis = (idx: number) => gp.axes[idx] || 0;
-
-          const curState: Record<string, boolean> = {
-            up: btn(12) || axis(1) < -0.45,
-            down: btn(13) || axis(1) > 0.45,
-            left: btn(14) || axis(0) < -0.45,
-            right: btn(15) || axis(0) > 0.45,
-            actionA: btn(0),
-            actionB: btn(1),
-            actionX: btn(2),
-            actionY: btn(3),
-            btnL: btn(4),
-            btnR: btn(5),
-            select: btn(8),
-            start: btn(9)
-          };
-
-          for (const key of Object.keys(curState)) {
-            const wasDown = prevGamepadButtonsRef.current[key];
-            const isDown = curState[key];
-            if (isDown && !wasDown) {
-              setButtonDown(key as any);
-            } else if (!isDown && wasDown) {
-              setButtonUp(key as any);
-            }
-          }
-          prevGamepadButtonsRef.current = curState;
-        }
-      }
-      animId = requestAnimationFrame(pollGamepads);
-    };
-
     const handleGamepadConnected = (e: GamepadEvent) => {
       showToast(`🎮 Controller Connected: ${e.gamepad.id.slice(0, 24)}`);
       soundFX.save();
@@ -1268,6 +1333,51 @@ export default function App() {
 
     window.addEventListener('gamepadconnected', handleGamepadConnected);
     window.addEventListener('gamepaddisconnected', handleGamepadDisconnected);
+
+    if (currentView !== 'ingame') {
+      return () => {
+        window.removeEventListener('gamepadconnected', handleGamepadConnected);
+        window.removeEventListener('gamepaddisconnected', handleGamepadDisconnected);
+      };
+    }
+
+    let animId: number;
+    const pollGamepads = () => {
+      const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+      const gp = gamepads[0] || gamepads[1] || gamepads[2] || gamepads[3];
+      if (gp) {
+        const btn = (idx: number) => Boolean(gp.buttons[idx]?.pressed);
+        const axis = (idx: number) => gp.axes[idx] || 0;
+
+        const curState: Record<string, boolean> = {
+          up: btn(12) || axis(1) < -0.45,
+          down: btn(13) || axis(1) > 0.45,
+          left: btn(14) || axis(0) < -0.45,
+          right: btn(15) || axis(0) > 0.45,
+          actionA: btn(0),
+          actionB: btn(1),
+          actionX: btn(2),
+          actionY: btn(3),
+          btnL: btn(4),
+          btnR: btn(5),
+          select: btn(8),
+          start: btn(9)
+        };
+
+        for (const key of Object.keys(curState)) {
+          const wasDown = prevGamepadButtonsRef.current[key];
+          const isDown = curState[key];
+          if (isDown && !wasDown) {
+            setButtonDown(key as any);
+          } else if (!isDown && wasDown) {
+            setButtonUp(key as any);
+          }
+        }
+        prevGamepadButtonsRef.current = curState;
+      }
+      animId = requestAnimationFrame(pollGamepads);
+    };
+
     animId = requestAnimationFrame(pollGamepads);
 
     return () => {
@@ -1277,9 +1387,9 @@ export default function App() {
     };
   }, [currentView, setButtonDown, setButtonUp, showToast]);
 
-  // 60 FPS Emulation Engine & Canvas Renderer Loop
+  // 60 FPS Emulation Engine & Canvas Renderer Loop (Demo Games Only)
   useEffect(() => {
-    if (currentView !== 'ingame') return;
+    if (currentView !== 'ingame' || activeGame.real) return;
 
     let animId: number;
     let frameCounter = 0;
@@ -1289,7 +1399,7 @@ export default function App() {
       frameCounter++;
       if (now - fpsTimer >= 500) {
         const computedFps = Math.min(120, Math.round((frameCounter * 1000) / (now - fpsTimer)));
-        setFps(isPaused ? 0 : ffSpeed > 1 ? computedFps * ffSpeed : computedFps);
+        setFps(isPaused ? 0 : computedFps);
         setLiveScore(engineStateRef.current.score || 0);
         setLiveFrame(engineStateRef.current.frame || 0);
         frameCounter = 0;
@@ -1369,7 +1479,51 @@ export default function App() {
 
   useEffect(() => {
     if (!activeGame.real) return;
-    try { getEmu()?.gameManager.toggleRewind(isRewinding ? 1 : 0); } catch (e) {}
+    try {
+      const win = emuFrameRef.current?.contentWindow as any;
+      if (typeof win?.setPaused === 'function') {
+        win.setPaused(isPaused);
+      } else {
+        const emu = getEmu();
+        if (emu) {
+          if (isPaused) {
+            if (typeof emu.pause === 'function') emu.pause();
+            else if (emu.gameManager?.toggleMainLoop) emu.gameManager.toggleMainLoop(0);
+          } else {
+            if (typeof emu.play === 'function') emu.play();
+            else if (emu.gameManager?.toggleMainLoop) emu.gameManager.toggleMainLoop(1);
+          }
+        }
+      }
+      if (!isPaused) {
+        win?.setAudioMuted?.(isMuted);
+      }
+    } catch (e) {}
+  }, [activeGame.real, isPaused, isMuted]);
+
+  useEffect(() => {
+    if (!activeGame.real) return;
+    try {
+      const win = emuFrameRef.current?.contentWindow as any;
+      if (typeof win?.setRewind === 'function') {
+        win.setRewind(isRewinding);
+      } else {
+        const emu = getEmu();
+        if (emu?.gameManager) {
+          const gm = emu.gameManager;
+          const val = isRewinding ? 1 : 0;
+          if (typeof gm.simulateInput === 'function') {
+            gm.simulateInput(0, 28, val);
+          }
+          if (gm.functions && typeof gm.functions.toggleRewind === 'function') {
+            gm.functions.toggleRewind(val);
+          }
+        }
+      }
+      try {
+        win?.postMessage({ type: 'ejs-set-rewind', active: isRewinding }, '*');
+      } catch (e) {}
+    } catch (e) {}
   }, [activeGame.real, isRewinding]);
 
   const filteredGames = useMemo(() => {
@@ -1447,6 +1601,7 @@ export default function App() {
           onTriggerAddRom={() => romInputRef.current?.click()}
           onOpenCloudSync={() => setCloudModalOpen(true)}
           cloudStatus={cloudStatus}
+          recentGameIds={recentGameIds}
           onOpenControls={() => setControlsModalOpen(true)}
         />
       )}
@@ -1480,14 +1635,18 @@ export default function App() {
           emuFrameRef={emuFrameRef}
           canvasRef={canvasRef}
           deckRef={deckRef}
-          padLayout={padLayout}
-          setPadLayout={setPadLayout}
+          slotPortrait={slotPortrait}
+          setSlotPortrait={switchSlotPortrait}
+          slotLandscape={slotLandscape}
+          setSlotLandscape={switchSlotLandscape}
+          padLayoutPortrait={padLayoutPortrait}
+          setPadLayoutPortrait={setPadLayoutPortrait}
+          padLayoutLandscape={padLayoutLandscape}
+          setPadLayoutLandscape={setPadLayoutLandscape}
           customizing={customizing}
           setCustomizing={setCustomizing}
           selectedPad={selectedPad}
           setSelectedPad={setSelectedPad}
-          movePad={movePad}
-          scalePad={scalePad}
           hidePad={hidePad}
           setHidePad={setHidePad}
           bindPadButton={bindPadButton}
@@ -1496,7 +1655,10 @@ export default function App() {
           topBarTimer={topBarTimer}
           fps={fps}
           launchGame={launchGame}
+          systemKey={currentSystemKey}
           onOpenControls={() => setControlsModalOpen(true)}
+          toggleShader={toggleShader}
+          setColorProfile={setColorProfile}
         />
       )}
 
@@ -1528,6 +1690,7 @@ export default function App() {
         applyTheme={applyTheme}
         shaders={shaders}
         toggleShader={toggleShader}
+        setColorProfile={setColorProfile}
         hapticsEnabled={hapticsEnabled}
         setHapticsEnabled={setHapticsEnabled}
         onOpenCloudSync={() => setCloudModalOpen(true)}

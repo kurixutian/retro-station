@@ -1,6 +1,7 @@
 import React from 'react';
-import { Sliders, X, Tv, Palette, Check, Vibrate, Cloud, ChevronRight } from 'lucide-react';
+import { Sliders, X, Tv, Palette, Check, Vibrate, Cloud, ChevronRight, Sparkles } from 'lucide-react';
 import { THEMES } from '../../constants/themes';
+import { COLOR_PROFILES } from '../../constants/shaders';
 import { Theme } from '../../types';
 import { haptics } from '../../services/haptics';
 import { getSyncCode } from '../../cloudSync';
@@ -11,8 +12,9 @@ interface SettingsModalProps {
   theme: Theme;
   themeId: string;
   applyTheme: (id: string) => void;
-  shaders: Record<string, boolean>;
+  shaders: Record<string, any>;
   toggleShader: (key: string) => void;
+  setColorProfile?: (profile: string) => void;
   hapticsEnabled?: boolean;
   setHapticsEnabled?: (val: boolean) => void;
   onOpenCloudSync?: () => void;
@@ -26,6 +28,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   applyTheme,
   shaders,
   toggleShader,
+  setColorProfile,
   hapticsEnabled = true,
   setHapticsEnabled,
   onOpenCloudSync,
@@ -141,7 +144,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </span>
               </div>
               <p className="text-xs text-zinc-400 leading-snug">
-                Turns chassis & display pure pitch black (<span className="text-zinc-200 font-mono">#000000</span>) to physically power off OLED pixels, disables screen bloom, and turns grid lines true black.
+                Pure true-black screen — OLED pixels fully turn off, saving battery.
               </p>
             </div>
 
@@ -151,6 +154,67 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               }`}
             >
               <div className="w-5 h-5 rounded-full bg-white shadow-md" />
+            </div>
+          </div>
+
+          {/* Section: COLOR ACCURACY & CONTRAST (RETROARCH) */}
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-amber-400" />
+                <span>COLOR ACCURACY & CONTRAST</span>
+              </h3>
+              <button
+                onClick={() => toggleShader('colorCorrection')}
+                className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border transition ${
+                  shaders.colorCorrection !== false && shaders.colorProfile !== 'off'
+                    ? 'bg-amber-400/20 border-amber-400/50 text-amber-300'
+                    : 'bg-zinc-900 border-zinc-800 text-zinc-500'
+                }`}
+              >
+                {shaders.colorCorrection !== false && shaders.colorProfile !== 'off' ? 'ACTIVE' : 'OFF'}
+              </button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {COLOR_PROFILES.map((prof) => {
+                const isSelected =
+                  (shaders.colorProfile || 'vivid') === prof.id &&
+                  (prof.id === 'off' || shaders.colorCorrection !== false);
+                return (
+                  <button
+                    key={prof.id}
+                    onClick={() => {
+                      if (setColorProfile) {
+                        setColorProfile(prof.id);
+                      } else {
+                        toggleShader('colorCorrection');
+                      }
+                    }}
+                    className={`text-left p-3 rounded-2xl border transition flex items-start justify-between gap-2 ${
+                      isSelected
+                        ? 'bg-amber-500/15 border-amber-500/50 text-white shadow-md'
+                        : 'bg-zinc-900/70 border-zinc-800 text-zinc-400 hover:bg-zinc-900'
+                    }`}
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-white">{prof.name}</span>
+                        <span className="text-[9px] font-mono px-1.5 py-0.2 rounded uppercase font-bold bg-zinc-800 text-amber-300 border border-white/5">
+                          {prof.badge}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-zinc-400 leading-snug">
+                        {prof.desc}
+                      </p>
+                    </div>
+                    {isSelected && (
+                      <div className="mt-0.5 w-5 h-5 rounded-md flex items-center justify-center bg-amber-400 text-zinc-950 shrink-0">
+                        <Check className="w-3.5 h-3.5 stroke-[3]" />
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
 

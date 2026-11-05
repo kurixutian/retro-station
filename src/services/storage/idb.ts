@@ -1,11 +1,24 @@
 // ---------------- ROM storage (IndexedDB) ----------------
-export const idbOpen = (): Promise<IDBDatabase> =>
-  new Promise((res, rej) => {
+let dbPromise: Promise<IDBDatabase> | null = null;
+
+export const idbOpen = (): Promise<IDBDatabase> => {
+  if (dbPromise) return dbPromise;
+  dbPromise = new Promise((res, rej) => {
     const r = indexedDB.open('retro_station', 1);
     r.onupgradeneeded = () => r.result.createObjectStore('roms');
-    r.onsuccess = () => res(r.result);
-    r.onerror = () => rej(r.error);
+    r.onsuccess = () => {
+      const db = r.result;
+      db.onclose = () => { dbPromise = null; };
+      db.onversionchange = () => { db.close(); dbPromise = null; };
+      res(db);
+    };
+    r.onerror = () => {
+      dbPromise = null;
+      rej(r.error);
+    };
   });
+  return dbPromise;
+};
 
 export const idbPut = async (key: string, blob: any): Promise<boolean> => {
   const db = await idbOpen();

@@ -244,7 +244,6 @@ export function isSyncableKey(key: string): boolean {
     key.startsWith('state:') ||
     key.startsWith('srm:') ||
     key.startsWith('rtc:') ||
-    key.startsWith('autosave:') ||
     key.startsWith('cover:')
   );
 }
@@ -432,15 +431,17 @@ export async function markLocalSaveModified(key: string): Promise<void> {
   triggerDebouncedCloudSync();
 }
 
-// Debounced Auto-Sync (3 seconds)
+// Debounced Auto-Sync (10 minutes = 600,000ms)
+// Gives plenty of time for battery saves/states to accumulate, avoiding repetitive worker invocations.
+// Manual sync is always available instantly in the Sync Modal or Top Bar.
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-export function triggerDebouncedCloudSync(delayMs = 3000) {
-  if (debounceTimer) clearTimeout(debounceTimer);
+export function triggerDebouncedCloudSync(delayMs = 10 * 60 * 1000) {
+  if (debounceTimer) return; // Keep the active 10-minute schedule without resetting on every minor change
   debounceTimer = setTimeout(() => {
     debounceTimer = null;
     const code = getSyncCode();
     if (code && navigator.onLine) {
-      syncNow().catch((e) => console.warn('[CloudSync] Debounced sync warning:', e));
+      syncNow().catch((e) => console.warn('[CloudSync] Periodic auto-sync warning:', e));
     }
   }, delayMs);
 }
@@ -747,19 +748,30 @@ export async function syncNow(): Promise<{
             const slotData = await idbGet(key);
             if (slotData && typeof slotData === 'object') {
               const serializable = { ...slotData };
+              let stateTooLarge = false;
               if (serializable.emuState) {
                 const b = normalizeBinaryData(serializable.emuState);
                 if (b) {
-                  serializable.emuStateBase64 = uint8ToBase64(b);
-                  delete serializable.emuState;
+                  if (b.length > 768 * 1024) stateTooLarge = true;
+                  else {
+                    serializable.emuStateBase64 = uint8ToBase64(b);
+                    delete serializable.emuState;
+                  }
                 }
               }
-              if (serializable.stateData?.emuState) {
+              if (!stateTooLarge && serializable.stateData?.emuState) {
                 const b2 = normalizeBinaryData(serializable.stateData.emuState);
                 if (b2) {
-                  serializable.stateData = { ...serializable.stateData, emuStateBase64: uint8ToBase64(b2) };
-                  delete serializable.stateData.emuState;
+                  if (b2.length > 768 * 1024) stateTooLarge = true;
+                  else {
+                    serializable.stateData = { ...serializable.stateData, emuStateBase64: uint8ToBase64(b2) };
+                    delete serializable.stateData.emuState;
+                  }
                 }
+              }
+              if (stateTooLarge) {
+                console.warn(`[CloudSync] Skipping oversized save state ${key} (>768KB) to protect edge limits`);
+                continue;
               }
               itemsToUpload[key] = {
                 key,
@@ -769,7 +781,7 @@ export async function syncNow(): Promise<{
               };
             }
           } else {
-            // srm:*, rtc:*, autosave:*, cover:*
+            // srm:*, rtc:*, cover:*
             const raw = await idbGet(key);
             if (raw) {
               let bytes: Uint8Array | null = null;
@@ -780,6 +792,10 @@ export async function syncNow(): Promise<{
                 bytes = normalizeBinaryData(raw);
               }
               if (bytes && bytes.length > 0) {
+                if (bytes.length > 1024 * 1024) {
+                  console.warn(`[CloudSync] Skipping oversized binary item ${key} (>1MB)`);
+                  continue;
+                }
                 itemsToUpload[key] = {
                   key,
                   data: uint8ToBase64(bytes),
@@ -787,12 +803,14 @@ export async function syncNow(): Promise<{
                   isBinary: true,
                 };
               } else if (typeof raw === 'string' && key.startsWith('cover:')) {
-                itemsToUpload[key] = {
-                  key,
-                  data: raw,
-                  updatedAt: localUpdatedAt || Date.now(),
-                  isBinary: false,
-                };
+                if (raw.length <= 512 * 1024) {
+                  itemsToUpload[key] = {
+                    key,
+                    data: raw,
+                    updatedAt: localUpdatedAt || Date.now(),
+                    isBinary: false,
+                  };
+                }
               }
             }
           }
@@ -802,10 +820,10 @@ export async function syncNow(): Promise<{
       }
     }
 
-    // 5. Send POST batch to remote in safe chunks (<= 450KB)
+    // 5. Send POST batch to remote in safe, lightweight chunks (<= 160KB)
     const uploadEntries = Object.entries(itemsToUpload);
     if (uploadEntries.length > 0) {
-      const MAX_BATCH_BYTES = 450 * 1024;
+      const MAX_BATCH_BYTES = 160 * 1024;
       const batches: Record<string, SyncVaultItem>[] = [];
       let currentBatch: Record<string, SyncVaultItem> = {};
       let currentSize = 0;

@@ -18,6 +18,14 @@ export function buildPlayerHtml(core: string, romUrl: string, title?: string): s
     '</style></head><body>' +
     '<div id="game"></div><script>' +
     '(function(){' +
+    '  var _ce=document.createElement.bind(document);' +
+    '  document.createElement=function(t,o){' +
+    '    var el=_ce(t,o);' +
+    '    if(t&&typeof t==="string"&&t.toLowerCase()==="canvas"&&!el.id)el.id="canvas";' +
+    '    return el;' +
+    '  };' +
+    '})();' +
+    '(function(){' +
     '  var _ogc=HTMLCanvasElement.prototype.getContext;' +
     '  HTMLCanvasElement.prototype.getContext=function(t,a){' +
     '    if(t==="webgl"||t==="experimental-webgl"||t==="webgl2"){' +
@@ -26,6 +34,107 @@ export function buildPlayerHtml(core: string, romUrl: string, title?: string): s
     '    return _ogc.call(this,t,a);' +
     '  };' +
     '})();' +
+    '(function(){' +
+    '  try{' +
+    '    var _og=Storage.prototype.getItem;' +
+    '    Storage.prototype.getItem=function(k){' +
+    '      var val=_og.call(this,k);' +
+    '      if(typeof k==="string"&&(k.indexOf("ejs-")===0||k.indexOf("settings")!==-1)){' +
+    '        try{' +
+    '          var p=val?JSON.parse(val):{};' +
+    '          if(!p||typeof p!=="object")p={};' +
+    '          if(!p.settings||typeof p.settings!=="object")p.settings={};' +
+    '          p.settings.rewindEnabled="enabled";' +
+    '          p.settings["rewind-granularity"]="3";' +
+    '          p.settings["melonds_touch_mode"]="Touch";' +
+    '          return JSON.stringify(p);' +
+    '        }catch(e){return val;}' +
+    '      }' +
+    '      return val;' +
+    '    };' +
+    '  }catch(e){}' +
+    '})();' +
+    'var _realGM=undefined;' +
+    'Object.defineProperty(window,"EJS_GameManager",{' +
+    '  get:function(){return _realGM;},' +
+    '  set:function(OrigGM){' +
+    '    _realGM=OrigGM;' +
+    '    if(OrigGM&&OrigGM.prototype){' +
+    '      var origCfg=OrigGM.prototype.getRetroArchCfg;' +
+    '      if(typeof origCfg==="function"){' +
+    '        OrigGM.prototype.getRetroArchCfg=function(){' +
+    '          var cfg=origCfg.call(this)||"";' +
+    '          if(cfg.indexOf("rewind_enable")===-1){' +
+    '            cfg+="\\nrewind_enable = true\\nrewind_granularity = 3\\nrewind_buffer_size = 20971520\\n";' +
+    '          }' +
+    '          if(cfg.indexOf("melonds_touch_mode")===-1){' +
+    '            cfg+="\\nmelonds_touch_mode = \\\"Touch\\\"\\n";' +
+    '          }' +
+    '          return cfg;' +
+    '        };' +
+    '      }' +
+    '      var origPreload=OrigGM.prototype.setupPreLoadSettings;' +
+    '      OrigGM.prototype.setupPreLoadSettings=function(){' +
+    '        try{' +
+    '          if(this.Module&&this.Module.callbacks){' +
+    '            var origSetup=this.Module.callbacks.setupCoreSettingFile;' +
+    '            this.Module.callbacks.setupCoreSettingFile=function(filePath){' +
+    '              if(typeof origSetup==="function")origSetup(filePath);' +
+    '              try{' +
+    '                var cur="";' +
+    '                try{cur=this.FS.readFile(filePath,{encoding:"utf8"})||"";}catch(e){}' +
+    '                if(cur.indexOf("melonds_touch_mode")===-1){' +
+    '                  this.writeFile(filePath,cur+\'\\nmelonds_touch_mode = "Touch"\\n\');' +
+    '                }' +
+    '              }catch(e){}' +
+    '            }.bind(this);' +
+    '          }' +
+    '        }catch(e){}' +
+    '        if(typeof origPreload==="function")origPreload.call(this);' +
+    '      };' +
+    '      var origWrite=OrigGM.prototype.writeConfigFile;' +
+    '      OrigGM.prototype.writeConfigFile=function(){' +
+    '        if(typeof origWrite==="function")origWrite.call(this);' +
+    '        try{' +
+    '          var fs=this.FS||(this.Module&&this.Module.FS);' +
+    '          if(fs){' +
+    '            var optStr=\'melonds_touch_mode = "Touch"\\n\';' +
+    '            try{fs.mkdir("/home/web_user/.config");}catch(e){}' +
+    '            try{fs.mkdir("/home/web_user/.config/retroarch");}catch(e){}' +
+    '            try{fs.mkdir("/home/web_user/retroarch");}catch(e){}' +
+    '            try{fs.mkdir("/home/web_user/retroarch/userdata");}catch(e){}' +
+    '            try{fs.mkdir("/home/web_user/retroarch/userdata/config");}catch(e){}' +
+    '            try{fs.mkdir("/home/web_user/retroarch/userdata/config/melonDS");}catch(e){}' +
+    '            try{fs.writeFile("/home/web_user/.config/retroarch/retroarch-core-options.cfg",optStr);}catch(e){}' +
+    '            try{fs.writeFile("/home/web_user/retroarch/userdata/config/melonDS/melonDS.opt",optStr);}catch(e){}' +
+    '            try{fs.writeFile("/home/web_user/retroarch/userdata/config/melonDS/melonDS.cfg",optStr);}catch(e){}' +
+    '          }' +
+    '        }catch(e){}' +
+    '      };' +
+    '    }' +
+    '  },' +
+    '  configurable:true' +
+    '});' +
+    'var _realEmu=undefined;' +
+    'Object.defineProperty(window,"EJS_emulator",{' +
+    '  get:function(){return _realEmu;},' +
+    '  set:function(val){' +
+    '    _realEmu=val;' +
+    '    if(val){' +
+    '      if(val.canvas&&!val.canvas.id)val.canvas.id="canvas";' +
+    '      val.rewindEnabled=true;' +
+    '      if(val.config){' +
+    '        val.config.rewindEnabled="enabled";' +
+    '        if(!val.config.defaultOptions)val.config.defaultOptions={};' +
+    '        val.config.defaultOptions.rewindEnabled="enabled";' +
+    '        val.config.defaultOptions["rewind-granularity"]="3";' +
+    '        val.config.defaultOptions["melonds_touch_mode"]="Touch";' +
+    '        val.config.defaultOptions["settings.melonds_touch_mode"]="Touch";' +
+    '      }' +
+    '    }' +
+    '  },' +
+    '  configurable:true' +
+    '});' +
     'window.EJS_player="#game";' +
     'window.EJS_core=' + JSON.stringify(core) + ';' +
     'window.EJS_gameUrl=' + JSON.stringify(romUrl) + ';' +
@@ -34,7 +143,8 @@ export function buildPlayerHtml(core: string, romUrl: string, title?: string): s
     'window.EJS_startOnLoaded=true;' +
     'window.EJS_fixedSaveInterval=10000;' +
     'window.EJS_VirtualGamepadSettings=[];' +
-    'window.EJS_defaultOptions={"virtual-gamepad":"disabled","settings.virtual-gamepad":"disabled","ff-ratio":"2"};' +
+    'window.EJS_rewindEnabled=true;' +
+    'window.EJS_defaultOptions={"virtual-gamepad":"disabled","settings.virtual-gamepad":"disabled","ff-ratio":"2","rewindEnabled":"enabled","settings.rewindEnabled":"enabled","rewind-granularity":"3","melonds_touch_mode":"Touch","settings.melonds_touch_mode":"Touch"};' +
     'var _simPressTimes={};' +
     'var _simReleaseTimers={};' +
     'var _dispatchKb=function(kName,down){' +
@@ -250,6 +360,7 @@ export function buildPlayerHtml(core: string, romUrl: string, title?: string): s
     '    if(!window.EJS_emulator||!window.EJS_emulator.gameManager)return false;' +
     '    var arr=window._toU8(bytes);' +
     '    if(!arr||!arr.length)return false;' +
+    '    window._rewindSnapshots=[];' +
     '    window.EJS_emulator.gameManager.loadState(arr);' +
     '    return true;' +
     '  }catch(e){console.error("loadStateData err",e);return false;}' +
@@ -364,31 +475,172 @@ export function buildPlayerHtml(core: string, romUrl: string, title?: string): s
     'window.EJS_onGameStart=function(){' +
     '  try{' +
     '    if(window.EJS_emulator){' +
+    '      if(window.EJS_emulator.canvas&&!window.EJS_emulator.canvas.id)window.EJS_emulator.canvas.id="canvas";' +
+    '      if(window.EJS_emulator.gameManager&&typeof window.EJS_emulator.gameManager.setVariable==="function"){' +
+    '        window.EJS_emulator.gameManager.setVariable("melonds_touch_mode","Touch");' +
+    '      }' +
     '      if(typeof window.EJS_emulator.toggleVirtualGamepad==="function")window.EJS_emulator.toggleVirtualGamepad(false);' +
     '      if(window.EJS_emulator.virtualGamepad)window.EJS_emulator.virtualGamepad.remove();' +
     '    }' +
+    '    var c=document.querySelector("canvas");if(c&&!c.id)c.id="canvas";' +
     '    var el=document.querySelector(".ejs_virtualGamepad_parent");if(el)el.remove();' +
     '  }catch(e){}' +
     '  parent.postMessage({type:"ejs-ready"},"*");' +
     '};' +
-    'window.setAudioMuted=function(m){' +
+    'window._userMuted=false;' +
+    'window._resumeAudioContexts=function(){' +
     '  try{' +
-    '    if(window.EJS_emulator){' +
-    '      if(typeof window.EJS_emulator.setVolume==="function")window.EJS_emulator.setVolume(m?0:1);' +
-    '      if(window.EJS_emulator.gameManager&&typeof window.EJS_emulator.gameManager.setVolume==="function")window.EJS_emulator.gameManager.setVolume(m?0:1);' +
+    '    var emu=window.EJS_emulator;' +
+    '    if(emu&&emu.Module){' +
+    '      var al=emu.Module.AL;' +
+    '      if(al&&al.currentCtx){' +
+    '        if(al.currentCtx.audioCtx&&al.currentCtx.audioCtx.state==="suspended"){' +
+    '          al.currentCtx.audioCtx.resume().catch(function(){});' +
+    '        }' +
+    '        if(al.currentCtx.sources){' +
+    '          al.currentCtx.sources.forEach(function(s){' +
+    '            if(s&&s.gain&&s.gain.context&&s.gain.context.state==="suspended"){' +
+    '              s.gain.context.resume().catch(function(){});' +
+    '            }' +
+    '          });' +
+    '        }' +
+    '      }' +
+    '      if(emu.Module.SDL2&&emu.Module.SDL2.audioContext&&emu.Module.SDL2.audioContext.state==="suspended"){' +
+    '        emu.Module.SDL2.audioContext.resume().catch(function(){});' +
+    '      }' +
+    '    }' +
+    '  }catch(e){}' +
+    '};' +
+    'window._applyAudioVolume=function(vol){' +
+    '  try{' +
+    '    var emu=window.EJS_emulator;' +
+    '    if(emu){' +
+    '      if(typeof emu.setVolume==="function")emu.setVolume(vol);' +
+    '      if(emu.gameManager&&typeof emu.gameManager.setVolume==="function")emu.gameManager.setVolume(vol);' +
+    '      if(emu.Module&&emu.Module.AL&&emu.Module.AL.currentCtx&&emu.Module.AL.currentCtx.sources){' +
+    '        emu.Module.AL.currentCtx.sources.forEach(function(s){' +
+    '          if(s&&s.gain&&s.gain.gain)s.gain.gain.value=vol;' +
+    '        });' +
+    '      }' +
     '    }' +
     '  }catch(e){}' +
     '  try{' +
     '    var audios=document.querySelectorAll("audio,video");' +
-    '    for(var i=0;i<audios.length;i++){audios[i].muted=m;}' +
+    '    for(var i=0;i<audios.length;i++){audios[i].muted=(vol===0);}' +
     '  }catch(e){}' +
     '};' +
+    'window.setAudioMuted=function(m){' +
+    '  window._userMuted=!!m;' +
+    '  if(!window._userMuted)window._resumeAudioContexts();' +
+    '  window._applyAudioVolume(window._userMuted?0:1);' +
+    '};' +
+    'window.setPaused=function(p){' +
+    '  try{' +
+    '    var emu=window.EJS_emulator;' +
+    '    if(!emu)return;' +
+    '    if(p){' +
+    '      if(typeof emu.pause==="function"){emu.pause();}' +
+    '      else if(emu.gameManager&&typeof emu.gameManager.toggleMainLoop==="function"){emu.gameManager.toggleMainLoop(0);}' +
+    '      window._applyAudioVolume(0);' +
+    '    }else{' +
+    '      if(typeof emu.play==="function"){emu.play();}' +
+    '      else if(emu.gameManager&&typeof emu.gameManager.toggleMainLoop==="function"){emu.gameManager.toggleMainLoop(1);}' +
+    '      window._resumeAudioContexts();' +
+    '      window._applyAudioVolume(window._userMuted?0:1);' +
+    '    }' +
+    '  }catch(e){console.warn("setPaused err",e);}' +
+    '};' +
+    'window._rewindSnapshots=[];' +
+    'window._isRewinding=false;' +
+    'window._rewindTimer=null;' +
+    'setInterval(function(){' +
+    '  if(window._isRewinding)return;' +
+    '  try{' +
+    '    var emu=window.EJS_emulator;' +
+    '    if(!emu||!emu.gameManager||!emu.started||emu.paused)return;' +
+    '    var gm=emu.gameManager;' +
+    '    if(typeof gm.getState!=="function")return;' +
+    '    var st=gm.getState();' +
+    '    if(st&&st.length>0){' +
+    '      window._rewindSnapshots.push(new Uint8Array(st));' +
+    '      if(window._rewindSnapshots.length>70)window._rewindSnapshots.shift();' +
+    '    }' +
+    '  }catch(e){}' +
+    '},200);' +
+    'window.setRewind=function(active){' +
+    '  try{' +
+    '    var emu=window.EJS_emulator;' +
+    '    if(!emu)return;' +
+    '    var gm=emu.gameManager;' +
+    '    window._isRewinding=!!active;' +
+    '    if(active){' +
+    '      window._applyAudioVolume(0);' +
+    '      if(gm){' +
+    '        try{' +
+    '          if(typeof gm.simulateInput==="function")gm.simulateInput(0,28,1);' +
+    '          if(gm.functions&&typeof gm.functions.toggleRewind==="function")gm.functions.toggleRewind(1);' +
+    '        }catch(e){}' +
+    '      }' +
+    '      if(window._rewindTimer){clearInterval(window._rewindTimer);window._rewindTimer=null;}' +
+    '      var startFrame=-1;' +
+    '      try{' +
+    '        if(gm&&gm.functions&&typeof gm.functions.getFrameNum==="function")startFrame=gm.functions.getFrameNum();' +
+    '        else if(gm&&typeof gm.getFrameNum==="function")startFrame=gm.getFrameNum();' +
+    '      }catch(e){}' +
+    '      var checkCount=0,nativeActive=false;' +
+    '      var stepRewind=function(){' +
+    '        if(!window._isRewinding)return;' +
+    '        if(gm){' +
+    '          if(!nativeActive&&startFrame>0&&checkCount<3){' +
+    '            checkCount++;' +
+    '            try{' +
+    '              var cur=(gm.functions&&typeof gm.functions.getFrameNum==="function")?gm.functions.getFrameNum():(typeof gm.getFrameNum==="function"?gm.getFrameNum():-1);' +
+    '              if(cur>0&&cur<startFrame)nativeActive=true;' +
+    '            }catch(e){}' +
+    '          }' +
+    '          if(!nativeActive&&window._rewindSnapshots&&window._rewindSnapshots.length>0){' +
+    '            var prev=window._rewindSnapshots.pop();' +
+    '            if(prev){' +
+    '              try{' +
+    '                if(gm.FS&&gm.functions&&typeof gm.functions.loadState==="function"){' +
+    '                  gm.FS.writeFile("/game.state",prev);' +
+    '                  gm.functions.loadState("game.state",0);' +
+    '                }else if(typeof gm.loadState==="function"){' +
+    '                  gm.loadState(prev);' +
+    '                }' +
+    '              }catch(e){}' +
+    '            }' +
+    '          }' +
+    '        }' +
+    '      };' +
+    '      window._rewindTimer=setInterval(stepRewind,65);' +
+    '      setTimeout(stepRewind,20);' +
+    '    }else{' +
+    '      if(window._rewindTimer){clearInterval(window._rewindTimer);window._rewindTimer=null;}' +
+    '      if(gm){' +
+    '        try{' +
+    '          if(typeof gm.simulateInput==="function")gm.simulateInput(0,28,0);' +
+    '          if(gm.functions&&typeof gm.functions.toggleRewind==="function")gm.functions.toggleRewind(0);' +
+    '        }catch(e){}' +
+    '      }' +
+    '      if(!window._userMuted)window._resumeAudioContexts();' +
+    '      window._applyAudioVolume(window._userMuted?0:1);' +
+    '    }' +
+    '  }catch(e){console.warn("setRewind err",e);}' +
+    '};' +
+    'window.addEventListener("message",function(e){' +
+    '  if(e&&e.data&&e.data.type==="ejs-set-rewind"){' +
+    '    window.setRewind(e.data.active);' +
+    '  }' +
+    '});' +
     'setInterval(function(){' +
     '  try{' +
     '    var el=document.querySelector(".ejs_virtualGamepad_parent");' +
     '    if(el)el.remove();' +
     '    if(window.EJS_emulator&&window.EJS_emulator.virtualGamepad)window.EJS_emulator.virtualGamepad.style.display="none";' +
     '  }catch(e){}' +
-    '},250);' + close +
+    '},250);' +
+    'document.addEventListener("touchstart",function(e){if(e.cancelable)e.preventDefault();},{passive:false});' +
+    'document.addEventListener("touchmove",function(e){if(e.cancelable)e.preventDefault();},{passive:false});' + close +
     '<script src="https://cdn.emulatorjs.org/stable/data/loader.js">' + close + '</body></html>';
 }

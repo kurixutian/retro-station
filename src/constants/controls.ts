@@ -64,20 +64,153 @@ export const DEFAULT_PAD_LAYOUT: PadLayout = {
   transport: { x: 0.5, y: 0.1, s: 1 },
   dpad: { x: 0.24, y: 0.42, s: 1 },
   actions: { x: 0.76, y: 0.42, s: 1 },
-  system: { x: 0.5, y: 0.74, s: 1 }
+  system: { x: 0.5, y: 0.74, s: 1 },
+  screen: { x: 0.5, y: 0.5, s: 1 }
+};
+
+export const DEFAULT_LANDSCAPE_PAD_LAYOUT: PadLayout = {
+  transport: { x: 0.5, y: 0.95, s: 1 },
+  dpad: { x: 0.11, y: 0.52, s: 1 },
+  actions: { x: 0.89, y: 0.52, s: 1 },
+  system: { x: 0.5, y: 0.86, s: 1 },
+  screen: { x: 0.5, y: 0.5, s: 1 }
+};
+
+export const DEFAULT_NDS_PAD_LAYOUT: PadLayout = {
+  transport: { x: 0.5, y: 0.08, s: 0.95 },
+  dpad: { x: 0.22, y: 0.46, s: 1.05 },
+  actions: { x: 0.78, y: 0.46, s: 1.05 },
+  system: { x: 0.5, y: 0.82, s: 1 },
+  screen: { x: 0.5, y: 0.5, s: 1 }
+};
+
+export const DEFAULT_NDS_LANDSCAPE_PAD_LAYOUT: PadLayout = {
+  transport: { x: 0.5, y: 0.95, s: 0.9 },
+  dpad: { x: 0.10, y: 0.52, s: 1.05 },
+  actions: { x: 0.90, y: 0.52, s: 1.05 },
+  system: { x: 0.5, y: 0.88, s: 0.95 },
+  screen: { x: 0.5, y: 0.5, s: 1 }
 };
 
 export const PAD_LABELS: Record<keyof PadLayout, string> = {
+  screen: 'Game Screen',
   transport: 'Pause / Rewind / Speed',
   dpad: 'D-Pad',
-  actions: 'A / B Buttons',
+  actions: 'Action Buttons (ABXY)',
   system: 'Select / Start'
 };
 
-export function loadPadLayout(): PadLayout {
+export type LayoutSlot = 1 | 2 | 3;
+
+function notifyCloudSync(key: string): void {
+  if (typeof window !== 'undefined') {
+    import('../cloudSync')
+      .then(({ markLocalSaveModified }) => markLocalSaveModified(key))
+      .catch(() => {});
+  }
+}
+
+function getPrefix(systemKey?: string): string {
+  return systemKey === 'nds' ? 'retro_nds' : 'retro';
+}
+
+export function getLayoutNames(isLandscape = false, systemKey?: string): Record<LayoutSlot, string> {
   try {
-    const saved = JSON.parse(localStorage.getItem('retro_pad_layout') || 'null');
-    if (saved) return { ...DEFAULT_PAD_LAYOUT, ...saved };
+    const p = getPrefix(systemKey);
+    const key = isLandscape ? `${p}_layout_names_landscape` : `${p}_layout_names_portrait`;
+    const saved = JSON.parse(localStorage.getItem(key) || 'null');
+    if (saved && typeof saved === 'object') {
+      return {
+        1: saved[1] || 'Layout 1',
+        2: saved[2] || 'Layout 2',
+        3: saved[3] || 'Layout 3',
+      };
+    }
   } catch (e) {}
-  return DEFAULT_PAD_LAYOUT;
+  return { 1: 'Layout 1', 2: 'Layout 2', 3: 'Layout 3' };
+}
+
+export function setLayoutName(isLandscape: boolean, slot: LayoutSlot, name: string, systemKey?: string): void {
+  try {
+    const names = getLayoutNames(isLandscape, systemKey);
+    names[slot] = name.trim() || `Layout ${slot}`;
+    const p = getPrefix(systemKey);
+    const key = isLandscape ? `${p}_layout_names_landscape` : `${p}_layout_names_portrait`;
+    localStorage.setItem(key, JSON.stringify(names));
+    notifyCloudSync(key);
+  } catch (e) {}
+}
+
+export function getActiveSlot(isLandscape = false, systemKey?: string): LayoutSlot {
+  try {
+    const p = getPrefix(systemKey);
+    const key = isLandscape ? `${p}_pad_slot_landscape` : `${p}_pad_slot_portrait`;
+    const val = parseInt(localStorage.getItem(key) || '1', 10);
+    if (val === 1 || val === 2 || val === 3) return val;
+  } catch (e) {}
+  return 1;
+}
+
+export function setActiveSlot(isLandscape: boolean, slot: LayoutSlot, systemKey?: string): void {
+  try {
+    const p = getPrefix(systemKey);
+    const key = isLandscape ? `${p}_pad_slot_landscape` : `${p}_pad_slot_portrait`;
+    localStorage.setItem(key, String(slot));
+    notifyCloudSync(key);
+  } catch (e) {}
+}
+
+export function loadPadLayout(isLandscape = false, slot?: LayoutSlot, systemKey?: string): PadLayout {
+  const currentSlot = slot ?? getActiveSlot(isLandscape, systemKey);
+  const isNds = systemKey === 'nds';
+  const defaultLayout = isNds
+    ? (isLandscape ? DEFAULT_NDS_LANDSCAPE_PAD_LAYOUT : DEFAULT_NDS_PAD_LAYOUT)
+    : (isLandscape ? DEFAULT_LANDSCAPE_PAD_LAYOUT : DEFAULT_PAD_LAYOUT);
+
+  try {
+    const p = getPrefix(systemKey);
+    if (isLandscape) {
+      const slotKey = `${p}_pad_layout_landscape_${currentSlot}`;
+      let saved = JSON.parse(localStorage.getItem(slotKey) || 'null');
+      if (!saved && currentSlot === 1) {
+        saved = JSON.parse(localStorage.getItem(`${p}_pad_layout_landscape`) || 'null');
+      }
+      if (saved) return { ...defaultLayout, ...saved };
+      return defaultLayout;
+    } else {
+      const slotKey = `${p}_pad_layout_portrait_${currentSlot}`;
+      let saved = JSON.parse(localStorage.getItem(slotKey) || 'null');
+      if (!saved && currentSlot === 1) {
+        saved = JSON.parse(
+          localStorage.getItem(`${p}_pad_layout_portrait`) ||
+          (!isNds ? localStorage.getItem('retro_pad_layout') : null) ||
+          'null'
+        );
+      }
+      if (saved) return { ...defaultLayout, ...saved };
+      return defaultLayout;
+    }
+  } catch (e) {}
+  return defaultLayout;
+}
+
+export function savePadLayout(isLandscape: boolean, slot: LayoutSlot, layout: PadLayout, systemKey?: string): void {
+  try {
+    const p = getPrefix(systemKey);
+    const slotKey = isLandscape
+      ? `${p}_pad_layout_landscape_${slot}`
+      : `${p}_pad_layout_portrait_${slot}`;
+    localStorage.setItem(slotKey, JSON.stringify(layout));
+    notifyCloudSync(slotKey);
+    if (slot === 1) {
+      if (isLandscape) {
+        localStorage.setItem(`${p}_pad_layout_landscape`, JSON.stringify(layout));
+      } else {
+        localStorage.setItem(`${p}_pad_layout_portrait`, JSON.stringify(layout));
+        if (!systemKey || systemKey !== 'nds') {
+          localStorage.setItem('retro_pad_layout', JSON.stringify(layout));
+        }
+      }
+    }
+  } catch (e) {}
 }

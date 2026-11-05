@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Play, Download, Trash2, Layers, Camera, X, AlertTriangle } from 'lucide-react';
 import { Game, SaveSlot } from '../../types';
+import { GameCoverImage } from '../common/GameCoverImage';
 import { formatGameTitle } from '../../constants/cores';
 import { createEmptySlotsForGame } from '../../services/storage/saveSlots';
 
@@ -54,6 +55,9 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
       <div className="w-full max-w-2xl max-h-[88vh] flex flex-col rounded-3xl bg-zinc-950 border border-zinc-800 shadow-2xl overflow-hidden my-auto hardware-panel">
         {/* Dialog Header Banner */}
         <div className={`relative p-5 bg-gradient-to-r ${targetGame.coverGradient || 'from-zinc-800 to-zinc-950'} flex-none border-b border-black/40`}>
+          <div className="absolute inset-0">
+            <GameCoverImage game={targetGame} imgClassName="w-full h-full object-cover opacity-65" />
+          </div>
           <div className="absolute inset-0 bg-zinc-950/70" />
           <div className="relative z-10 flex items-start justify-between gap-3">
             <div className="space-y-1">
@@ -151,7 +155,7 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
             <div>
               <h3 className="text-sm font-extrabold text-zinc-100 flex items-center gap-2">
                 <Layers className="w-4 h-4 text-emerald-400" />
-                <span>Save State Slots • {formatGameTitle(targetGame.title)}</span>
+                <span>State Slots</span>
               </h3>
               <p className="text-[11px] text-zinc-400">
                 Each game has its own dedicated save state slots. Switch or resume anytime.
