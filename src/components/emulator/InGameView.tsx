@@ -632,7 +632,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
               title="emulator"
               className={`w-full h-full block border-0 bg-black ${isNds && !customizing ? 'pointer-events-auto' : 'pointer-events-none'}`}
               allow="autoplay; gamepad"
-              style={{ filter: gameFilter }}
+              style={{ filter: isNds ? 'none' : gameFilter }}
               srcDoc={buildPlayerHtml(EJS_CORES[activeGame.core] || 'gb', romUrl, activeGame.title)}
             />
           ) : (
