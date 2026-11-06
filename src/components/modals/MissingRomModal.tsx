@@ -104,7 +104,7 @@ export const MissingRomModal: React.FC<MissingRomModalProps> = ({
           <input
             ref={fileInputRef}
             type="file"
-            accept=".gb,.gbc,.gba,.nds,.nes,.sfc,.smc,.md,.gen,.smd,.bin,.zip"
+            accept=".gb,.gbc,.gba,.nes,.sfc,.smc,.md,.gen,.smd,.bin,.zip"
             onChange={handleFileChange}
             className="hidden"
           />

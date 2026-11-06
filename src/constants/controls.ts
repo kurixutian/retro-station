@@ -76,22 +76,6 @@ export const DEFAULT_LANDSCAPE_PAD_LAYOUT: PadLayout = {
   screen: { x: 0.5, y: 0.5, s: 1 }
 };
 
-export const DEFAULT_NDS_PAD_LAYOUT: PadLayout = {
-  transport: { x: 0.5, y: 0.08, s: 0.95 },
-  dpad: { x: 0.22, y: 0.46, s: 1.05 },
-  actions: { x: 0.78, y: 0.46, s: 1.05 },
-  system: { x: 0.5, y: 0.82, s: 1 },
-  screen: { x: 0.5, y: 0.5, s: 1 }
-};
-
-export const DEFAULT_NDS_LANDSCAPE_PAD_LAYOUT: PadLayout = {
-  transport: { x: 0.5, y: 0.95, s: 0.9 },
-  dpad: { x: 0.10, y: 0.52, s: 1.05 },
-  actions: { x: 0.90, y: 0.52, s: 1.05 },
-  system: { x: 0.5, y: 0.88, s: 0.95 },
-  screen: { x: 0.5, y: 0.5, s: 1 }
-};
-
 export const PAD_LABELS: Record<keyof PadLayout, string> = {
   screen: 'Game Screen',
   transport: 'Pause / Rewind / Speed',
@@ -111,7 +95,7 @@ function notifyCloudSync(key: string): void {
 }
 
 function getPrefix(systemKey?: string): string {
-  return systemKey === 'nds' ? 'retro_nds' : 'retro';
+  return 'retro';
 }
 
 export function getLayoutNames(isLandscape = false, systemKey?: string): Record<LayoutSlot, string> {
@@ -162,10 +146,7 @@ export function setActiveSlot(isLandscape: boolean, slot: LayoutSlot, systemKey?
 
 export function loadPadLayout(isLandscape = false, slot?: LayoutSlot, systemKey?: string): PadLayout {
   const currentSlot = slot ?? getActiveSlot(isLandscape, systemKey);
-  const isNds = systemKey === 'nds';
-  const defaultLayout = isNds
-    ? (isLandscape ? DEFAULT_NDS_LANDSCAPE_PAD_LAYOUT : DEFAULT_NDS_PAD_LAYOUT)
-    : (isLandscape ? DEFAULT_LANDSCAPE_PAD_LAYOUT : DEFAULT_PAD_LAYOUT);
+  const defaultLayout = isLandscape ? DEFAULT_LANDSCAPE_PAD_LAYOUT : DEFAULT_PAD_LAYOUT;
 
   try {
     const p = getPrefix(systemKey);
@@ -183,7 +164,7 @@ export function loadPadLayout(isLandscape = false, slot?: LayoutSlot, systemKey?
       if (!saved && currentSlot === 1) {
         saved = JSON.parse(
           localStorage.getItem(`${p}_pad_layout_portrait`) ||
-          (!isNds ? localStorage.getItem('retro_pad_layout') : null) ||
+          localStorage.getItem('retro_pad_layout') ||
           'null'
         );
       }
@@ -207,9 +188,7 @@ export function savePadLayout(isLandscape: boolean, slot: LayoutSlot, layout: Pa
         localStorage.setItem(`${p}_pad_layout_landscape`, JSON.stringify(layout));
       } else {
         localStorage.setItem(`${p}_pad_layout_portrait`, JSON.stringify(layout));
-        if (!systemKey || systemKey !== 'nds') {
-          localStorage.setItem('retro_pad_layout', JSON.stringify(layout));
-        }
+        localStorage.setItem('retro_pad_layout', JSON.stringify(layout));
       }
     }
   } catch (e) {}

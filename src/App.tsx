@@ -361,10 +361,7 @@ export default function App() {
   const [isRewinding, setIsRewinding] = useState(false);
   // 0 = off; 2 / 3 / 4 / 8 = fast-forward multiplier
   const [ffSpeed, setFfSpeed] = useState<number>(0);
-  const isNdsActive = activeGame
-    ? (activeGame.core === 'melonds' || activeGame.core === 'desmume' || activeGame.core === 'desmume2015' || activeGame.core === 'nds')
-    : false;
-  const currentSystemKey = isNdsActive ? 'nds' : 'default';
+  const currentSystemKey = 'default';
 
   useEffect(() => {
     const active = currentView === 'ingame' && !isPaused;
@@ -386,16 +383,6 @@ export default function App() {
   const [customizing, setCustomizing] = useState(false);
   const [selectedPad, setSelectedPad] = useState<PadGroupId>('dpad');
   const deckRef = useRef<HTMLDivElement | null>(null);
-
-  // Sync layout state when active game changes between NDS and standard systems
-  useEffect(() => {
-    const sp = getActiveSlot(false, currentSystemKey);
-    const sl = getActiveSlot(true, currentSystemKey);
-    setSlotPortrait(sp);
-    setSlotLandscape(sl);
-    setPadLayoutPortrait(loadPadLayout(false, sp, currentSystemKey));
-    setPadLayoutLandscape(loadPadLayout(true, sl, currentSystemKey));
-  }, [currentSystemKey]);
 
   useEffect(() => {
     savePadLayout(false, slotPortrait, padLayoutPortrait, currentSystemKey);
@@ -813,9 +800,6 @@ export default function App() {
       snes9x: 'starblade',
       genesis_plus_gx: 'starblade',
       mgba: 'neondrift',
-      melonds: 'pokegold',
-      desmume: 'pokegold',
-      nds: 'pokegold'
     };
     const engineType = coreToEngine[detected.core] || 'pokegold';
 
@@ -931,17 +915,10 @@ export default function App() {
           lazySlotRec?.stateData?.emuState
         );
 
-        const isMelonSavestate = (buf: Uint8Array | null) =>
-          Boolean(buf && buf.length > 16 && buf[0] === 0x4D && buf[1] === 0x4C && buf[2] === 0x53 && buf[3] === 0x4E);
-
         setRomUrl(URL.createObjectURL(blob));
         hasUserInteractedRef.current = false;
         const normAuto = autoSt ? normalizeBinaryData(autoSt) : null;
-        const validAuto = normAuto && !(game.core !== 'melonds' && isMelonSavestate(normAuto)) ? normAuto : null;
-        pendingStateRef.current =
-          resolvedSlotState && !(game.core !== 'melonds' && isMelonSavestate(resolvedSlotState))
-            ? resolvedSlotState
-            : validAuto;
+        pendingStateRef.current = resolvedSlotState || normAuto;
         pendingSrmRef.current = srm ? normalizeBinaryData(srm) : null;
         pendingRtcRef.current = rtc ? normalizeBinaryData(rtc) : null;
 
@@ -1234,12 +1211,6 @@ export default function App() {
     if (!hasUserInteractedRef.current) return;
     const win = emuFrameRef.current?.contentWindow as any;
     if (!win) return;
-    const isNdsGame =
-      activeGame.core === 'nds' ||
-      activeGame.core === 'melonds' ||
-      activeGame.core === 'desmume' ||
-      activeGame.core === 'desmume2015' ||
-      activeGame.shortSystem === 'NDS';
     const areBytesEqual = (a: Uint8Array | null, b: Uint8Array | null) => {
       if (!a || !b || a.length !== b.length) return false;
       const step = a.length > 65536 ? 16 : 1;
@@ -1252,8 +1223,7 @@ export default function App() {
       const srm = normalizeBinaryData(win.getSrmData?.(false));
       if (srm && srm.length > 0) {
         let nonEmpty = false;
-        const step = isNdsGame ? 32 : 4;
-        for (let i = 0; i < srm.length; i += step) {
+        for (let i = 0; i < srm.length; i += 4) {
           if (srm[i] !== 0 && srm[i] !== 255) { nonEmpty = true; break; }
         }
         if (nonEmpty) {
@@ -1312,16 +1282,8 @@ export default function App() {
 
   useEffect(() => {
     if (currentView !== 'ingame' || !activeGame?.id || !activeGame?.real) return;
-    const isNds =
-      activeGame.core === 'nds' ||
-      activeGame.core === 'melonds' ||
-      activeGame.core === 'desmume' ||
-      activeGame.core === 'desmume2015' ||
-      activeGame.shortSystem === 'NDS';
-    // For fast 2D systems (GB, GBC, GBA, NES, SNES, Genesis), capture full progress state every 15s.
-    // For NDS, flush battery progress every 15s and capture full state on navigation/backgrounding.
     const timer = setInterval(() => {
-      flushLiveProgress(!isNds);
+      flushLiveProgress(true);
     }, 15000);
     const onHide = () => {
       flushLiveProgress(true);
@@ -1358,21 +1320,6 @@ export default function App() {
     if (!normalized || normalized.length === 0) {
       showToast('No in-game battery save found yet — save inside the game first');
       return;
-    }
-    // Strip 122-byte DeSmuME .dsv footer when exporting raw .sav for external flashcarts/melonDS/PKHeX
-    if (ext === 'sav' && normalized.length > 122) {
-      const cookie = '|-DESMUME SAVE-|';
-      const cookieOffset = normalized.length - 16;
-      let hasDsvFooter = true;
-      for (let i = 0; i < 16; i++) {
-        if (normalized[cookieOffset + i] !== cookie.charCodeAt(i)) {
-          hasDsvFooter = false;
-          break;
-        }
-      }
-      if (hasDsvFooter) {
-        normalized = normalized.subarray(0, normalized.length - 122);
-      }
     }
     const baseName = (game.fileName || game.title || 'game').replace(/\.[^/.]+$/, '');
     const outName = `${baseName}.${ext}`;
@@ -1767,7 +1714,7 @@ export default function App() {
       <input
         ref={romInputRef}
         type="file"
-        accept=".gb,.gbc,.gba,.nds,.nes,.sfc,.smc,.md,.gen,.smd,.bin,.zip"
+        accept=".gb,.gbc,.gba,.nes,.sfc,.smc,.md,.gen,.smd,.bin,.zip"
         onChange={handleRomUpload}
         className="hidden"
       />

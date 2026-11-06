@@ -370,7 +370,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
               <div className="space-y-1">
                 <h3 className="text-base font-bold text-zinc-200">No ROMs in Library</h3>
                 <p className="text-xs text-zinc-500 max-w-xs">
-                  Load your own .nds, .gbc, .gba, .nes, .sfc, or .md ROM files to start playing.
+                  Load your own .gb, .gbc, .gba, .nes, .sfc, or .md ROM files to start playing.
                 </p>
               </div>
               <button
@@ -402,7 +402,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                 </div>
                 <span className="text-xs font-bold text-zinc-200">Load Downloaded ROM</span>
                 <span className="text-[10px] text-zinc-500 text-center leading-tight">
-                  Auto-detects .nds, .gbc, .gba, .nes, .sfc, .md
+                  Auto-detects .gb, .gbc, .gba, .nes, .sfc, .md
                 </span>
               </button>
             </div>

@@ -31,8 +31,6 @@ import { coreRatio, formatGameTitle, EJS_CORES } from '../../constants/cores';
 import {
   DEFAULT_PAD_LAYOUT,
   DEFAULT_LANDSCAPE_PAD_LAYOUT,
-  DEFAULT_NDS_PAD_LAYOUT,
-  DEFAULT_NDS_LANDSCAPE_PAD_LAYOUT,
   PAD_LABELS,
   LayoutSlot,
   getLayoutNames,
@@ -672,7 +670,6 @@ export const InGameView: React.FC<InGameViewProps> = ({
 
   const renderGameScreen = () => {
     const gameFilter = getComputedGameFilter(shaders);
-    const isNds = activeGame.core === 'melonds' || activeGame.core === 'desmume' || activeGame.core === 'desmume2015' || activeGame.core === 'nds';
 
     return (
       <>
@@ -682,9 +679,9 @@ export const InGameView: React.FC<InGameViewProps> = ({
               key={romUrl}
               ref={emuFrameRef}
               title="emulator"
-              className={`w-full h-full block border-0 bg-black ${isNds && !customizing ? 'pointer-events-auto' : 'pointer-events-none'}`}
+              className="w-full h-full block border-0 bg-black pointer-events-none"
               allow="autoplay; gamepad"
-              style={{ filter: isNds ? 'none' : gameFilter, contain: 'strict' }}
+              style={{ filter: gameFilter, contain: 'strict' }}
               srcDoc={playerSrcDoc}
             />
           ) : (
@@ -702,18 +699,8 @@ export const InGameView: React.FC<InGameViewProps> = ({
           />
         )}
 
-        {/* NDS Hardware Separator Hinge (subtle divider between top and bottom screens) */}
-        {isNds && (
-          <div
-            className="absolute left-0 right-0 pointer-events-none z-10 flex items-center justify-center"
-            style={{ top: '50%', transform: 'translateY(-50%)', height: '4px' }}
-          >
-            <div className="w-full h-0.5 bg-zinc-950/90 border-t border-b border-black shadow-sm" />
-          </div>
-        )}
-
-      {/* Shader Layer 1: CRT Horizontal Scanlines (bypassed on NDS for touch/GPU performance) */}
-      {!isNds && shaders.scanlines && (
+      {/* Shader Layer 1: CRT Horizontal Scanlines */}
+      {shaders.scanlines && (
         <div
           className="absolute inset-0 pointer-events-none z-10"
           style={{
@@ -725,7 +712,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
       )}
 
       {/* Shader Layer 2: Game Boy Dot-Matrix LCD Grid Lines */}
-      {!isNds && shaders.gbGrid && (
+      {shaders.gbGrid && (
         <div
           className="absolute inset-0 pointer-events-none z-10 opacity-70"
           style={{
@@ -738,7 +725,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
       )}
 
       {/* Shader Layer 3: Bezel Vignette & CRT Corner Shadow */}
-      {!isNds && shaders.bezelVignette && (
+      {shaders.bezelVignette && (
         <div
           className="absolute inset-0 pointer-events-none z-20"
           style={{
@@ -800,11 +787,6 @@ export const InGameView: React.FC<InGameViewProps> = ({
             <span className="font-extrabold text-xs text-emerald-300">
               {PAD_LABELS[selectedPad]}
             </span>
-            {systemKey === 'nds' && (
-              <span className="ml-1 text-[9px] font-mono px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                NDS
-              </span>
-            )}
           </div>
           <span className="text-[10px] text-zinc-400 font-mono">
             {Math.round(currentScale * 100)}% • Drag dialog
@@ -908,9 +890,9 @@ export const InGameView: React.FC<InGameViewProps> = ({
           <button
             onClick={() => {
               if (isLandscape) {
-                setPadLayoutLandscape(systemKey === 'nds' ? DEFAULT_NDS_LANDSCAPE_PAD_LAYOUT : DEFAULT_LANDSCAPE_PAD_LAYOUT);
+                setPadLayoutLandscape(DEFAULT_LANDSCAPE_PAD_LAYOUT);
               } else {
-                setPadLayoutPortrait(systemKey === 'nds' ? DEFAULT_NDS_PAD_LAYOUT : DEFAULT_PAD_LAYOUT);
+                setPadLayoutPortrait(DEFAULT_PAD_LAYOUT);
               }
               showToast(`Reset Layout ${activeSlot} to default`);
             }}
@@ -1273,18 +1255,14 @@ export const InGameView: React.FC<InGameViewProps> = ({
               maxWidth: '100%',
               maxHeight: isLandscape
                 ? `calc((100lvh - ${Math.round(22 * transportScale + 10)}px) * ${screenScale})`
-                : (activeGame.core === 'melonds' || activeGame.core === 'desmume' || activeGame.core === 'desmume2015' || activeGame.core === 'nds')
-                ? `calc(50lvh * ${screenScale})`
                 : `calc(48lvh * ${screenScale})`,
               width: isLandscape
                 ? `min(100%, calc(${(coreRatio(activeGame.core, isLandscape) * 92).toFixed(2)}lvh * ${screenScale}))`
                 : `min(100%, calc(${(50 * coreRatio(activeGame.core, isLandscape)).toFixed(2)}lvh * ${screenScale}))`,
               height: isLandscape
                 ? `calc((100lvh - ${Math.round(22 * transportScale + 10)}px) * ${screenScale})`
-                : (activeGame.core === 'melonds' || activeGame.core === 'desmume' || activeGame.core === 'desmume2015' || activeGame.core === 'nds')
-                ? `calc(50lvh * ${screenScale})`
                 : `calc(48lvh * ${screenScale})`,
-              boxShadow: !shaders.amoled && shaders.rgbBloom && activeGame.core !== 'melonds' && activeGame.core !== 'desmume' && activeGame.core !== 'desmume2015' && activeGame.core !== 'nds'
+              boxShadow: !shaders.amoled && shaders.rgbBloom
                 ? `0 0 28px ${theme.hex}33, inset 0 0 18px rgba(0,0,0,0.75)`
                 : 'none',
               filter: 'none',

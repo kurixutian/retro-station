@@ -21,7 +21,6 @@ export const CORE_MAP: Record<string, CoreInfo> = {
   gg: { core: 'genesis_plus_gx', system: 'Sega Game Gear', shortSystem: 'GG', badgeColor: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40' },
   sms: { core: 'genesis_plus_gx', system: 'Sega Master System', shortSystem: 'SMS', badgeColor: 'bg-blue-500/20 text-blue-300 border-blue-500/40' },
   sg: { core: 'genesis_plus_gx', system: 'Sega SG-1000', shortSystem: 'SG', badgeColor: 'bg-violet-500/20 text-violet-300 border-violet-500/40' },
-  nds: { core: 'melonds', system: 'Nintendo DS', shortSystem: 'NDS', badgeColor: 'bg-rose-500/20 text-rose-300 border-rose-500/40' },
 };
 
 export const EJS_CORES: Record<string, string> = {
@@ -30,17 +29,12 @@ export const EJS_CORES: Record<string, string> = {
   fceumm: 'nes',
   snes9x: 'snes',
   genesis_plus_gx: 'segaMD',
-  melonds: 'desmume2015',
-  desmume: 'desmume2015',
-  desmume2015: 'desmume2015',
-  nds: 'desmume2015',
 };
 
 export const LIBRETRO_SYSTEM_MAP: Record<string, string> = {
   gb: 'Nintendo - Game Boy',
   gbc: 'Nintendo - Game Boy Color',
   gba: 'Nintendo - Game Boy Advance',
-  nds: 'Nintendo - Nintendo DS',
   nes: 'Nintendo - Nintendo Entertainment System',
   sfc: 'Nintendo - Super Nintendo Entertainment System',
   smc: 'Nintendo - Super Nintendo Entertainment System',
@@ -56,9 +50,6 @@ export const LIBRETRO_SYSTEM_MAP: Record<string, string> = {
 };
 
 export const coreRatio = (core: string, isLandscape: boolean = false): number => {
-  if (core === 'melonds' || core === 'desmume' || core === 'desmume2015' || core === 'nds') {
-    return 2 / 3;
-  }
   return ({ gambatte: 10 / 9, mgba: 3 / 2, fceumm: 8 / 7, snes9x: 8 / 7 }[core] || 4 / 3);
 };
 
