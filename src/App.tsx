@@ -34,6 +34,7 @@ import {
   recordDeletedGame,
   unrecordDeletedGame,
   getDeletedGameIds,
+  setGameplayActive,
 } from './cloudSync';
 
 import { LibraryView } from './components/library/LibraryView';
@@ -205,7 +206,6 @@ export default function App() {
               const gId = parts.slice(1, parts.length - 1).join(':');
               const val = await idbGet(key).catch(() => null);
               if (val && gId && slotN) {
-                const emuSt = normalizeBinaryData(val.emuState || val.emuStateBase64 || val.stateData?.emuState || val.stateData?.emuStateBase64);
                 setSavesByGameId((prev) => {
                   const list = prev[gId] || createEmptySlotsForGame(gId);
                   return {
@@ -220,13 +220,13 @@ export default function App() {
                             score: 0,
                             frame: 0,
                             screenshot: val.screenshot || null,
-                            stateData: val.stateData
-                              ? { ...val.stateData, emuState: emuSt || val.stateData.emuState }
+                            stateData: val.stateData?.engineState
+                              ? val.stateData
                               : {
                                   version: 'EJS_STATE',
                                   gameId: gId,
                                   timestamp: val.timestamp,
-                                  emuState: emuSt
+                                  lazyIdbKey: key,
                                 }
                           }
                         : s
@@ -298,7 +298,6 @@ export default function App() {
               const gId = parts.slice(1, parts.length - 1).join(':');
               const val = cursor.value;
               if (val && gId && slotN) {
-                const emuSt = normalizeBinaryData(val.emuState || val.emuStateBase64 || val.stateData?.emuState || val.stateData?.emuStateBase64);
                 setSavesByGameId((prev) => {
                   const list = prev[gId] || createEmptySlotsForGame(gId);
                   return {
@@ -313,13 +312,13 @@ export default function App() {
                             score: 0,
                             frame: 0,
                             screenshot: val.screenshot || null,
-                            stateData: val.stateData
-                              ? { ...val.stateData, emuState: emuSt || val.stateData.emuState }
+                            stateData: val.stateData?.engineState
+                              ? val.stateData
                               : {
                                   version: 'EJS_STATE',
                                   gameId: gId,
                                   timestamp: val.timestamp,
-                                  emuState: emuSt
+                                  lazyIdbKey: key,
                                 }
                           }
                         : s
@@ -362,8 +361,22 @@ export default function App() {
   const [isRewinding, setIsRewinding] = useState(false);
   // 0 = off; 2 / 3 / 4 / 8 = fast-forward multiplier
   const [ffSpeed, setFfSpeed] = useState<number>(0);
-  const isNdsActive = activeGame ? (activeGame.core === 'melonds' || activeGame.core === 'desmume' || activeGame.core === 'nds') : false;
+  const isNdsActive = activeGame
+    ? (activeGame.core === 'melonds' || activeGame.core === 'desmume' || activeGame.core === 'desmume2015' || activeGame.core === 'nds')
+    : false;
   const currentSystemKey = isNdsActive ? 'nds' : 'default';
+
+  useEffect(() => {
+    const active = currentView === 'ingame' && !isPaused;
+    (window as any).__retroGameplayActive = currentView === 'ingame';
+    setGameplayActive(active);
+    return () => {
+      if (currentView !== 'ingame') {
+        (window as any).__retroGameplayActive = false;
+        setGameplayActive(false);
+      }
+    };
+  }, [currentView, isPaused]);
 
   const [hidePad, setHidePad] = useState(false);
   const [slotPortrait, setSlotPortrait] = useState<LayoutSlot>(() => getActiveSlot(false, currentSystemKey));
@@ -463,12 +476,16 @@ export default function App() {
     const win = emuFrameRef.current?.contentWindow as any;
     if (!win) return;
 
+    const idx = EMU_INPUT_MAP[name];
     try {
+      if (idx !== undefined && typeof win.setButtonBit === 'function') {
+        win.setButtonBit(idx, down);
+        return;
+      }
       if (typeof win.simulateButton === 'function') {
         win.simulateButton(name, down);
         return;
       }
-      const idx = EMU_INPUT_MAP[name];
       if (idx !== undefined) {
         const emu = win.EJS_emulator;
         if (emu?.gameManager && typeof emu.gameManager.simulateInput === 'function') {
@@ -493,10 +510,43 @@ export default function App() {
         Object.defineProperty(ev, 'keyCode', { get: () => k[1] });
         Object.defineProperty(ev, 'which', { get: () => k[1] });
         target.dispatchEvent(ev);
-        win.dispatchEvent(ev);
       } catch (e) {}
     }
   }, []);
+
+  useEffect(() => {
+    if (!romUrl) return;
+    return () => {
+      try { URL.revokeObjectURL(romUrl); } catch (e) {}
+    };
+  }, [romUrl]);
+
+  const setDpadBits = useCallback((dpadMask: number) => {
+    if (dpadMask !== 0) hasUserInteractedRef.current = true;
+    const nextUp = (dpadMask & 16) !== 0;
+    const nextDown = (dpadMask & 32) !== 0;
+    const nextLeft = (dpadMask & 64) !== 0;
+    const nextRight = (dpadMask & 128) !== 0;
+    if (nextUp && !keysRef.current.up) EdgeTapRef.current.up = true;
+    if (nextDown && !keysRef.current.down) EdgeTapRef.current.down = true;
+    if (nextLeft && !keysRef.current.left) EdgeTapRef.current.left = true;
+    if (nextRight && !keysRef.current.right) EdgeTapRef.current.right = true;
+    keysRef.current.up = nextUp;
+    keysRef.current.down = nextDown;
+    keysRef.current.left = nextLeft;
+    keysRef.current.right = nextRight;
+    const win = emuFrameRef.current?.contentWindow as any;
+    if (win && typeof win.setDpadMask === 'function') {
+      try {
+        win.setDpadMask(dpadMask);
+        return;
+      } catch (e) {}
+    }
+    sendKey('up', nextUp);
+    sendKey('down', nextDown);
+    sendKey('left', nextLeft);
+    sendKey('right', nextRight);
+  }, [sendKey]);
 
   const setButtonDown = useCallback((name: string) => {
     if (releaseTimersRef.current[name]) {
@@ -504,6 +554,9 @@ export default function App() {
       releaseTimersRef.current[name] = null;
     }
     pressStartTimesRef.current[name] = performance.now();
+    if (!keysRef.current[name] && name in EdgeTapRef.current) {
+      EdgeTapRef.current[name] = true;
+    }
     keysRef.current[name] = true;
     if (['up', 'down', 'left', 'right'].includes(name)) {
       haptics.dpad();
@@ -514,21 +567,12 @@ export default function App() {
   }, [sendKey]);
 
   const setButtonUp = useCallback((name: string) => {
-    const minHold = 75;
-    const elapsed = performance.now() - (pressStartTimesRef.current[name] || 0);
-
-    const performRelease = () => {
-      keysRef.current[name] = false;
-      sendKey(name, false);
+    if (releaseTimersRef.current[name]) {
+      clearTimeout(releaseTimersRef.current[name]);
       releaseTimersRef.current[name] = null;
-    };
-
-    if (elapsed < minHold) {
-      if (releaseTimersRef.current[name]) clearTimeout(releaseTimersRef.current[name]);
-      releaseTimersRef.current[name] = setTimeout(performRelease, minHold - elapsed);
-    } else {
-      performRelease();
     }
+    keysRef.current[name] = false;
+    sendKey(name, false);
   }, [sendKey]);
 
   useEffect(() => {
@@ -566,19 +610,26 @@ export default function App() {
       const st = pendingStateRef.current;
       if (st) {
         pendingStateRef.current = null;
-        setTimeout(() => {
-          try {
-            const stateToLoad = normalizeBinaryData(st);
-            if (!stateToLoad) return;
-            if (win?.loadStateData) {
-              win.loadStateData(stateToLoad);
-            } else {
-              getEmu()?.gameManager.loadState(stateToLoad);
-            }
-          } catch (err) {
-            console.error('Failed to load pending state:', err);
-          }
-        }, 800);
+        const stateToLoad = normalizeBinaryData(st);
+        if (stateToLoad) {
+          const attemptLoad = (delay: number) => {
+            setTimeout(() => {
+              try {
+                const w = emuFrameRef.current?.contentWindow as any;
+                if (!w) return;
+                if (w.loadStateData) {
+                  w.loadStateData(stateToLoad);
+                } else if (w.EJS_emulator?.gameManager?.loadState) {
+                  w.EJS_emulator.gameManager.loadState(stateToLoad);
+                }
+              } catch (err) {
+                console.error('Failed to load pending state:', err);
+              }
+            }, delay);
+          };
+          attemptLoad(400);
+          attemptLoad(1000);
+        }
       }
     };
     window.addEventListener('message', onMsg);
@@ -839,12 +890,16 @@ export default function App() {
   const launchGame = useCallback((game: Game, optionalStateData: any = null) => {
     recordRecentGame(game.id);
     if (game.real) {
+      const hasSlotTarget = Boolean(optionalStateData?.emuState || optionalStateData?.lazyIdbKey);
       Promise.all([
         idbGet(game.id).catch(() => null),
         idbGet(`srm:${game.id}`).catch(() => null),
         idbGet(`rtc:${game.id}`).catch(() => null),
-        optionalStateData?.emuState ? Promise.resolve(null) : idbGet(`autosave:${game.id}`).catch(() => null)
-      ]).then(([blob, srm, rtc, autoSt]) => {
+        hasSlotTarget ? Promise.resolve(null) : idbGet(`autosave:${game.id}`).catch(() => null),
+        !optionalStateData?.emuState && optionalStateData?.lazyIdbKey
+          ? idbGet(optionalStateData.lazyIdbKey).catch(() => null)
+          : Promise.resolve(null)
+      ]).then(([blob, srm, rtc, autoSt, lazySlotRec]) => {
         if (!blob) {
           // ROM binary not on this device yet! Prompt user to select file
           setMissingRomData({ game, optionalStateData });
@@ -857,6 +912,11 @@ export default function App() {
           setLiveScore(engineStateRef.current.score || 0);
           setLiveFrame(engineStateRef.current.frame || 0);
           showToast(`Loaded State (${optionalStateData.timestamp || 'Saved'}) • ${game.title}`);
+        } else if (hasSlotTarget) {
+          engineStateRef.current = createInitialEngineState(game.engineType);
+          setLiveScore(0);
+          setLiveFrame(0);
+          showToast(`Loaded State (${optionalStateData?.timestamp || 'Saved'}) • ${game.title}`);
         } else {
           engineStateRef.current = createInitialEngineState(game.engineType);
           setLiveScore(0);
@@ -864,14 +924,26 @@ export default function App() {
           showToast(`Launching ${game.title} [${game.core}]`);
         }
 
+        const resolvedSlotState = normalizeBinaryData(
+          optionalStateData?.emuState ||
+          lazySlotRec?.emuState ||
+          lazySlotRec?.emuStateBase64 ||
+          lazySlotRec?.stateData?.emuState
+        );
+
+        const isMelonSavestate = (buf: Uint8Array | null) =>
+          Boolean(buf && buf.length > 16 && buf[0] === 0x4D && buf[1] === 0x4C && buf[2] === 0x53 && buf[3] === 0x4E);
+
         setRomUrl(URL.createObjectURL(blob));
         hasUserInteractedRef.current = false;
-        pendingStateRef.current = normalizeBinaryData(optionalStateData?.emuState) || null;
+        const normAuto = autoSt ? normalizeBinaryData(autoSt) : null;
+        const validAuto = normAuto && !(game.core !== 'melonds' && isMelonSavestate(normAuto)) ? normAuto : null;
+        pendingStateRef.current =
+          resolvedSlotState && !(game.core !== 'melonds' && isMelonSavestate(resolvedSlotState))
+            ? resolvedSlotState
+            : validAuto;
         pendingSrmRef.current = srm ? normalizeBinaryData(srm) : null;
         pendingRtcRef.current = rtc ? normalizeBinaryData(rtc) : null;
-        if (!pendingStateRef.current && !pendingSrmRef.current && autoSt) {
-          pendingStateRef.current = normalizeBinaryData(autoSt);
-        }
 
         rewindBufferRef.current = [];
         setIsPaused(false);
@@ -973,6 +1045,7 @@ export default function App() {
       }
 
       const timeStr0 = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const slotIdbKey = `state:${game.id}:${slotNumber}`;
       setSavesByGameId((prev) => {
         const existing = prev[game.id] || createEmptySlotsForGame(game.id);
         return {
@@ -987,19 +1060,20 @@ export default function App() {
                   score: 0,
                   frame: 0,
                   screenshot: shot,
-                  stateData: { version: 'EJS_STATE', gameId: game.id, timestamp: timeStr0, emuState }
+                  // Store lightweight IDB pointer instead of retaining 25MB Uint8Array in React heap
+                  stateData: { version: 'EJS_STATE', gameId: game.id, timestamp: timeStr0, lazyIdbKey: slotIdbKey }
                 }
               : sl
           )
         };
       });
-      idbPut(`state:${game.id}:${slotNumber}`, {
+      idbPut(slotIdbKey, {
         slot: slotNumber,
         label: `Saved ${timeStr0}`,
         timestamp: timeStr0,
         screenshot: shot,
         emuState
-      }).then(() => markLocalSaveModified(`state:${game.id}:${slotNumber}`)).catch(console.error);
+      }).then(() => markLocalSaveModified(slotIdbKey)).catch(console.error);
       soundFX.save();
       showToast(`Saved ${game.title} → Slot #${slotNumber}`);
       return;
@@ -1088,7 +1162,7 @@ export default function App() {
     showToast(`Saved ${game.title} → Slot #${slotNumber}`);
   }, [showToast]);
 
-  const loadStateFromGameSlot = useCallback((game: Game, slotNumber: number) => {
+  const loadStateFromGameSlot = useCallback(async (game: Game, slotNumber: number) => {
     const gameSlots = savesByGameId[game.id] || [];
     const targetSlot = gameSlots.find((s) => s.slot === slotNumber);
     if (!targetSlot || targetSlot.empty || !targetSlot.stateData) {
@@ -1102,7 +1176,12 @@ export default function App() {
     }
     if (game.real) {
       try {
-        const stateToLoad = normalizeBinaryData(targetSlot.stateData.emuState);
+        let raw = targetSlot.stateData.emuState;
+        if (!raw && targetSlot.stateData.lazyIdbKey) {
+          const rec = await idbGet(targetSlot.stateData.lazyIdbKey).catch(() => null);
+          raw = rec?.emuState || rec?.emuStateBase64 || rec?.stateData?.emuState;
+        }
+        const stateToLoad = normalizeBinaryData(raw);
         const win = emuFrameRef.current?.contentWindow as any;
         if (stateToLoad) {
           if (win?.loadStateData) {
@@ -1150,23 +1229,31 @@ export default function App() {
     showToast(`Cleared Slot #${slotNumber}`);
   }, [showToast]);
 
-  const flushLiveProgress = useCallback(async () => {
+  const flushLiveProgress = useCallback(async (includeFullState = true) => {
     if (currentView !== 'ingame' || !activeGame?.id || !activeGame?.real) return;
     if (!hasUserInteractedRef.current) return;
     const win = emuFrameRef.current?.contentWindow as any;
     if (!win) return;
+    const isNdsGame =
+      activeGame.core === 'nds' ||
+      activeGame.core === 'melonds' ||
+      activeGame.core === 'desmume' ||
+      activeGame.core === 'desmume2015' ||
+      activeGame.shortSystem === 'NDS';
     const areBytesEqual = (a: Uint8Array | null, b: Uint8Array | null) => {
       if (!a || !b || a.length !== b.length) return false;
-      for (let i = 0; i < a.length; i++) {
+      const step = a.length > 65536 ? 16 : 1;
+      for (let i = 0; i < a.length; i += step) {
         if (a[i] !== b[i]) return false;
       }
       return true;
     };
     try {
-      const srm = normalizeBinaryData(win.getSrmData?.());
+      const srm = normalizeBinaryData(win.getSrmData?.(false));
       if (srm && srm.length > 0) {
         let nonEmpty = false;
-        for (let i = 0; i < srm.length; i += 4) {
+        const step = isNdsGame ? 32 : 4;
+        for (let i = 0; i < srm.length; i += step) {
           if (srm[i] !== 0 && srm[i] !== 255) { nonEmpty = true; break; }
         }
         if (nonEmpty) {
@@ -1185,21 +1272,60 @@ export default function App() {
           markLocalSaveModified(`rtc:${activeGame.id}`);
         }
       }
-      const stArr = normalizeBinaryData(win.getStateData?.());
-      if (stArr && stArr.length > 0) {
-        const prevAuto = normalizeBinaryData(await idbGet(`autosave:${activeGame.id}`).catch(() => null));
-        if (!areBytesEqual(stArr, prevAuto)) {
-          await idbPut(`autosave:${activeGame.id}`, stArr).catch(() => {});
-          markLocalSaveModified(`autosave:${activeGame.id}`);
+      if (includeFullState) {
+        const stArr = normalizeBinaryData(win.getStateData?.());
+        if (stArr && stArr.length > 0) {
+          const prevAuto = normalizeBinaryData(await idbGet(`autosave:${activeGame.id}`).catch(() => null));
+          if (!areBytesEqual(stArr, prevAuto)) {
+            await idbPut(`autosave:${activeGame.id}`, stArr).catch(() => {});
+            markLocalSaveModified(`autosave:${activeGame.id}`);
+          }
         }
       }
     } catch (e) {}
-  }, [activeGame?.id, activeGame?.real, currentView]);
+  }, [activeGame?.core, activeGame?.id, activeGame?.real, activeGame?.shortSystem, currentView]);
+
+  const handleReturnHome = useCallback(async () => {
+    // 1. Immediately switch back to library view so UI responds with zero lag
+    setCurrentView('home');
+    setInGameMenuOpen(false);
+
+    // 2. Flush current game's SRAM/RTC and autosave to local IndexedDB
+    try {
+      await flushLiveProgress(true);
+    } catch (e) {
+      console.warn('[App] flushLiveProgress on return home warning:', e);
+    }
+
+    // 3. Mark gameplay inactive so cloud sync isn't deferred
+    (window as any).__retroGameplayActive = false;
+    setGameplayActive(false);
+
+    // 4. Auto-sync saves to cloud vault if a sync code is linked and online
+    const code = getSyncCode();
+    if (code && typeof navigator !== 'undefined' && navigator.onLine) {
+      syncNow().catch((err) => {
+        console.warn('[CloudSync] Auto-sync on return to library warning:', err);
+      });
+    }
+  }, [flushLiveProgress]);
 
   useEffect(() => {
     if (currentView !== 'ingame' || !activeGame?.id || !activeGame?.real) return;
-    const timer = setInterval(flushLiveProgress, 8000);
-    const onHide = () => flushLiveProgress();
+    const isNds =
+      activeGame.core === 'nds' ||
+      activeGame.core === 'melonds' ||
+      activeGame.core === 'desmume' ||
+      activeGame.core === 'desmume2015' ||
+      activeGame.shortSystem === 'NDS';
+    // For fast 2D systems (GB, GBC, GBA, NES, SNES, Genesis), capture full progress state every 15s.
+    // For NDS, flush battery progress every 15s and capture full state on navigation/backgrounding.
+    const timer = setInterval(() => {
+      flushLiveProgress(!isNds);
+    }, 15000);
+    const onHide = () => {
+      flushLiveProgress(true);
+    };
     document.addEventListener('visibilitychange', onHide);
     window.addEventListener('pagehide', onHide);
     window.addEventListener('beforeunload', onHide);
@@ -1209,7 +1335,7 @@ export default function App() {
       window.removeEventListener('pagehide', onHide);
       window.removeEventListener('beforeunload', onHide);
     };
-  }, [activeGame?.id, activeGame?.real, currentView, flushLiveProgress]);
+  }, [activeGame?.core, activeGame?.id, activeGame?.real, activeGame?.shortSystem, currentView, flushLiveProgress]);
 
   const exportBatterySave = useCallback(async (game: Game, ext = 'sav') => {
     if (!game) return;
@@ -1228,15 +1354,31 @@ export default function App() {
         srmBytes = await idbGet(`srm:${game.id}`);
       } catch (e) {}
     }
-    if (!srmBytes || srmBytes.length === 0) {
+    let normalized = normalizeBinaryData(srmBytes);
+    if (!normalized || normalized.length === 0) {
       showToast('No in-game battery save found yet — save inside the game first');
       return;
     }
+    // Strip 122-byte DeSmuME .dsv footer when exporting raw .sav for external flashcarts/melonDS/PKHeX
+    if (ext === 'sav' && normalized.length > 122) {
+      const cookie = '|-DESMUME SAVE-|';
+      const cookieOffset = normalized.length - 16;
+      let hasDsvFooter = true;
+      for (let i = 0; i < 16; i++) {
+        if (normalized[cookieOffset + i] !== cookie.charCodeAt(i)) {
+          hasDsvFooter = false;
+          break;
+        }
+      }
+      if (hasDsvFooter) {
+        normalized = normalized.subarray(0, normalized.length - 122);
+      }
+    }
     const baseName = (game.fileName || game.title || 'game').replace(/\.[^/.]+$/, '');
     const outName = `${baseName}.${ext}`;
-    downloadBinaryFile(srmBytes, outName);
+    downloadBinaryFile(normalized, outName);
     soundFX.save();
-    showToast(`Exported ${outName} (${(srmBytes.length / 1024).toFixed(1)} KB)`);
+    showToast(`Exported ${outName} (${(normalized.length / 1024).toFixed(1)} KB)`);
   }, [activeGame?.id, currentView, showToast]);
 
   // Keyboard controls with zero collision & hotkeys
@@ -1322,73 +1464,120 @@ export default function App() {
     };
   }, [currentView, setButtonDown, setButtonUp, activeGame, toggleAudio, saveStateToGameSlot, loadStateFromGameSlot]);
 
-  // Gamepad API integration (W3C standard mapping for Bluetooth / USB gamepads)
+  // Gamepad API integration (Event-driven: zero rAF / Mojo IPC overhead when no controller is connected)
   const prevGamepadButtonsRef = useRef<Record<string, boolean>>({});
   useEffect(() => {
+    let animId = 0;
+
+    const hasConnectedGamepad = () => {
+      try {
+        const list = navigator.getGamepads ? navigator.getGamepads() : [];
+        return Boolean(list && (list[0] || list[1] || list[2] || list[3]));
+      } catch {
+        return false;
+      }
+    };
+
+    const pollGamepads = () => {
+      animId = 0;
+      if (currentView !== 'ingame') return;
+      const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+      const gp = gamepads[0] || gamepads[1] || gamepads[2] || gamepads[3];
+      if (!gp) {
+        // Release any held gamepad buttons and stop polling until gamepadconnected fires
+        for (const key of Object.keys(prevGamepadButtonsRef.current)) {
+          if (prevGamepadButtonsRef.current[key]) {
+            setButtonUp(key as any);
+          }
+        }
+        prevGamepadButtonsRef.current = {};
+        return;
+      }
+
+      const btn = (idx: number) => Boolean(gp.buttons[idx]?.pressed);
+      const axis = (idx: number) => gp.axes[idx] || 0;
+
+      const curState: Record<string, boolean> = {
+        up: btn(12) || axis(1) < -0.45,
+        down: btn(13) || axis(1) > 0.45,
+        left: btn(14) || axis(0) < -0.45,
+        right: btn(15) || axis(0) > 0.45,
+        actionA: btn(0),
+        actionB: btn(1),
+        actionX: btn(2),
+        actionY: btn(3),
+        btnL: btn(4),
+        btnR: btn(5),
+        select: btn(8),
+        start: btn(9)
+      };
+
+      for (const key of Object.keys(curState)) {
+        const wasDown = prevGamepadButtonsRef.current[key];
+        const isDown = curState[key];
+        if (isDown && !wasDown) {
+          setButtonDown(key as any);
+        } else if (!isDown && wasDown) {
+          setButtonUp(key as any);
+        }
+      }
+      prevGamepadButtonsRef.current = curState;
+      animId = requestAnimationFrame(pollGamepads);
+    };
+
+    const startPollingIfNeeded = () => {
+      if (currentView === 'ingame' && !animId && hasConnectedGamepad()) {
+        animId = requestAnimationFrame(pollGamepads);
+      }
+    };
+
     const handleGamepadConnected = (e: GamepadEvent) => {
       showToast(`🎮 Controller Connected: ${e.gamepad.id.slice(0, 24)}`);
       soundFX.save();
+      if (currentView === 'ingame' && !animId) {
+        animId = requestAnimationFrame(pollGamepads);
+      }
     };
 
     const handleGamepadDisconnected = () => {
       showToast('🎮 Controller Disconnected');
+      if (!hasConnectedGamepad() && animId) {
+        cancelAnimationFrame(animId);
+        animId = 0;
+      }
     };
 
     window.addEventListener('gamepadconnected', handleGamepadConnected);
     window.addEventListener('gamepaddisconnected', handleGamepadDisconnected);
-
-    if (currentView !== 'ingame') {
-      return () => {
-        window.removeEventListener('gamepadconnected', handleGamepadConnected);
-        window.removeEventListener('gamepaddisconnected', handleGamepadDisconnected);
-      };
-    }
-
-    let animId: number;
-    const pollGamepads = () => {
-      const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
-      const gp = gamepads[0] || gamepads[1] || gamepads[2] || gamepads[3];
-      if (gp) {
-        const btn = (idx: number) => Boolean(gp.buttons[idx]?.pressed);
-        const axis = (idx: number) => gp.axes[idx] || 0;
-
-        const curState: Record<string, boolean> = {
-          up: btn(12) || axis(1) < -0.45,
-          down: btn(13) || axis(1) > 0.45,
-          left: btn(14) || axis(0) < -0.45,
-          right: btn(15) || axis(0) > 0.45,
-          actionA: btn(0),
-          actionB: btn(1),
-          actionX: btn(2),
-          actionY: btn(3),
-          btnL: btn(4),
-          btnR: btn(5),
-          select: btn(8),
-          start: btn(9)
-        };
-
-        for (const key of Object.keys(curState)) {
-          const wasDown = prevGamepadButtonsRef.current[key];
-          const isDown = curState[key];
-          if (isDown && !wasDown) {
-            setButtonDown(key as any);
-          } else if (!isDown && wasDown) {
-            setButtonUp(key as any);
-          }
-        }
-        prevGamepadButtonsRef.current = curState;
-      }
-      animId = requestAnimationFrame(pollGamepads);
-    };
-
-    animId = requestAnimationFrame(pollGamepads);
+    startPollingIfNeeded();
 
     return () => {
-      cancelAnimationFrame(animId);
+      if (animId) cancelAnimationFrame(animId);
       window.removeEventListener('gamepadconnected', handleGamepadConnected);
       window.removeEventListener('gamepaddisconnected', handleGamepadDisconnected);
     };
   }, [currentView, setButtonDown, setButtonUp, showToast]);
+
+  // Real WASM Core FPS Readback — strictly gated to when Top HUD Bar is visible (zero renders during normal play)
+  useEffect(() => {
+    if (currentView !== 'ingame' || !activeGame.real || !topBarVisible) return;
+    const syncMeasuredFps = () => {
+      if (isPaused) {
+        setFps(0);
+        return;
+      }
+      try {
+        const win = emuFrameRef.current?.contentWindow as any;
+        const measured = typeof win?.getMeasuredFps === 'function' ? win.getMeasuredFps() : 60;
+        setFps(Number.isFinite(measured) && measured > 0 ? measured : 60);
+      } catch {
+        setFps(60);
+      }
+    };
+    syncMeasuredFps();
+    const timer = setInterval(syncMeasuredFps, 500);
+    return () => clearInterval(timer);
+  }, [activeGame.real, currentView, isPaused, topBarVisible]);
 
   // 60 FPS Emulation Engine & Canvas Renderer Loop (Demo Games Only)
   useEffect(() => {
@@ -1544,15 +1733,23 @@ export default function App() {
   }, [games, systemFilter, searchQuery]);
 
   const bindPadButton = useCallback((keyName: string) => {
-    const handleDown = (e: React.SyntheticEvent) => {
-      e.preventDefault();
+    const handleDown = (e: React.PointerEvent) => {
+      if (e.cancelable) e.preventDefault();
       e.stopPropagation();
+      try {
+        (e.currentTarget as HTMLElement)?.setPointerCapture?.(e.pointerId);
+      } catch {}
       setButtonDown(keyName);
     };
 
-    const handleUp = (e: React.SyntheticEvent) => {
-      e.preventDefault();
+    const handleUp = (e: React.PointerEvent) => {
+      if (e.cancelable) e.preventDefault();
       e.stopPropagation();
+      try {
+        if ((e.currentTarget as HTMLElement)?.hasPointerCapture?.(e.pointerId)) {
+          (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+        }
+      } catch {}
       setButtonUp(keyName);
     };
 
@@ -1560,9 +1757,6 @@ export default function App() {
       onPointerDown: handleDown,
       onPointerUp: handleUp,
       onPointerCancel: handleUp,
-      onTouchStart: handleDown,
-      onTouchEnd: handleUp,
-      onTouchCancel: handleUp,
       onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
     };
   }, [setButtonDown, setButtonUp]);
@@ -1573,7 +1767,7 @@ export default function App() {
       <input
         ref={romInputRef}
         type="file"
-        accept=".gb,.gbc,.gba,.nes,.sfc,.smc,.md,.gen,.smd,.bin,.zip"
+        accept=".gb,.gbc,.gba,.nds,.nes,.sfc,.smc,.md,.gen,.smd,.bin,.zip"
         onChange={handleRomUpload}
         className="hidden"
       />
@@ -1631,6 +1825,7 @@ export default function App() {
           revealTopBar={revealTopBar}
           flushLiveProgress={flushLiveProgress}
           setCurrentView={(v) => setCurrentView(v as any)}
+          onReturnHome={handleReturnHome}
           setInGameSaveModalMode={setInGameSaveModalMode}
           setGlobalSettingsOpen={setGlobalSettingsOpen}
           exportBatterySave={exportBatterySave}
@@ -1655,6 +1850,7 @@ export default function App() {
           bindPadButton={bindPadButton}
           setButtonDown={setButtonDown}
           setButtonUp={setButtonUp}
+          setDpadBits={setDpadBits}
           topBarTimer={topBarTimer}
           fps={fps}
           launchGame={launchGame}

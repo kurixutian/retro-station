@@ -150,7 +150,7 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
         </div>
 
         {/* Per-Game Save State Slots Grid (4 Isolated Slots per Game) */}
-        <div className="p-5 space-y-3 flex-1 overflow-y-auto">
+        <div className="p-5 space-y-3 flex-1 overflow-y-auto modal-scroll">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-sm font-extrabold text-zinc-100 flex items-center gap-2">

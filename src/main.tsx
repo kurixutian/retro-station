@@ -5,12 +5,16 @@ import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(<App />);
 
-if ('serviceWorker' in navigator && (window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+if (
+  'serviceWorker' in navigator &&
+  (window.location.protocol === 'https:' ||
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1')
+) {
   window.addEventListener('load', () => {
     navigator.serviceWorker
       .register('./sw.js')
       .then((reg) => {
-        // Actively check GitHub/server for latest code on launch
         reg.update().catch(() => {});
       })
       .catch((err) => {
@@ -18,10 +22,10 @@ if ('serviceWorker' in navigator && (window.location.protocol === 'https:' || wi
       });
   });
 
-  // Automatically refresh when a new service worker version takes over
+  // Refresh once when the Cross-Origin Isolation Service Worker activates on the home screen
   let refreshing = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (!refreshing) {
+    if (!refreshing && !(window as any).__retroGameplayActive) {
       refreshing = true;
       window.location.reload();
     }

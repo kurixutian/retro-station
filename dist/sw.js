@@ -1,4 +1,4 @@
-const CACHE_NAME = 'retro-station-v3';
+const CACHE_NAME = 'retro-station-v5';
 const PRECACHE_ASSETS = [
   './',
   './index.html',
@@ -10,6 +10,27 @@ const PRECACHE_ASSETS = [
   'https://cdn.emulatorjs.org/stable/data/emulator.min.js',
   'https://cdn.emulatorjs.org/stable/data/emulator.min.css'
 ];
+
+// Inject Cross-Origin Isolation headers on top-level HTML navigations so
+// window.SharedArrayBuffer is unlocked for multi-threaded WebAssembly cores
+// (desmume2015-thread-wasm / melonds-thread-wasm pthreads).
+function withIsolationHeaders(res, userAgent) {
+  if (!res || res.status !== 200 || res.type === 'opaque') return res;
+  const headers = new Headers(res.headers);
+  headers.set('Cross-Origin-Opener-Policy', 'same-origin');
+  const isAppleWebKitOnly =
+    typeof userAgent === 'string' &&
+    /Safari\//.test(userAgent) &&
+    !/Chrome\/|Chromium\/|CriOS\/|Edg\//.test(userAgent);
+  // Chromium/Android supports 'credentialless' (unlocks SharedArrayBuffer without CORP restrictions);
+  // Safari/WebKit requires 'require-corp' (all EmulatorJS & Libretro CDNs serve Cross-Origin-Resource-Policy: cross-origin).
+  headers.set('Cross-Origin-Embedder-Policy', isAppleWebKitOnly ? 'require-corp' : 'credentialless');
+  return new Response(res.body, {
+    status: res.status,
+    statusText: res.statusText,
+    headers,
+  });
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -41,9 +62,9 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+  const ua = event.request.headers.get('user-agent') || '';
 
-  // 1. Navigation requests (HTML pages): NETWORK-FIRST strategy with offline fallback
-  // This ensures online users always get the newest app update, while offline users load from cache.
+  // 1. Navigation requests (HTML pages): NETWORK-FIRST with Cross-Origin Isolation headers
   if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request)
@@ -52,16 +73,29 @@ self.addEventListener('fetch', (event) => {
             const clone = networkRes.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
           }
-          return networkRes;
+          return withIsolationHeaders(networkRes, ua);
         })
         .catch(() => {
-          return caches.match('./index.html').then((cached) => cached || caches.match('./'));
+          return caches
+            .match('./index.html')
+            .then((cached) => cached || caches.match('./'))
+            .then((fallback) => (fallback ? withIsolationHeaders(fallback, ua) : fallback));
         })
     );
     return;
   }
 
-  // 2. Static Assets & CDN files: Cache-First / Stale-While-Revalidate strategy
+  // 2a. Cross-origin (EmulatorJS CDN cores): pass straight to the network so the
+  // browser keeps the original request mode. Cache is only an offline fallback;
+  // serving a cached opaque response to a CORS fetch stalls "Download Game Data".
+  if (new URL(event.request.url).origin !== self.location.origin) {
+    event.respondWith(
+      fetch(event.request).catch(() => caches.match(event.request, { ignoreVary: true }))
+    );
+    return;
+  }
+
+  // 2b. Static Assets: Cache-First / Stale-While-Revalidate strategy
   event.respondWith(
     caches.match(event.request, { ignoreVary: true }).then((cached) => {
       const fetchPromise = fetch(event.request)

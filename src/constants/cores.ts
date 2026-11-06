@@ -30,9 +30,10 @@ export const EJS_CORES: Record<string, string> = {
   fceumm: 'nes',
   snes9x: 'snes',
   genesis_plus_gx: 'segaMD',
-  melonds: 'nds',
-  desmume: 'nds',
-  nds: 'nds',
+  melonds: 'desmume2015',
+  desmume: 'desmume2015',
+  desmume2015: 'desmume2015',
+  nds: 'desmume2015',
 };
 
 export const LIBRETRO_SYSTEM_MAP: Record<string, string> = {
@@ -55,7 +56,7 @@ export const LIBRETRO_SYSTEM_MAP: Record<string, string> = {
 };
 
 export const coreRatio = (core: string, isLandscape: boolean = false): number => {
-  if (core === 'melonds' || core === 'desmume' || core === 'nds') {
+  if (core === 'melonds' || core === 'desmume' || core === 'desmume2015' || core === 'nds') {
     return 2 / 3;
   }
   return ({ gambatte: 10 / 9, mgba: 3 / 2, fceumm: 8 / 7, snes9x: 8 / 7 }[core] || 4 / 3);

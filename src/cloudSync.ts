@@ -241,6 +241,7 @@ export function isSyncableKey(key: string): boolean {
     key === 'library_games' ||
     key === 'retro_deleted_games' ||
     key === 'deleted_games' ||
+    key.startsWith('autosave:') ||
     key.startsWith('state:') ||
     key.startsWith('srm:') ||
     key.startsWith('rtc:') ||
@@ -248,7 +249,7 @@ export function isSyncableKey(key: string): boolean {
   );
 }
 
-const isStateLikeKey = (key: string) => key.startsWith('state:');
+const isStateLikeKey = (key: string) => key.startsWith('state:') || key.startsWith('autosave:');
 
 /**
  * Deduplicates and merges game lists.
@@ -435,12 +436,30 @@ export async function markLocalSaveModified(key: string): Promise<void> {
 
 // Debounced Auto-Sync (10 minutes = 600,000ms)
 // Gives plenty of time for battery saves/states to accumulate, avoiding repetitive worker invocations.
-// Manual sync is always available instantly in the Sync Modal or Top Bar.
+// Deferred automatically while active gameplay is running so Base64 serialization never stalls the frame loop.
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+let gameplayActive = false;
+let deferredSyncPending = false;
+
+export function setGameplayActive(active: boolean): void {
+  gameplayActive = active;
+  if (!active && deferredSyncPending) {
+    deferredSyncPending = false;
+    const code = getSyncCode();
+    if (code && typeof navigator !== 'undefined' && navigator.onLine) {
+      triggerDebouncedCloudSync(4000);
+    }
+  }
+}
+
 export function triggerDebouncedCloudSync(delayMs = 10 * 60 * 1000) {
-  if (debounceTimer) return; // Keep the active 10-minute schedule without resetting on every minor change
+  if (debounceTimer) return; // Keep the active schedule without resetting on every minor change
   debounceTimer = setTimeout(() => {
     debounceTimer = null;
+    if (gameplayActive) {
+      deferredSyncPending = true;
+      return;
+    }
     const code = getSyncCode();
     if (code && navigator.onLine) {
       syncNow().catch((e) => console.warn('[CloudSync] Periodic auto-sync warning:', e));

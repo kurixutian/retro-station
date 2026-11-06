@@ -89,29 +89,38 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       .filter((g): g is Game => Boolean(g));
   }, [recentGameIds, games]);
 
-  // ── Blurred Background of Randomized Installed ROMs ───────────────────
+  // ── Blurred Background of Randomized Installed ROMs (GPU-capped 4 tiles) ──
   const bgGames = React.useMemo(() => {
     if (games.length === 0) return [];
     const shuffled = [...games].sort(() => 0.5 - Math.random());
-    return shuffled.slice(0, 6);
+    return shuffled.slice(0, 4);
   }, [games, featuredIndex]);
 
   return (
     <div className="relative pb-16 min-h-[100vh] min-h-[100lvh]">
-      {/* Blurred Ambient Backdrop of Randomized Installed ROMs */}
-      {bgGames.length > 0 && (
-        <div className="fixed inset-0 pointer-events-none overflow-hidden z-0 select-none">
-          <div className="absolute -inset-10 grid grid-cols-2 sm:grid-cols-3 gap-6 blur-3xl scale-110 opacity-30 transform-gpu">
-            {bgGames.map((game, i) => (
-              <div key={`bg-${game.id}-${i}`} className="relative w-full h-full min-h-[350px]">
-                <GameCoverImage game={game} imgClassName="w-full h-full object-cover" />
-              </div>
-            ))}
-          </div>
-          {/* Subtle dark vignette overlay so UI text, cards & headers have 100% clarity and contrast */}
-          <div className="absolute inset-0 bg-gradient-to-b from-zinc-950/80 via-zinc-950/75 to-zinc-950/90" />
+      {/* Ambient Randomized ROM Backdrop (GPU-friendly blur-xl, unmounted in-game) */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0 select-none">
+        <div className="grid grid-cols-2 w-full h-full opacity-20 blur-xl scale-105">
+          {bgGames.map((g, idx) => {
+            const imgSrc = g.customCover || g.cover;
+            return (
+              <div
+                key={`${g.id}-${idx}`}
+                className="w-full h-full bg-cover bg-center"
+                style={{
+                  backgroundImage: imgSrc ? `url(${imgSrc})` : `linear-gradient(135deg, ${theme.hex}33, #09090b)`
+                }}
+              />
+            );
+          })}
         </div>
-      )}
+        <div
+          className="absolute inset-0"
+          style={{
+            background: `radial-gradient(circle at 20% 15%, ${theme.hex}18 0%, rgba(9,9,11,0.82) 55%, rgba(9,9,11,0.96) 100%)`
+          }}
+        />
+      </div>
       {/* Sticky Top Navigation Bar */}
       <header
         className="sticky top-0 z-30 backdrop-blur-xl bg-zinc-950/85 border-b border-zinc-800/80 px-4 sm:px-6 py-3 hardware-panel"
@@ -361,7 +370,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
               <div className="space-y-1">
                 <h3 className="text-base font-bold text-zinc-200">No ROMs in Library</h3>
                 <p className="text-xs text-zinc-500 max-w-xs">
-                  Load your own .gbc, .gba, .nes, .sfc, or .md ROM files to start playing.
+                  Load your own .nds, .gbc, .gba, .nes, .sfc, or .md ROM files to start playing.
                 </p>
               </div>
               <button
@@ -393,7 +402,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                 </div>
                 <span className="text-xs font-bold text-zinc-200">Load Downloaded ROM</span>
                 <span className="text-[10px] text-zinc-500 text-center leading-tight">
-                  Auto-detects .gbc, .gba, .nes, .sfc, .md
+                  Auto-detects .nds, .gbc, .gba, .nes, .sfc, .md
                 </span>
               </button>
             </div>

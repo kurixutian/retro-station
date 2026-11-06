@@ -64,6 +64,7 @@ interface InGameViewProps {
   revealTopBar: (duration?: number) => void;
   flushLiveProgress: () => void;
   setCurrentView: (v: string) => void;
+  onReturnHome?: () => void;
   setInGameSaveModalMode: (mode: 'save' | 'load' | null) => void;
   setGlobalSettingsOpen: (o: boolean) => void;
   exportBatterySave: (game: any, format: 'sav' | 'srm') => void;
@@ -88,6 +89,7 @@ interface InGameViewProps {
   bindPadButton: (name: string) => Record<string, any>;
   setButtonDown?: (name: string) => void;
   setButtonUp?: (name: string) => void;
+  setDpadBits?: (dpadMask: number) => void;
   topBarTimer: React.MutableRefObject<any>;
   fps?: number;
   launchGame?: (game: Game) => void;
@@ -117,6 +119,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
   revealTopBar,
   flushLiveProgress,
   setCurrentView,
+  onReturnHome,
   setInGameSaveModalMode,
   setGlobalSettingsOpen,
   exportBatterySave,
@@ -141,6 +144,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
   bindPadButton,
   setButtonDown,
   setButtonUp,
+  setDpadBits,
   topBarTimer,
   fps,
   launchGame,
@@ -150,8 +154,16 @@ export const InGameView: React.FC<InGameViewProps> = ({
   setColorProfile,
 }) => {
   const dpadContainerRef = React.useRef<HTMLDivElement | null>(null);
+  const dpadRectRef = React.useRef<DOMRect | null>(null);
+  const dpadArmRefs = React.useRef<Record<'up' | 'down' | 'left' | 'right', HTMLElement | null>>({
+    up: null,
+    down: null,
+    left: null,
+    right: null,
+  });
   const landscapeDeckRef = React.useRef<HTMLDivElement | null>(null);
   const activeDpadPointerId = React.useRef<number | null>(null);
+  const activeDpadMaskRef = React.useRef<number>(0);
   const activeDpadDirs = React.useRef<Record<string, boolean>>({
     up: false,
     down: false,
@@ -314,54 +326,93 @@ export const InGameView: React.FC<InGameViewProps> = ({
     return () => window.removeEventListener('retro_layout_updated', handleLayoutUpdate);
   }, [isLandscape, systemKey]);
 
+  const syncDpadArmVisuals = React.useCallback((mask: number) => {
+    const arms = dpadArmRefs.current;
+    if (arms.up) arms.up.dataset.pressed = (mask & 16) !== 0 ? 'true' : 'false';
+    if (arms.down) arms.down.dataset.pressed = (mask & 32) !== 0 ? 'true' : 'false';
+    if (arms.left) arms.left.dataset.pressed = (mask & 64) !== 0 ? 'true' : 'false';
+    if (arms.right) arms.right.dataset.pressed = (mask & 128) !== 0 ? 'true' : 'false';
+  }, []);
+
   const updateDpadByCoords = React.useCallback((clientX: number, clientY: number) => {
-    if (!dpadContainerRef.current || !setButtonDown || !setButtonUp) return;
-    const rect = dpadContainerRef.current.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
+    const rect = dpadRectRef.current || dpadContainerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const cx = rect.left + rect.width * 0.5;
+    const cy = rect.top + rect.height * 0.5;
     const dx = clientX - cx;
     const dy = clientY - cy;
-    const dist = Math.sqrt(dx * dx + dy * dy);
+    const distSq = dx * dx + dy * dy;
 
-    const deadzone = 12;
-    const nextDirs = {
-      up: dist > deadzone && dy < -8 && Math.abs(dy) > Math.abs(dx) * 0.45,
-      down: dist > deadzone && dy > 8 && Math.abs(dy) > Math.abs(dx) * 0.45,
-      left: dist > deadzone && dx < -8 && Math.abs(dx) > Math.abs(dy) * 0.45,
-      right: dist > deadzone && dx > 8 && Math.abs(dx) > Math.abs(dy) * 0.45,
-    };
+    // 10px radial deadzone (100px^2) avoids sqrt() on every 120Hz touch sample
+    const outsideDeadzone = distSq > 100;
+    const absDx = Math.abs(dx);
+    const absDy = Math.abs(dy);
 
+    const up = outsideDeadzone && dy < -7 && absDy > absDx * 0.42;
+    const down = outsideDeadzone && dy > 7 && absDy > absDx * 0.42;
+    const left = outsideDeadzone && dx < -7 && absDx > absDy * 0.42;
+    const right = outsideDeadzone && dx > 7 && absDx > absDy * 0.42;
+
+    const nextMask = (up ? 16 : 0) | (down ? 32 : 0) | (left ? 64 : 0) | (right ? 128 : 0);
+    if (nextMask === activeDpadMaskRef.current) return;
+
+    const prevMask = activeDpadMaskRef.current;
+    activeDpadMaskRef.current = nextMask;
+    syncDpadArmVisuals(nextMask);
+
+    // Trigger crisp haptic pulse only when entering a new direction bit
+    if ((nextMask & ~prevMask) !== 0) {
+      haptics.dpad();
+    }
+
+    if (setDpadBits) {
+      setDpadBits(nextMask);
+      return;
+    }
+
+    const nextDirs = { up, down, left, right };
     (['up', 'down', 'left', 'right'] as const).forEach((dir) => {
       if (nextDirs[dir] && !activeDpadDirs.current[dir]) {
         activeDpadDirs.current[dir] = true;
-        setButtonDown(dir);
+        setButtonDown?.(dir);
       } else if (!nextDirs[dir] && activeDpadDirs.current[dir]) {
         activeDpadDirs.current[dir] = false;
-        setButtonUp(dir);
+        setButtonUp?.(dir);
       }
     });
-  }, [setButtonDown, setButtonUp]);
+  }, [setButtonDown, setButtonUp, setDpadBits, syncDpadArmVisuals]);
 
   const releaseDpadAll = React.useCallback(() => {
     activeDpadPointerId.current = null;
-    if (!setButtonUp) return;
+    dpadRectRef.current = null;
+    if (activeDpadMaskRef.current === 0) return;
+    activeDpadMaskRef.current = 0;
+    syncDpadArmVisuals(0);
+    if (setDpadBits) {
+      setDpadBits(0);
+      return;
+    }
     (['up', 'down', 'left', 'right'] as const).forEach((dir) => {
       if (activeDpadDirs.current[dir]) {
         activeDpadDirs.current[dir] = false;
-        setButtonUp(dir);
+        setButtonUp?.(dir);
       }
     });
-  }, [setButtonUp]);
+  }, [setButtonUp, setDpadBits, syncDpadArmVisuals]);
 
   const renderDpad = () => (
     <div
       ref={dpadContainerRef}
       className="relative w-32 h-32 select-none touch-none dpad-cross rounded-2xl"
       style={{ touchAction: 'none', WebkitTouchCallout: 'none' }}
+      onContextMenu={(e) => e.preventDefault()}
       onPointerDown={(e) => {
         if (customizing) return;
+        if (e.cancelable) e.preventDefault();
+        e.stopPropagation();
         activeDpadPointerId.current = e.pointerId;
-        try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch (err) {}
+        dpadRectRef.current = e.currentTarget.getBoundingClientRect();
+        try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
         updateDpadByCoords(e.clientX, e.clientY);
       }}
       onPointerMove={(e) => {
@@ -370,50 +421,46 @@ export const InGameView: React.FC<InGameViewProps> = ({
       }}
       onPointerUp={(e) => {
         if (customizing || activeDpadPointerId.current !== e.pointerId) return;
-        try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch (err) {}
+        try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (err) {}
         releaseDpadAll();
       }}
-      onPointerCancel={() => {
-        if (customizing) return;
+      onPointerCancel={(e) => {
+        if (customizing || activeDpadPointerId.current !== e.pointerId) return;
         releaseDpadAll();
       }}
     >
-      {/* Up */}
-      <button
-        type="button"
-        {...safeBindPadButton('up')}
-        className={`absolute top-0 left-10 w-12 h-12 rounded-t-xl border flex items-center justify-center shadow-md touch-none select-none dpad-arm ${theme.dpadBg}`}
-        aria-label="Up"
+      {/* Up (visual-only arm; pointer capture owned by parent cross for zero-drop thumb sliding) */}
+      <div
+        ref={(el) => { dpadArmRefs.current.up = el; }}
+        className={`absolute top-0 left-10 w-12 h-12 rounded-t-xl border flex items-center justify-center shadow-md pointer-events-none select-none dpad-arm ${theme.dpadBg}`}
+        aria-hidden="true"
       >
         <ChevronUp className="w-6 h-6 stroke-[2.5]" />
-      </button>
+      </div>
       {/* Down */}
-      <button
-        type="button"
-        {...safeBindPadButton('down')}
-        className={`absolute bottom-0 left-10 w-12 h-12 rounded-b-xl border flex items-center justify-center shadow-md touch-none select-none dpad-arm ${theme.dpadBg}`}
-        aria-label="Down"
+      <div
+        ref={(el) => { dpadArmRefs.current.down = el; }}
+        className={`absolute bottom-0 left-10 w-12 h-12 rounded-b-xl border flex items-center justify-center shadow-md pointer-events-none select-none dpad-arm ${theme.dpadBg}`}
+        aria-hidden="true"
       >
         <ChevronDown className="w-6 h-6 stroke-[2.5]" />
-      </button>
+      </div>
       {/* Left */}
-      <button
-        type="button"
-        {...safeBindPadButton('left')}
-        className={`absolute top-10 left-0 w-12 h-12 rounded-l-xl border flex items-center justify-center shadow-md touch-none select-none dpad-arm ${theme.dpadBg}`}
-        aria-label="Left"
+      <div
+        ref={(el) => { dpadArmRefs.current.left = el; }}
+        className={`absolute top-10 left-0 w-12 h-12 rounded-l-xl border flex items-center justify-center shadow-md pointer-events-none select-none dpad-arm ${theme.dpadBg}`}
+        aria-hidden="true"
       >
         <ChevronLeft className="w-6 h-6 stroke-[2.5]" />
-      </button>
+      </div>
       {/* Right */}
-      <button
-        type="button"
-        {...safeBindPadButton('right')}
-        className={`absolute top-10 right-0 w-12 h-12 rounded-r-xl border flex items-center justify-center shadow-md touch-none select-none dpad-arm ${theme.dpadBg}`}
-        aria-label="Right"
+      <div
+        ref={(el) => { dpadArmRefs.current.right = el; }}
+        className={`absolute top-10 right-0 w-12 h-12 rounded-r-xl border flex items-center justify-center shadow-md pointer-events-none select-none dpad-arm ${theme.dpadBg}`}
+        aria-hidden="true"
       >
         <ChevronRight className="w-6 h-6 stroke-[2.5]" />
-      </button>
+      </div>
       {/* Molded Center Pivot Dish */}
       <div
         className={`absolute top-10 left-10 w-12 h-12 ${
@@ -618,9 +665,14 @@ export const InGameView: React.FC<InGameViewProps> = ({
     </div>
   );
 
+  const playerSrcDoc = React.useMemo(() => {
+    if (!activeGame.real || !romUrl) return '';
+    return buildPlayerHtml(EJS_CORES[activeGame.core] || 'gb', romUrl, activeGame.title);
+  }, [activeGame.core, activeGame.real, activeGame.title, romUrl]);
+
   const renderGameScreen = () => {
     const gameFilter = getComputedGameFilter(shaders);
-    const isNds = activeGame.core === 'melonds' || activeGame.core === 'desmume' || activeGame.core === 'nds';
+    const isNds = activeGame.core === 'melonds' || activeGame.core === 'desmume' || activeGame.core === 'desmume2015' || activeGame.core === 'nds';
 
     return (
       <>
@@ -632,8 +684,8 @@ export const InGameView: React.FC<InGameViewProps> = ({
               title="emulator"
               className={`w-full h-full block border-0 bg-black ${isNds && !customizing ? 'pointer-events-auto' : 'pointer-events-none'}`}
               allow="autoplay; gamepad"
-              style={{ filter: isNds ? 'none' : gameFilter }}
-              srcDoc={buildPlayerHtml(EJS_CORES[activeGame.core] || 'gb', romUrl, activeGame.title)}
+              style={{ filter: isNds ? 'none' : gameFilter, contain: 'strict' }}
+              srcDoc={playerSrcDoc}
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-xs font-mono text-zinc-400">
@@ -660,8 +712,8 @@ export const InGameView: React.FC<InGameViewProps> = ({
           </div>
         )}
 
-      {/* Shader Layer 1: CRT Horizontal Scanlines */}
-      {shaders.scanlines && (
+      {/* Shader Layer 1: CRT Horizontal Scanlines (bypassed on NDS for touch/GPU performance) */}
+      {!isNds && shaders.scanlines && (
         <div
           className="absolute inset-0 pointer-events-none z-10"
           style={{
@@ -673,7 +725,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
       )}
 
       {/* Shader Layer 2: Game Boy Dot-Matrix LCD Grid Lines */}
-      {shaders.gbGrid && (
+      {!isNds && shaders.gbGrid && (
         <div
           className="absolute inset-0 pointer-events-none z-10 opacity-70"
           style={{
@@ -686,7 +738,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
       )}
 
       {/* Shader Layer 3: Bezel Vignette & CRT Corner Shadow */}
-      {shaders.bezelVignette && (
+      {!isNds && shaders.bezelVignette && (
         <div
           className="absolute inset-0 pointer-events-none z-20"
           style={{
@@ -699,7 +751,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
         {isPaused && (
           <div
             onClick={() => revealTopBar(5000)}
-            className="absolute inset-0 z-20 bg-black/70 backdrop-blur-xs flex flex-col items-center justify-center gap-2 cursor-pointer select-none"
+            className="absolute inset-0 z-20 bg-black/70 flex flex-col items-center justify-center gap-2 cursor-pointer select-none"
           >
             <Pause className="w-8 h-8 text-amber-400" />
             <span className="font-mono font-black text-sm tracking-widest text-white">
@@ -957,8 +1009,8 @@ export const InGameView: React.FC<InGameViewProps> = ({
           className={`absolute top-0 left-0 right-0 z-40 flex items-center justify-between px-3.5 pb-2.5 ${
             shaders.amoled
               ? 'bg-black border-b border-zinc-900'
-              : 'bg-black/90 backdrop-blur-md border-b border-white/10'
-          } transition-all duration-300 shadow-xl ${
+              : 'bg-black/90 border-b border-white/10'
+          } transition-[transform,opacity] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] shadow-xl ${
             topBarVisible
               ? 'translate-y-0 opacity-100 pointer-events-auto'
               : '-translate-y-full opacity-0 pointer-events-none'
@@ -968,13 +1020,17 @@ export const InGameView: React.FC<InGameViewProps> = ({
         >
           <button
             onClick={() => {
-              flushLiveProgress();
-              setInGameMenuOpen(false);
-              setCurrentView('home');
+              if (onReturnHome) {
+                onReturnHome();
+              } else {
+                flushLiveProgress();
+                setInGameMenuOpen(false);
+                setCurrentView('home');
+              }
             }}
             className="p-2 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-zinc-200 border border-white/10 text-xs font-bold transition active:scale-95 tactile-btn"
             aria-label="Library"
-            title="Library"
+            title="Return to Library & Sync"
           >
             <Home className="w-3.5 h-3.5 text-emerald-400" />
           </button>
@@ -984,7 +1040,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
               {formatGameTitle(activeGame.title)}
             </span>
             <div className="flex items-center gap-1.5 text-[9px] font-mono text-zinc-400">
-              <span className="px-1.5 py-0.2 rounded bg-zinc-800 text-amber-300 font-bold uppercase">{activeGame.core}</span>
+              <span className="px-1.5 py-0.2 rounded bg-zinc-800 text-amber-300 font-bold uppercase">{activeGame.shortSystem || activeGame.core}</span>
               <span>•</span>
               <span className="text-emerald-400 font-bold">
                 {fps || 60} FPS
@@ -1034,7 +1090,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
             onClick={() => setInGameMenuOpen(false)}
           >
             <div
-              className="w-full max-w-sm max-h-[85vh] overflow-y-auto bg-zinc-950 border border-zinc-700 rounded-2xl shadow-2xl p-4 space-y-2.5"
+              className="w-full max-w-sm max-h-[85vh] overflow-y-auto modal-scroll bg-zinc-950 border border-zinc-700 rounded-2xl shadow-2xl p-4 space-y-2.5"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between">
@@ -1217,7 +1273,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
               maxWidth: '100%',
               maxHeight: isLandscape
                 ? `calc((100lvh - ${Math.round(22 * transportScale + 10)}px) * ${screenScale})`
-                : (activeGame.core === 'melonds' || activeGame.core === 'desmume' || activeGame.core === 'nds')
+                : (activeGame.core === 'melonds' || activeGame.core === 'desmume' || activeGame.core === 'desmume2015' || activeGame.core === 'nds')
                 ? `calc(50lvh * ${screenScale})`
                 : `calc(48lvh * ${screenScale})`,
               width: isLandscape
@@ -1225,13 +1281,14 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 : `min(100%, calc(${(50 * coreRatio(activeGame.core, isLandscape)).toFixed(2)}lvh * ${screenScale}))`,
               height: isLandscape
                 ? `calc((100lvh - ${Math.round(22 * transportScale + 10)}px) * ${screenScale})`
-                : (activeGame.core === 'melonds' || activeGame.core === 'desmume' || activeGame.core === 'nds')
+                : (activeGame.core === 'melonds' || activeGame.core === 'desmume' || activeGame.core === 'desmume2015' || activeGame.core === 'nds')
                 ? `calc(50lvh * ${screenScale})`
                 : `calc(48lvh * ${screenScale})`,
-              boxShadow: !shaders.amoled && shaders.rgbBloom
+              boxShadow: !shaders.amoled && shaders.rgbBloom && activeGame.core !== 'melonds' && activeGame.core !== 'desmume' && activeGame.core !== 'desmume2015' && activeGame.core !== 'nds'
                 ? `0 0 28px ${theme.hex}33, inset 0 0 18px rgba(0,0,0,0.75)`
                 : 'none',
-              filter: 'none'
+              filter: 'none',
+              contain: 'layout paint'
             }}
           >
             {renderGameScreen()}
@@ -1252,13 +1309,13 @@ export const InGameView: React.FC<InGameViewProps> = ({
                     setSelectedPad('transport');
                   }
                 }}
-                className={`bg-black/90 backdrop-blur-md px-2.5 py-0.5 rounded-lg border ${
+                className={`bg-black/90 px-2.5 py-0.5 rounded-lg border ${
                   customizing && selectedPad === 'transport'
                     ? 'border-emerald-400 ring-2 ring-emerald-400/50 bg-emerald-950/20 cursor-pointer'
                     : customizing
                     ? 'border-white/30 cursor-pointer'
                     : 'border-white/10'
-                } shadow-xl flex items-center transition-all origin-center`}
+                } shadow-xl flex items-center transition-[transform,border-color,background-color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] origin-center`}
                 style={{
                   transform: `scale(${transportScale})`,
                   transformOrigin: 'center center',

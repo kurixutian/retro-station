@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
 /* Safe-area insets for fullscreen notch & mobile home-bars */
 html, body {
   height: 100%;
@@ -66,6 +72,22 @@ input, textarea {
   padding-bottom: max(env(safe-area-inset-bottom, 0px), 12px);
 }
 
+/* Hide scrollbars cleanly on horizontal pill bars */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Inner scrollable sheets/modals should never chain scroll to background */
+.modal-scroll {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* Authentic Hardware Textures & Cartridge Styling */
 .cartridge-grip {
   background-image: repeating-linear-gradient(
@@ -83,16 +105,16 @@ input, textarea {
 
 .cartridge-card {
   box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.6), inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
-  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.18s ease;
+  transition: transform 0.18s var(--ease-out), box-shadow 0.18s var(--ease-out), border-color 0.18s ease;
 }
 
 .cartridge-card:active {
-  transform: translateY(-1px);
+  transform: scale(0.97);
 }
 
 .tactile-btn {
   box-shadow: 0 3px 0 0 rgba(0, 0, 0, 0.45), inset 0 1px 0 0 rgba(255, 255, 255, 0.2);
-  transition: transform 0.06s ease, box-shadow 0.06s ease, filter 0.1s ease;
+  transition: transform 0.06s var(--ease-out), box-shadow 0.06s var(--ease-out), filter 0.1s ease;
 }
 
 .tactile-btn:active {
@@ -105,11 +127,13 @@ input, textarea {
 }
 
 .dpad-arm {
-  transition: transform 0.05s ease, background-color 0.05s ease;
+  transition: transform 0.05s ease, background-color 0.05s ease, filter 0.05s ease;
 }
 
-.dpad-arm:active {
-  filter: brightness(1.2);
+.dpad-arm:active,
+.dpad-arm[data-pressed="true"] {
+  filter: brightness(1.28);
+  transform: scale(0.95);
 }
 
 .hardware-led {
@@ -135,25 +159,35 @@ input, textarea {
   border-radius: 999px;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
+@media (hover: hover) and (pointer: fine) {
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.25);
+  }
 }
 
 @keyframes heroArtPan {
-  0%, 15% {
-    object-position: 50% 0%;
+  0%, 100% {
+    transform: scale(1.08) translate3d(0, -3%, 0);
   }
-  50%, 65% {
-    object-position: 50% 100%;
-  }
-  100% {
-    object-position: 50% 0%;
+  50% {
+    transform: scale(1.08) translate3d(0, 3%, 0);
   }
 }
 
 .hero-art-pan {
-  object-position: 50% 0%;
-  animation: heroArtPan 16s ease-in-out infinite;
-  will-change: object-position;
+  animation: heroArtPan 18s var(--ease-in-out) infinite;
+  backface-visibility: hidden;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .hero-art-pan {
+    animation: none !important;
+    transform: none !important;
+  }
+
+  .cartridge-card,
+  .tactile-btn,
+  .dpad-arm {
+    transition-duration: 0.01ms !important;
+  }
+}
