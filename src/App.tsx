@@ -457,8 +457,6 @@ export default function App() {
 
   const pressStartTimesRef = useRef<Record<string, number>>({});
   const releaseTimersRef = useRef<Record<string, any>>({});
-  const dpadDirTimesRef = useRef<Record<string, number>>({});
-  const dpadDirTimersRef = useRef<Record<string, any>>({});
 
   const sendKey = useCallback((name: string, down: boolean) => {
     if (down) hasUserInteractedRef.current = true;
@@ -473,10 +471,6 @@ export default function App() {
       }
       if (typeof win.simulateButton === 'function') {
         win.simulateButton(name, down);
-        return;
-      }
-      if (typeof win.simulateKey === 'function') {
-        win.simulateKey(name, down);
         return;
       }
       if (idx !== undefined) {
@@ -535,37 +529,10 @@ export default function App() {
         return;
       } catch (e) {}
     }
-    const updateDir = (dir: string, nextState: boolean) => {
-      const now = performance.now();
-      if (nextState) {
-        if (dpadDirTimersRef.current[dir]) {
-          clearTimeout(dpadDirTimersRef.current[dir]);
-          dpadDirTimersRef.current[dir] = null;
-        }
-        dpadDirTimesRef.current[dir] = now;
-        sendKey(dir, true);
-      } else {
-        const pressTime = dpadDirTimesRef.current[dir] || 0;
-        const elapsed = now - pressTime;
-        const minHold = 75;
-        if (dpadDirTimersRef.current[dir]) {
-          clearTimeout(dpadDirTimersRef.current[dir]);
-          dpadDirTimersRef.current[dir] = null;
-        }
-        if (elapsed < minHold) {
-          dpadDirTimersRef.current[dir] = setTimeout(() => {
-            dpadDirTimersRef.current[dir] = null;
-            sendKey(dir, false);
-          }, minHold - elapsed);
-        } else {
-          sendKey(dir, false);
-        }
-      }
-    };
-    updateDir('up', nextUp);
-    updateDir('down', nextDown);
-    updateDir('left', nextLeft);
-    updateDir('right', nextRight);
+    sendKey('up', nextUp);
+    sendKey('down', nextDown);
+    sendKey('left', nextLeft);
+    sendKey('right', nextRight);
   }, [sendKey]);
 
   const setButtonDown = useCallback((name: string) => {
@@ -587,25 +554,12 @@ export default function App() {
   }, [sendKey]);
 
   const setButtonUp = useCallback((name: string) => {
-    const pressTime = pressStartTimesRef.current[name] || 0;
-    const elapsed = performance.now() - pressTime;
-    const minHold = 75;
-
     if (releaseTimersRef.current[name]) {
       clearTimeout(releaseTimersRef.current[name]);
       releaseTimersRef.current[name] = null;
     }
-
-    if (elapsed < minHold) {
-      releaseTimersRef.current[name] = setTimeout(() => {
-        releaseTimersRef.current[name] = null;
-        keysRef.current[name] = false;
-        sendKey(name, false);
-      }, minHold - elapsed);
-    } else {
-      keysRef.current[name] = false;
-      sendKey(name, false);
-    }
+    keysRef.current[name] = false;
+    sendKey(name, false);
   }, [sendKey]);
 
   useEffect(() => {
