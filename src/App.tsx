@@ -518,30 +518,21 @@ export default function App() {
       EdgeTapRef.current[name] = true;
     }
     keysRef.current[name] = true;
+    sendKey(name, true);
     if (['up', 'down', 'left', 'right'].includes(name)) {
       haptics.dpad();
     } else {
       haptics.tap();
     }
-    sendKey(name, true);
   }, [sendKey]);
 
   const setButtonUp = useCallback((name: string) => {
-    const minHold = 75; // 75ms minimum hold ensures emulator core / Libretro VBlank polls the key press even at 2x/4x/8x speed
-    const elapsed = performance.now() - (pressStartTimesRef.current[name] || 0);
-
-    const performRelease = () => {
-      keysRef.current[name] = false;
-      sendKey(name, false);
+    if (releaseTimersRef.current[name]) {
+      clearTimeout(releaseTimersRef.current[name]);
       releaseTimersRef.current[name] = null;
-    };
-
-    if (elapsed < minHold) {
-      if (releaseTimersRef.current[name]) clearTimeout(releaseTimersRef.current[name]);
-      releaseTimersRef.current[name] = setTimeout(performRelease, minHold - elapsed);
-    } else {
-      performRelease();
     }
+    keysRef.current[name] = false;
+    sendKey(name, false);
   }, [sendKey]);
 
   useEffect(() => {
@@ -1665,20 +1656,35 @@ export default function App() {
     const handleDown = (e: React.PointerEvent) => {
       if (e.cancelable) e.preventDefault();
       e.stopPropagation();
-      try {
-        (e.currentTarget as HTMLElement)?.setPointerCapture?.(e.pointerId);
-      } catch {}
+      const el = e.currentTarget as HTMLElement | null;
+      if (el) {
+        el.dataset.pressed = 'true';
+        try { el.setPointerCapture?.(e.pointerId); } catch {}
+      }
       setButtonDown(keyName);
     };
 
     const handleUp = (e: React.PointerEvent) => {
       if (e.cancelable) e.preventDefault();
       e.stopPropagation();
+      const el = e.currentTarget as HTMLElement | null;
+      if (el) {
+        el.dataset.pressed = 'false';
+        try {
+          if (el.hasPointerCapture?.(e.pointerId)) {
+            el.releasePointerCapture(e.pointerId);
+          }
+        } catch {}
+      }
+      setButtonUp(keyName);
+    };
+
+    const handleLeave = (e: React.PointerEvent) => {
+      const el = e.currentTarget as HTMLElement | null;
       try {
-        if ((e.currentTarget as HTMLElement)?.hasPointerCapture?.(e.pointerId)) {
-          (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-        }
+        if (el?.hasPointerCapture?.(e.pointerId)) return;
       } catch {}
+      if (el) el.dataset.pressed = 'false';
       setButtonUp(keyName);
     };
 
@@ -1686,6 +1692,7 @@ export default function App() {
       onPointerDown: handleDown,
       onPointerUp: handleUp,
       onPointerCancel: handleUp,
+      onPointerLeave: handleLeave,
       onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
     };
   }, [setButtonDown, setButtonUp]);

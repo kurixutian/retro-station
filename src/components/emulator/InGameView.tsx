@@ -322,6 +322,27 @@ export const InGameView: React.FC<InGameViewProps> = ({
     return () => window.removeEventListener('retro_layout_updated', handleLayoutUpdate);
   }, [isLandscape, systemKey]);
 
+  React.useEffect(() => {
+    const refreshDpadRect = () => {
+      if (dpadContainerRef.current) {
+        dpadRectRef.current = dpadContainerRef.current.getBoundingClientRect();
+      }
+    };
+    refreshDpadRect();
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && dpadContainerRef.current) {
+      ro = new ResizeObserver(refreshDpadRect);
+      ro.observe(dpadContainerRef.current);
+    }
+    window.addEventListener('resize', refreshDpadRect);
+    window.addEventListener('orientationchange', refreshDpadRect);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener('resize', refreshDpadRect);
+      window.removeEventListener('orientationchange', refreshDpadRect);
+    };
+  }, [isLandscape, padLayout.dpad, customizing]);
+
   const syncDpadArmVisuals = React.useCallback((mask: number) => {
     const arms = dpadArmRefs.current;
     if (arms.up) arms.up.dataset.pressed = (mask & 16) !== 0 ? 'true' : 'false';
@@ -331,7 +352,11 @@ export const InGameView: React.FC<InGameViewProps> = ({
   }, []);
 
   const updateDpadByCoords = React.useCallback((clientX: number, clientY: number) => {
-    const rect = dpadRectRef.current || dpadContainerRef.current?.getBoundingClientRect();
+    let rect = dpadRectRef.current;
+    if (!rect || rect.width === 0) {
+      rect = dpadContainerRef.current?.getBoundingClientRect() || null;
+      dpadRectRef.current = rect;
+    }
     if (!rect) return;
     const cx = rect.left + rect.width * 0.5;
     const cy = rect.top + rect.height * 0.5;
@@ -339,27 +364,21 @@ export const InGameView: React.FC<InGameViewProps> = ({
     const dy = clientY - cy;
     const distSq = dx * dx + dy * dy;
 
-    // 10px radial deadzone (100px^2) avoids sqrt() on every 120Hz touch sample
-    const outsideDeadzone = distSq > 100;
+    // 5px radial deadzone (25px^2) ensures edge & inner-arm taps register immediately without sqrt()
+    const outsideDeadzone = distSq > 25;
     const absDx = Math.abs(dx);
     const absDy = Math.abs(dy);
 
-    const up = outsideDeadzone && dy < -7 && absDy > absDx * 0.42;
-    const down = outsideDeadzone && dy > 7 && absDy > absDx * 0.42;
-    const left = outsideDeadzone && dx < -7 && absDx > absDy * 0.42;
-    const right = outsideDeadzone && dx > 7 && absDx > absDy * 0.42;
+    const up = outsideDeadzone && dy < -4 && absDy > absDx * 0.42;
+    const down = outsideDeadzone && dy > 4 && absDy > absDx * 0.42;
+    const left = outsideDeadzone && dx < -4 && absDx > absDy * 0.42;
+    const right = outsideDeadzone && dx > 4 && absDx > absDy * 0.42;
 
     const nextMask = (up ? 16 : 0) | (down ? 32 : 0) | (left ? 64 : 0) | (right ? 128 : 0);
     if (nextMask === activeDpadMaskRef.current) return;
 
-    const prevMask = activeDpadMaskRef.current;
     activeDpadMaskRef.current = nextMask;
     syncDpadArmVisuals(nextMask);
-
-    // Trigger crisp haptic pulse only when entering a new direction bit
-    if ((nextMask & ~prevMask) !== 0) {
-      haptics.dpad();
-    }
 
     const nextDirs = { up, down, left, right };
     (['up', 'down', 'left', 'right'] as const).forEach((dir) => {
@@ -375,7 +394,6 @@ export const InGameView: React.FC<InGameViewProps> = ({
 
   const releaseDpadAll = React.useCallback(() => {
     activeDpadPointerId.current = null;
-    dpadRectRef.current = null;
     if (activeDpadMaskRef.current === 0) return;
     activeDpadMaskRef.current = 0;
     syncDpadArmVisuals(0);
@@ -391,14 +409,21 @@ export const InGameView: React.FC<InGameViewProps> = ({
     <div
       ref={dpadContainerRef}
       className="relative w-32 h-32 select-none touch-none dpad-cross rounded-2xl"
-      style={{ touchAction: 'none', WebkitTouchCallout: 'none' }}
+      style={{
+        touchAction: 'none',
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
+        WebkitTouchCallout: 'none',
+      }}
       onContextMenu={(e) => e.preventDefault()}
       onPointerDown={(e) => {
         if (customizing) return;
         if (e.cancelable) e.preventDefault();
         e.stopPropagation();
         activeDpadPointerId.current = e.pointerId;
-        dpadRectRef.current = e.currentTarget.getBoundingClientRect();
+        if (!dpadRectRef.current || dpadRectRef.current.width === 0) {
+          dpadRectRef.current = e.currentTarget.getBoundingClientRect();
+        }
         try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
         updateDpadByCoords(e.clientX, e.clientY);
       }}
@@ -413,6 +438,13 @@ export const InGameView: React.FC<InGameViewProps> = ({
       }}
       onPointerCancel={(e) => {
         if (customizing || activeDpadPointerId.current !== e.pointerId) return;
+        releaseDpadAll();
+      }}
+      onPointerLeave={(e) => {
+        if (customizing || activeDpadPointerId.current !== e.pointerId) return;
+        try {
+          if (e.currentTarget.hasPointerCapture(e.pointerId)) return;
+        } catch (err) {}
         releaseDpadAll();
       }}
     >
