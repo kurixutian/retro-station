@@ -508,33 +508,6 @@ export default function App() {
     };
   }, [romUrl]);
 
-  const setDpadBits = useCallback((dpadMask: number) => {
-    if (dpadMask !== 0) hasUserInteractedRef.current = true;
-    const nextUp = (dpadMask & 16) !== 0;
-    const nextDown = (dpadMask & 32) !== 0;
-    const nextLeft = (dpadMask & 64) !== 0;
-    const nextRight = (dpadMask & 128) !== 0;
-    if (nextUp && !keysRef.current.up) EdgeTapRef.current.up = true;
-    if (nextDown && !keysRef.current.down) EdgeTapRef.current.down = true;
-    if (nextLeft && !keysRef.current.left) EdgeTapRef.current.left = true;
-    if (nextRight && !keysRef.current.right) EdgeTapRef.current.right = true;
-    keysRef.current.up = nextUp;
-    keysRef.current.down = nextDown;
-    keysRef.current.left = nextLeft;
-    keysRef.current.right = nextRight;
-    const win = emuFrameRef.current?.contentWindow as any;
-    if (win && typeof win.setDpadMask === 'function') {
-      try {
-        win.setDpadMask(dpadMask);
-        return;
-      } catch (e) {}
-    }
-    sendKey('up', nextUp);
-    sendKey('down', nextDown);
-    sendKey('left', nextLeft);
-    sendKey('right', nextRight);
-  }, [sendKey]);
-
   const setButtonDown = useCallback((name: string) => {
     if (releaseTimersRef.current[name]) {
       clearTimeout(releaseTimersRef.current[name]);
@@ -554,12 +527,21 @@ export default function App() {
   }, [sendKey]);
 
   const setButtonUp = useCallback((name: string) => {
-    if (releaseTimersRef.current[name]) {
-      clearTimeout(releaseTimersRef.current[name]);
+    const minHold = 75; // 75ms minimum hold ensures emulator core / Libretro VBlank polls the key press even at 2x/4x/8x speed
+    const elapsed = performance.now() - (pressStartTimesRef.current[name] || 0);
+
+    const performRelease = () => {
+      keysRef.current[name] = false;
+      sendKey(name, false);
       releaseTimersRef.current[name] = null;
+    };
+
+    if (elapsed < minHold) {
+      if (releaseTimersRef.current[name]) clearTimeout(releaseTimersRef.current[name]);
+      releaseTimersRef.current[name] = setTimeout(performRelease, minHold - elapsed);
+    } else {
+      performRelease();
     }
-    keysRef.current[name] = false;
-    sendKey(name, false);
   }, [sendKey]);
 
   useEffect(() => {
@@ -1797,7 +1779,6 @@ export default function App() {
           bindPadButton={bindPadButton}
           setButtonDown={setButtonDown}
           setButtonUp={setButtonUp}
-          setDpadBits={setDpadBits}
           topBarTimer={topBarTimer}
           fps={fps}
           launchGame={launchGame}

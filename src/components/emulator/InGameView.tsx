@@ -87,7 +87,6 @@ interface InGameViewProps {
   bindPadButton: (name: string) => Record<string, any>;
   setButtonDown?: (name: string) => void;
   setButtonUp?: (name: string) => void;
-  setDpadBits?: (dpadMask: number) => void;
   topBarTimer: React.MutableRefObject<any>;
   fps?: number;
   launchGame?: (game: Game) => void;
@@ -142,7 +141,6 @@ export const InGameView: React.FC<InGameViewProps> = ({
   bindPadButton,
   setButtonDown,
   setButtonUp,
-  setDpadBits,
   topBarTimer,
   fps,
   launchGame,
@@ -363,11 +361,6 @@ export const InGameView: React.FC<InGameViewProps> = ({
       haptics.dpad();
     }
 
-    if (setDpadBits) {
-      setDpadBits(nextMask);
-      return;
-    }
-
     const nextDirs = { up, down, left, right };
     (['up', 'down', 'left', 'right'] as const).forEach((dir) => {
       if (nextDirs[dir] && !activeDpadDirs.current[dir]) {
@@ -378,7 +371,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
         setButtonUp?.(dir);
       }
     });
-  }, [setButtonDown, setButtonUp, setDpadBits, syncDpadArmVisuals]);
+  }, [setButtonDown, setButtonUp, syncDpadArmVisuals]);
 
   const releaseDpadAll = React.useCallback(() => {
     activeDpadPointerId.current = null;
@@ -386,17 +379,13 @@ export const InGameView: React.FC<InGameViewProps> = ({
     if (activeDpadMaskRef.current === 0) return;
     activeDpadMaskRef.current = 0;
     syncDpadArmVisuals(0);
-    if (setDpadBits) {
-      setDpadBits(0);
-      return;
-    }
     (['up', 'down', 'left', 'right'] as const).forEach((dir) => {
       if (activeDpadDirs.current[dir]) {
         activeDpadDirs.current[dir] = false;
         setButtonUp?.(dir);
       }
     });
-  }, [setButtonUp, setDpadBits, syncDpadArmVisuals]);
+  }, [setButtonUp, syncDpadArmVisuals]);
 
   const renderDpad = () => (
     <div
