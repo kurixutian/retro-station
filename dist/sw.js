@@ -1,4 +1,4 @@
-const CACHE_NAME = 'retro-station-v6';
+const CACHE_NAME = 'retro-station-v7';
 const PRECACHE_ASSETS = [
   './',
   './index.html',
@@ -41,6 +41,12 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+  const reqUrl = new URL(event.request.url);
+
+  // Never intercept Cloud Sync API calls in the Service Worker
+  if (reqUrl.pathname.startsWith('/api/') || reqUrl.hostname.includes('workers.dev')) {
+    return;
+  }
 
   // 1. Navigation requests (HTML pages): NETWORK-FIRST strategy
   if (event.request.mode === 'navigate') {
@@ -62,9 +68,9 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 2a. Cross-origin requests (EmulatorJS CDN cores & Cloudflare Vault sync):
+  // 2a. Cross-origin requests (EmulatorJS CDN cores & thumbnails):
   // Pass straight to the network so requests aren't cached as opaque or blocked.
-  if (new URL(event.request.url).origin !== self.location.origin) {
+  if (reqUrl.origin !== self.location.origin) {
     event.respondWith(
       fetch(event.request).catch(() => caches.match(event.request, { ignoreVary: true }))
     );

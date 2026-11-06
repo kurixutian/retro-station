@@ -241,7 +241,6 @@ export function isSyncableKey(key: string): boolean {
     key === 'library_games' ||
     key === 'retro_deleted_games' ||
     key === 'deleted_games' ||
-    key.startsWith('autosave:') ||
     key.startsWith('state:') ||
     key.startsWith('srm:') ||
     key.startsWith('rtc:') ||
@@ -249,7 +248,7 @@ export function isSyncableKey(key: string): boolean {
   );
 }
 
-const isStateLikeKey = (key: string) => key.startsWith('state:') || key.startsWith('autosave:');
+const isStateLikeKey = (key: string) => key.startsWith('state:');
 
 /**
  * Deduplicates and merges game lists.
@@ -526,6 +525,7 @@ export async function syncNow(): Promise<{
     try {
       const res = await fetch(fetchUrl, {
         method: 'GET',
+        cache: 'no-store',
         headers: { Accept: 'application/json' },
       });
 
@@ -724,6 +724,18 @@ export async function syncNow(): Promise<{
 
     // 4. Gather local items to push to remote
     const itemsToUpload: Record<string, SyncVaultItem> = {};
+
+    // Automatically compact any bloated legacy autosave:* entries in remote vault
+    for (const [rKey, rItem] of Object.entries(remoteItems)) {
+      if (rKey.startsWith('autosave:') && rItem && rItem.data !== null) {
+        itemsToUpload[rKey] = {
+          key: rKey,
+          data: null,
+          updatedAt: (rItem.updatedAt || Date.now()) + 1000,
+          isBinary: false,
+        };
+      }
+    }
 
     for (const key of Array.from(allLocalSyncableKeys)) {
       const localMeta = metaMap[key];
