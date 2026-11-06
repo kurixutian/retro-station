@@ -25,6 +25,7 @@ export default {
 
     const corsHeaders = {
       'Access-Control-Allow-Origin': '*',
+      'Cross-Origin-Resource-Policy': 'cross-origin',
       'Content-Type': 'application/json',
     };
 
