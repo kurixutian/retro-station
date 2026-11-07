@@ -195,6 +195,7 @@ export default function App() {
   // Modals & Drawers
   const [detailGame, setDetailGame] = useState<Game | null>(null);
   const [globalSettingsOpen, setGlobalSettingsOpen] = useState(false);
+  const [controlsModalOpen, setControlsModalOpen] = useState(false);
   const [inGameMenuOpen, setInGameMenuOpen] = useState(false);
   const [inGameSaveModalMode, setInGameSaveModalMode] = useState<'save' | 'load' | null>(null);
   const [cloudModalOpen, setCloudModalOpen] = useState(false);
@@ -692,7 +693,6 @@ export default function App() {
   }, [activeGame?.id, isMuted]);
 
   const [fps, setFps] = useState(60);
-  const [controlsModalOpen, setControlsModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const keysRef = useRef<Record<string, boolean>>({

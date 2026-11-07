@@ -547,7 +547,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </p>
                 <div className="flex flex-wrap items-center gap-2 pt-1">
                   <a
-                    href="https://github.com/kurixutian/retro-station/releases"
+                    href="https://github.com/kurixutian/retro-station/releases/tag/latest"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex-1 py-2 px-3 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold flex items-center justify-center gap-1.5 transition active:scale-95"
