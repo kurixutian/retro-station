@@ -70,3 +70,29 @@ test('base64 byte conversion round-trips correctly', () => {
   const restored = new Uint8Array(Buffer.from(b64, 'base64'));
   assert.deepEqual(Array.from(restored), Array.from(original));
 });
+
+test('Google Drive filename encoding round-trips keys with double underscores and colons losslessly', () => {
+  const keyToDriveFilename = (key) => `rs_v2_${encodeURIComponent(key)}.json`;
+  const driveFilenameToKey = (filename) => {
+    if (filename.startsWith('rs_v2_') && filename.endsWith('.json')) {
+      return decodeURIComponent(filename.slice('rs_v2_'.length, -'.json'.length));
+    }
+    return null;
+  };
+
+  const trickyKeys = [
+    'library_games',
+    'retro_games',
+    'state:rom_pokemon__emerald_v1:1',
+    'srm:rom_zelda__links_awakening',
+    'rtc:rom_gold:crystal',
+    'cover:rom_ff7__disc1',
+  ];
+
+  for (const key of trickyKeys) {
+    const fname = keyToDriveFilename(key);
+    assert.ok(fname.endsWith('.json'));
+    assert.equal(driveFilenameToKey(fname), key);
+  }
+});
+

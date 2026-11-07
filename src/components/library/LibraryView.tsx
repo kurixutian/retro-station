@@ -31,7 +31,7 @@ interface LibraryViewProps {
   onOpenSettings: () => void;
   onTriggerAddRom: () => void;
   onOpenCloudSync: () => void;
-  cloudStatus?: 'unlinked' | 'idle' | 'syncing' | 'offline' | 'error';
+  cloudStatus?: 'unlinked' | 'idle' | 'syncing' | 'needs_reauth' | 'offline' | 'error';
   onOpenControls?: () => void;
   recentGameIds?: string[];
 }

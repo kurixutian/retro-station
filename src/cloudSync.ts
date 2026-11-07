@@ -1,37 +1,51 @@
 // ============================================================================
-// RETROSTATION SYNC ENGINE v2 (CLOUDFLARE WORKER + DURABLE OBJECT + R2)
+// RETROSTATION CLOUD SYNC ENGINE (GOOGLE DRIVE APPDATA + OFFLINE-FIRST)
 // ----------------------------------------------------------------------------
 // Architecture:
-//   - Vault is stored as ONE R2 OBJECT PER ITEM (not one giant JSON blob),
-//     so a big save state syncs without dragging the whole library along.
-//   - A Durable Object (one per sync code) serializes every write and stamps
-//     SERVER timestamps. Client-device clocks are no longer trusted for
-//     remote-side comparison, which kills the "last write silently wins by
-//     skewed clock" bug class.
-//   - Deletes are explicit tombstoned DELETE calls (also propagated for save
-//     slots/SRAM/RTC/covers when the owning game is deleted), so saves do not
-//     resurrect from stale copies on other devices.
-//   - Failures are retried with exponential backoff and surfaced in a sync
-//     report (pulled / pushed / skipped-too-large / errors) instead of being
-//     swallowed by empty catch blocks.
-//   - ROM binaries are NEVER synced (by design; re-link ROMs on new devices)
-//     and the server rejects those keys outright.
+//   - Zero server cost ($0.00 forever): saves are stored directly in each
+//     player's own Google Drive hidden `appDataFolder` via OAuth 2.0.
+//   - One JSON file per item (`rs_v2_<encodeURIComponent(key)>.json`) with
+//     lossless bijective key encoding (fixes the old `__` gameId corruption).
+//   - All binary payloads (save states `Uint8Array`, SRAM `.srm`, RTC clocks)
+//     are serialized as base64 inside valid JSON and restored to exact
+//     `Uint8Array` instances on pull (fixes the old JSON.stringify Uint8Array
+//     and binary `.srm` corruption bugs).
+//   - ROM binaries are NEVER uploaded (prevents 20-50 MB mobile timeouts).
+//   - Access tokens are cached with their expiry timestamp so page reloads
+//     within the hour stay connected; expired sessions surface `needs_reauth`
+//     cleanly and reconnect in one tap.
+//   - Tombstones propagate deletions across devices and actually remove stale
+//     files from Drive.
 // ============================================================================
 
 import { idbGet, idbPut, idbDelete, idbGetAllKeys } from './services/storage/idb';
+
+declare global {
+  interface Window {
+    google?: any;
+  }
+}
 
 export type CloudSyncStatus =
   | 'unlinked'
   | 'idle'
   | 'syncing'
+  | 'needs_reauth'
   | 'offline'
   | 'error';
+
+export interface GoogleUserProfile {
+  email: string;
+  name?: string;
+  picture?: string;
+}
 
 export interface SyncStatusInfo {
   status: CloudSyncStatus;
   details: string;
   lastSyncTime: string | null;
   syncCode: string | null;
+  user: GoogleUserProfile | null;
 }
 
 export interface SyncReport {
@@ -55,33 +69,36 @@ export const EMPTY_SYNC_REPORT: SyncReport = {
 };
 
 // Storage Keys
-const SYNC_CODE_KEY = 'retro_sync_code';
-const SYNC_ENDPOINT_KEY = 'retro_sync_endpoint';
+const CLIENT_ID_STORAGE_KEY = 'retro_google_client_id';
+const USER_PROFILE_STORAGE_KEY = 'retro_google_user';
+const TOKEN_STORAGE_KEY = 'retro_google_token';
 const LAST_SYNC_TIME_KEY = 'retro_last_sync_time';
 const SYNC_META_KEY = 'retro_sync_meta';
 const DEVICE_ID_KEY = 'retro_device_id';
 const DELETED_GAMES_KEY = 'retro_deleted_games';
+const TOMBSTONES_DRIVE_FILENAME = 'rs_v2___tombstones__.json';
 
-// Per-item size caps (visible in the sync report; no more silent skips)
-const CAP_STATE_BYTES = 6 * 1024 * 1024; // JSON w/ base64 state payload
-const CAP_SRAM_BYTES = 4 * 1024 * 1024;  // raw SRAM/RTC bytes
-const CAP_COVER_BYTES = 512 * 1024;      // data URL string
+// Per-item size caps (visible in the sync report; no silent skips)
+const CAP_STATE_BYTES = 10 * 1024 * 1024; // 10 MB state payload
+const CAP_SRAM_BYTES = 5 * 1024 * 1024;   // 5 MB SRAM/RTC bytes
+const CAP_COVER_BYTES = 1024 * 1024;      // 1 MB cover data URL
 const MAX_CONCURRENT_PULLS = 4;
 
-// Demo-only pseudo-games are never synced.
+// Demo-only pseudo-games are never synced
 const DEMO_GAME_IDS = new Set(['pokemon_gold']);
 
-// Default worker endpoint (your live Cloudflare Worker)
-export const DEFAULT_SYNC_ENDPOINT = 'https://retro-vault.xtian-xtn.workers.dev';
+export const DEFAULT_GOOGLE_CLIENT_ID =
+  '812701015700-srefneer1disk609pa2s4pqj7s2c8ln0.apps.googleusercontent.com';
 
 // Persistent Device ID
 export function getOrCreateDeviceId(): string {
   try {
     let id = localStorage.getItem(DEVICE_ID_KEY);
     if (!id) {
-      id = typeof crypto !== 'undefined' && crypto.randomUUID
-        ? crypto.randomUUID().slice(0, 8)
-        : `dev-${Math.random().toString(36).substring(2, 10)}`;
+      id =
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID().slice(0, 8)
+          : `dev-${Math.random().toString(36).substring(2, 10)}`;
       localStorage.setItem(DEVICE_ID_KEY, id);
     }
     return id;
@@ -90,7 +107,313 @@ export function getOrCreateDeviceId(): string {
   }
 }
 
-// Tombstone Management (Tracks deleted games so they don't resurrect across devices)
+// ============================================================================
+// GOOGLE OAUTH 2.0 & USER PROFILE MANAGEMENT
+// ============================================================================
+
+export function getGoogleClientId(): string {
+  try {
+    const custom = localStorage.getItem(CLIENT_ID_STORAGE_KEY);
+    if (custom && custom.trim()) return custom.trim();
+    return (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || DEFAULT_GOOGLE_CLIENT_ID;
+  } catch (e) {
+    return DEFAULT_GOOGLE_CLIENT_ID;
+  }
+}
+
+export function setGoogleClientId(id: string | null): void {
+  try {
+    const clean = (id || '').trim();
+    if (!clean || clean === DEFAULT_GOOGLE_CLIENT_ID) {
+      localStorage.removeItem(CLIENT_ID_STORAGE_KEY);
+    } else {
+      localStorage.setItem(CLIENT_ID_STORAGE_KEY, clean);
+    }
+    tokenClient = null;
+  } catch (e) {}
+}
+
+export function getCustomGoogleClientId(): string | null {
+  try {
+    return localStorage.getItem(CLIENT_ID_STORAGE_KEY);
+  } catch (e) {
+    return null;
+  }
+}
+
+export function getCachedUserProfile(): GoogleUserProfile | null {
+  try {
+    const raw = localStorage.getItem(USER_PROFILE_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function setCachedUserProfile(profile: GoogleUserProfile | null): void {
+  try {
+    if (profile) {
+      localStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(profile));
+    } else {
+      localStorage.removeItem(USER_PROFILE_STORAGE_KEY);
+    }
+  } catch (e) {}
+}
+
+interface StoredToken {
+  accessToken: string;
+  expiresAt: number;
+}
+
+function loadStoredToken(): StoredToken | null {
+  try {
+    const raw = localStorage.getItem(TOKEN_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredToken;
+    if (parsed?.accessToken && parsed?.expiresAt && Date.now() < parsed.expiresAt - 60_000) {
+      return parsed;
+    }
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
+  } catch (e) {}
+  return null;
+}
+
+function saveStoredToken(accessToken: string | null, expiresAt = 0): void {
+  try {
+    if (accessToken && expiresAt > Date.now()) {
+      localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify({ accessToken, expiresAt }));
+    } else {
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+    }
+  } catch (e) {}
+}
+
+const initialToken = loadStoredToken();
+let inMemoryAccessToken: string | null = initialToken?.accessToken || null;
+let tokenExpiresAt: number = initialToken?.expiresAt || 0;
+let tokenClient: any = null;
+
+export function hasValidToken(): boolean {
+  if (inMemoryAccessToken && Date.now() < tokenExpiresAt - 60_000) {
+    return true;
+  }
+  const stored = loadStoredToken();
+  if (stored) {
+    inMemoryAccessToken = stored.accessToken;
+    tokenExpiresAt = stored.expiresAt;
+    return true;
+  }
+  return false;
+}
+
+// Compatibility helper used by App.tsx / SettingsModal.tsx to check if cloud sync is linked
+export function getSyncCode(): string | null {
+  const user = getCachedUserProfile();
+  if (user?.email) return user.email;
+  if (hasValidToken()) return 'google-drive';
+  return null;
+}
+
+// Dynamically load Google Identity Services script
+let gisLoadingPromise: Promise<boolean> | null = null;
+export async function loadGisScript(): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+  if (window.google?.accounts?.oauth2) return true;
+  if (gisLoadingPromise) return gisLoadingPromise;
+
+  gisLoadingPromise = new Promise<boolean>((resolve) => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      gisLoadingPromise = null;
+      resolve(false);
+      return;
+    }
+    const existing = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
+    if (existing) {
+      existing.addEventListener('load', () => resolve(true));
+      existing.addEventListener('error', () => {
+        gisLoadingPromise = null;
+        resolve(false);
+      });
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.onload = () => resolve(true);
+    script.onerror = () => {
+      console.warn('[CloudSync] GIS script failed to load.');
+      gisLoadingPromise = null;
+      resolve(false);
+    };
+    document.head.appendChild(script);
+  });
+
+  return gisLoadingPromise;
+}
+
+async function fetchUserProfile(token: string): Promise<GoogleUserProfile | null> {
+  try {
+    const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const profile: GoogleUserProfile = {
+        email: data.email || 'Google Drive Connected',
+        name: data.name || data.given_name || 'Player',
+        picture: data.picture || '',
+      };
+      setCachedUserProfile(profile);
+      notifyStatusListeners();
+      return profile;
+    }
+  } catch (e) {}
+  return null;
+}
+
+async function initTokenClient(): Promise<any> {
+  const clientId = getGoogleClientId();
+  if (!clientId) {
+    setStatus('unlinked', 'Google Client ID not configured');
+    return null;
+  }
+
+  const loaded = await loadGisScript();
+  if (!loaded || !window.google?.accounts?.oauth2) {
+    setStatus(
+      typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'error',
+      'Google Identity Services unavailable'
+    );
+    return null;
+  }
+
+  try {
+    tokenClient = window.google.accounts.oauth2.initTokenClient({
+      client_id: clientId,
+      scope:
+        'https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
+      callback: () => {},
+    });
+    return tokenClient;
+  } catch (err: any) {
+    console.error('[CloudSync] Failed to initialize token client:', err);
+    setStatus('error', err?.message || 'Failed to initialize Google OAuth');
+    return null;
+  }
+}
+
+export async function ensureToken(interactive = false): Promise<string | null> {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    setStatus('offline', 'Offline (saves kept locally)');
+    return null;
+  }
+
+  if (hasValidToken() && inMemoryAccessToken) {
+    return inMemoryAccessToken;
+  }
+
+  // Never trigger popup in background when not interactive
+  if (!interactive) {
+    if (getCachedUserProfile()) {
+      setStatus('needs_reauth', 'Session expired — tap Reconnect or Sync Now');
+    } else {
+      setStatus('unlinked', 'Not signed in');
+    }
+    return null;
+  }
+
+  if (!tokenClient) {
+    await initTokenClient();
+  }
+  if (!tokenClient) return null;
+
+  return new Promise<string | null>((resolve) => {
+    let settled = false;
+    const finish = (token: string | null) => {
+      if (settled) return;
+      settled = true;
+      resolve(token);
+    };
+
+    tokenClient.callback = async (resp: any) => {
+      if (resp?.error) {
+        if (
+          resp.error === 'interaction_required' ||
+          resp.error === 'consent_required' ||
+          resp.error === 'access_denied'
+        ) {
+          setStatus('needs_reauth', 'Sign-in cancelled or requires approval');
+        } else {
+          setStatus('error', resp.error_description || resp.error);
+        }
+        finish(null);
+        return;
+      }
+
+      if (resp?.access_token) {
+        inMemoryAccessToken = resp.access_token;
+        const expiresInSec = Number(resp.expires_in) || 3599;
+        tokenExpiresAt = Date.now() + (expiresInSec - 60) * 1000;
+        saveStoredToken(inMemoryAccessToken, tokenExpiresAt);
+        if (!getCachedUserProfile()) {
+          setCachedUserProfile({ email: 'Google Drive User', name: 'Player' });
+        }
+        await fetchUserProfile(resp.access_token);
+        setStatus('idle', 'Connected to Google Drive');
+        finish(resp.access_token);
+      } else {
+        finish(null);
+      }
+    };
+
+    tokenClient.error_callback = (err: any) => {
+      const msg = err?.message || err?.type || 'Sign-in window closed';
+      setStatus(getCachedUserProfile() ? 'needs_reauth' : 'unlinked', msg);
+      finish(null);
+    };
+
+    try {
+      const cached = getCachedUserProfile();
+      const reqOpts: Record<string, string> = { prompt: '' };
+      if (cached?.email && cached.email.includes('@')) {
+        reqOpts.hint = cached.email;
+      }
+      tokenClient.requestAccessToken(reqOpts);
+    } catch (err: any) {
+      setStatus('error', err?.message || 'Could not open Google sign-in');
+      finish(null);
+    }
+  });
+}
+
+export async function signInWithGoogle(): Promise<boolean> {
+  const token = await ensureToken(true);
+  if (!token) return false;
+  return true;
+}
+
+export async function signOutGoogle(): Promise<void> {
+  const tok = inMemoryAccessToken;
+  inMemoryAccessToken = null;
+  tokenExpiresAt = 0;
+  saveStoredToken(null, 0);
+  setCachedUserProfile(null);
+  try {
+    localStorage.removeItem(LAST_SYNC_TIME_KEY);
+  } catch (e) {}
+  if (tok && typeof window !== 'undefined' && window.google?.accounts?.oauth2?.revoke) {
+    try {
+      window.google.accounts.oauth2.revoke(tok, () => {});
+    } catch (e) {}
+  }
+  setStatus('unlinked', 'Disconnected from Google Drive');
+}
+
+// ============================================================================
+// TOMBSTONE MANAGEMENT
+// ============================================================================
+
 export function getDeletedGameIds(): string[] {
   try {
     const raw = localStorage.getItem(DELETED_GAMES_KEY);
@@ -123,128 +446,25 @@ export function unrecordDeletedGame(gameId: string): void {
   } catch (e) {}
 }
 
-// Sync Code Management
-export function getSyncCode(): string | null {
-  try {
-    const code = localStorage.getItem(SYNC_CODE_KEY);
-    return code ? code.trim().toUpperCase() : null;
-  } catch (e) {
-    return null;
-  }
-}
+// ============================================================================
+// STATUS STATE & LISTENERS
+// ============================================================================
 
-export function setSyncCode(code: string | null): void {
-  try {
-    if (code && code.trim()) {
-      localStorage.setItem(SYNC_CODE_KEY, code.trim().toUpperCase());
-      setStatus('idle', 'Sync code linked');
-    } else {
-      localStorage.removeItem(SYNC_CODE_KEY);
-      localStorage.removeItem(LAST_SYNC_TIME_KEY);
-      setStatus('unlinked', 'No sync code linked');
-    }
-  } catch (e) {}
-}
-
-export function clearSyncCode(): void {
-  setSyncCode(null);
-}
-
-// Generate friendly Sync Code: RETRO-XXXX-XXXX
-export function generateSyncCode(): string {
-  const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'; // Omitting 0/O, 1/I
-  const randPart = (len: number) => {
-    let res = '';
-    for (let i = 0; i < len; i++) {
-      res += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return res;
-  };
-  return `RETRO-${randPart(4)}-${randPart(4)}`;
-}
-
-// Vault Endpoint Management
-// NOTE: unlike v1, a FAILED sync must never erase a custom endpoint here -
-// v1 silently deleting it caused surprise re-syncs against the official vault.
-export function getSyncEndpoint(): string {
-  try {
-    const custom = localStorage.getItem(SYNC_ENDPOINT_KEY);
-    if (!custom) return DEFAULT_SYNC_ENDPOINT;
-    const clean = custom.trim().replace(/\/+$/, '');
-    if (
-      !clean ||
-      clean === DEFAULT_SYNC_ENDPOINT.replace(/\/+$/, '') ||
-      clean === 'https://retro-vault.workers.dev' ||
-      clean.includes('your-subdomain') ||
-      clean.includes('your-worker') ||
-      clean.includes('placeholder')
-    ) {
-      return DEFAULT_SYNC_ENDPOINT;
-    }
-    return clean;
-  } catch (e) {
-    return DEFAULT_SYNC_ENDPOINT;
-  }
-}
-
-export function setSyncEndpoint(url: string | null): void {
-  try {
-    if (!url) {
-      localStorage.removeItem(SYNC_ENDPOINT_KEY);
-      return;
-    }
-    const clean = url.trim().replace(/\/+$/, '');
-    if (
-      clean &&
-      clean !== DEFAULT_SYNC_ENDPOINT.replace(/\/+$/, '') &&
-      clean !== 'https://retro-vault.workers.dev' &&
-      !clean.includes('your-subdomain') &&
-      !clean.includes('your-worker') &&
-      !clean.includes('placeholder')
-    ) {
-      localStorage.setItem(SYNC_ENDPOINT_KEY, clean);
-    } else {
-      localStorage.removeItem(SYNC_ENDPOINT_KEY);
-    }
-  } catch (e) {}
-}
-
-export function getCustomEndpoint(): string | null {
-  try {
-    return localStorage.getItem(SYNC_ENDPOINT_KEY);
-  } catch (e) {
-    return null;
-  }
-}
-
-// Checks the deployed worker reports a sane config (R2 bound; NOT the old
-// in-memory fallback that silently accepted writes then evaporated).
-export async function getVaultHealth(endpoint: string): Promise<{ ok: boolean; storage: string }> {
-  try {
-    const res = await fetch(`${endpoint}/health`, { method: 'GET', cache: 'no-store' });
-    if (!res.ok) return { ok: false, storage: 'error' };
-    const body = await res.json();
-    return {
-      ok: body.status === 'ok' && body.storage === 'R2',
-      storage: String(body.storage || 'unknown'),
-    };
-  } catch (e) {
-    return { ok: false, storage: 'unreachable' };
-  }
-}
-
-// Status State & Listeners
 function getInitialStatus(): { status: CloudSyncStatus; details: string } {
   try {
-    const code = localStorage.getItem(SYNC_CODE_KEY);
-    if (!code) return { status: 'unlinked', details: 'No sync code linked' };
+    const user = getCachedUserProfile();
+    const valid = hasValidToken();
+    if (!user && !valid) return { status: 'unlinked', details: 'Not signed in to Google Drive' };
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       return { status: 'offline', details: 'Offline (saves kept locally)' };
+    }
+    if (!valid) {
+      return { status: 'needs_reauth', details: 'Session expired — tap Sync Now to reconnect' };
     }
     const lastSync = localStorage.getItem(LAST_SYNC_TIME_KEY);
     return {
       status: 'idle',
-      details: lastSync ? `Synced (${lastSync})` : 'Connected',
+      details: lastSync ? `Synced (${lastSync})` : 'Connected to Google Drive',
     };
   } catch (e) {
     return { status: 'unlinked', details: '' };
@@ -256,6 +476,14 @@ let currentStatus: CloudSyncStatus = initStatus.status;
 let statusDetails = initStatus.details;
 const statusListeners = new Set<(status: CloudSyncStatus, details: string) => void>();
 
+function notifyStatusListeners() {
+  statusListeners.forEach((fn) => {
+    try {
+      fn(currentStatus, statusDetails);
+    } catch (e) {}
+  });
+}
+
 export function getSyncStatus(): SyncStatusInfo {
   let lastSyncTime: string | null = null;
   try {
@@ -266,10 +494,13 @@ export function getSyncStatus(): SyncStatusInfo {
     details: statusDetails,
     lastSyncTime,
     syncCode: getSyncCode(),
+    user: getCachedUserProfile(),
   };
 }
 
-export function subscribeSyncStatus(listener: (status: CloudSyncStatus, details: string) => void): () => void {
+export function subscribeSyncStatus(
+  listener: (status: CloudSyncStatus, details: string) => void
+): () => void {
   statusListeners.add(listener);
   listener(currentStatus, statusDetails);
   return () => statusListeners.delete(listener);
@@ -278,12 +509,9 @@ export function subscribeSyncStatus(listener: (status: CloudSyncStatus, details:
 function setStatus(status: CloudSyncStatus, details = '') {
   currentStatus = status;
   statusDetails = details;
-  statusListeners.forEach((fn) => {
-    try { fn(status, details); } catch (e) {}
-  });
+  notifyStatusListeners();
 }
 
-// Listener for when remote saves/games are downloaded and updated locally
 const dataUpdateListeners = new Set<(updatedKeys: string[]) => void>();
 
 export function onDataUpdated(listener: (updatedKeys: string[]) => void): () => void {
@@ -294,17 +522,21 @@ export function onDataUpdated(listener: (updatedKeys: string[]) => void): () => 
 function notifyDataUpdated(updatedKeys: string[]) {
   if (updatedKeys.length === 0) return;
   dataUpdateListeners.forEach((fn) => {
-    try { fn(updatedKeys); } catch (e) {}
+    try {
+      fn(updatedKeys);
+    } catch (e) {}
   });
 }
 
-// Sync Report (pulled / pushed / skipped-too-large / errors) - consumed by UI
 let lastSyncReport: SyncReport = { ...EMPTY_SYNC_REPORT };
 export function getSyncReport(): SyncReport {
   return lastSyncReport;
 }
 
-// Key Filter & Helpers
+// ============================================================================
+// KEY FILTERING, FILENAME ENCODING & BINARY HELPERS
+// ============================================================================
+
 export function isSyncableKey(key: string): boolean {
   return (
     key === 'retro_games' ||
@@ -319,9 +551,9 @@ export function isSyncableKey(key: string): boolean {
 
 const isStateLikeKey = (key: string) => key.startsWith('state:');
 const isBinaryKey = (key: string) => key.startsWith('srm:') || key.startsWith('rtc:');
-const isItemKey = (key: string) => isStateLikeKey(key) || isBinaryKey(key) || key.startsWith('cover:');
+const isItemKey = (key: string) =>
+  isStateLikeKey(key) || isBinaryKey(key) || key.startsWith('cover:');
 
-/** gameId embedded in a per-save item key (slot may itself contain ':') */
 function gameIdFromItemKey(key: string): string | null {
   if (key.startsWith('state:')) {
     const parts = key.split(':');
@@ -333,22 +565,56 @@ function gameIdFromItemKey(key: string): string | null {
   return null;
 }
 
-/**
- * Deduplicates and merges game lists.
- * Matches games by:
- * 1) id
- * 2) fileName (case-insensitive)
- * 3) title (case-insensitive) + core
- * 4) crc32 (if present)
- * Overwrites existing entries instead of duplicating.
- * Automatically excludes any tombstoned/deleted game IDs.
- */
-export function mergeAndDeduplicateGames(localList: any[], remoteList: any[] = [], preferRemote = true): any[] {
+export function keyToDriveFilename(key: string): string {
+  return `rs_v2_${encodeURIComponent(key)}.json`;
+}
+
+export function driveFilenameToKey(filename: string): string | null {
+  if (!filename || filename === TOMBSTONES_DRIVE_FILENAME) return null;
+  if (filename.startsWith('rs_v2_') && filename.endsWith('.json')) {
+    try {
+      const k = decodeURIComponent(filename.slice('rs_v2_'.length, -'.json'.length));
+      return isSyncableKey(k) ? k : null;
+    } catch (e) {
+      return null;
+    }
+  }
+  // Legacy v1 filename support (reads older saves if present in appDataFolder)
+  if (filename === 'retro_library_games.json') return 'library_games';
+  if (
+    filename.startsWith('retro_') &&
+    filename.endsWith('.json') &&
+    !filename.includes('.conflict.bak')
+  ) {
+    const raw = filename.slice('retro_'.length, -'.json'.length);
+    if (raw.startsWith('state__')) {
+      const rest = raw.slice('state__'.length);
+      const lastSep = rest.lastIndexOf('__');
+      if (lastSep > 0) {
+        const gId = rest.slice(0, lastSep);
+        const slot = rest.slice(lastSep + 2);
+        return `state:${gId}:${slot}`;
+      }
+    }
+    if (raw.startsWith('srm__')) return `srm:${raw.slice('srm__'.length)}`;
+    if (raw.startsWith('rtc__')) return `rtc:${raw.slice('rtc__'.length)}`;
+  }
+  return null;
+}
+
+export function mergeAndDeduplicateGames(
+  localList: any[],
+  remoteList: any[] = [],
+  preferRemote = true
+): any[] {
   const deletedSet = new Set(getDeletedGameIds());
   const result: any[] = [];
 
   const getKey = (g: any) => {
-    const titleKey = g?.title && g?.core ? `${String(g.title).trim().toLowerCase()}::${String(g.core).toLowerCase()}` : null;
+    const titleKey =
+      g?.title && g?.core
+        ? `${String(g.title).trim().toLowerCase()}::${String(g.core).toLowerCase()}`
+        : null;
     const fileKey = g?.fileName ? String(g.fileName).trim().toLowerCase() : null;
     const idKey = g?.id ? String(g.id).trim().toLowerCase() : null;
     const crcKey = g?.crc32 ? String(g.crc32).trim().toLowerCase() : null;
@@ -400,7 +666,6 @@ export function mergeAndDeduplicateGames(localList: any[], remoteList: any[] = [
   return result.filter((g) => g && g.id && !deletedSet.has(g.id));
 }
 
-// Binary Normalizer: repairs every historical corruption shape into clean bytes
 export function normalizeBinaryData(val: any): Uint8Array | null {
   if (!val) return null;
   let bytes: Uint8Array | null = null;
@@ -437,6 +702,9 @@ export function normalizeBinaryData(val: any): Uint8Array | null {
       return null;
     }
   } else if (typeof val === 'object' && val !== null) {
+    if (typeof (val as any).base64 === 'string') {
+      return base64ToUint8((val as any).base64);
+    }
     const keys = Object.keys(val);
     if (keys.length > 0 && keys[0] === '0' && typeof (val as any)[0] === 'number') {
       const vals = Object.values(val);
@@ -446,10 +714,13 @@ export function normalizeBinaryData(val: any): Uint8Array | null {
     }
   }
 
-  // Repair case where a JSON-stringified Uint8Array was wrapped raw into a Uint8Array
   if (bytes && bytes.length > 4) {
     if (
-      (bytes[0] === 0x7b && bytes[1] === 0x22 && bytes[2] === 0x30 && bytes[3] === 0x22 && bytes[4] === 0x3a) ||
+      (bytes[0] === 0x7b &&
+        bytes[1] === 0x22 &&
+        bytes[2] === 0x30 &&
+        bytes[3] === 0x22 &&
+        bytes[4] === 0x3a) ||
       (bytes[0] === 0x5b && bytes[bytes.length - 1] === 0x5d)
     ) {
       try {
@@ -473,7 +744,10 @@ export function uint8ToBase64(bytes: Uint8Array): string {
   const len = bytes.length;
   let binary = '';
   for (let i = 0; i < len; i += chunkSize) {
-    binary += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + chunkSize, len)) as any);
+    binary += String.fromCharCode.apply(
+      null,
+      bytes.subarray(i, Math.min(i + chunkSize, len)) as any
+    );
   }
   return btoa(binary);
 }
@@ -497,12 +771,16 @@ export function areByteArraysEqual(a: Uint8Array | null, b: Uint8Array | null): 
   return true;
 }
 
-// Local Sync Metadata Cache (updatedAt is a server-stamped timestamp after
-// each successful push/pull; before the first push it's the local clock)
+// ============================================================================
+// LOCAL SYNC METADATA & SCHEDULING
+// ============================================================================
+
 interface SyncMeta {
   updatedAt: number;
   pendingUpload?: boolean;
+  fileId?: string;
 }
+
 function getLocalMetaMap(): Record<string, SyncMeta> {
   try {
     return JSON.parse(localStorage.getItem(SYNC_META_KEY) || '{}');
@@ -510,6 +788,7 @@ function getLocalMetaMap(): Record<string, SyncMeta> {
     return {};
   }
 }
+
 function saveLocalMetaMap(map: Record<string, SyncMeta>) {
   try {
     localStorage.setItem(SYNC_META_KEY, JSON.stringify(map));
@@ -517,19 +796,17 @@ function saveLocalMetaMap(map: Record<string, SyncMeta>) {
 }
 
 export async function markLocalSaveModified(key: string): Promise<void> {
-  if (key.startsWith('autosave:')) return; // ephemeral; never synced, never debounces
+  if (key.startsWith('autosave:') || key.startsWith('rom:') || key.startsWith('rom_')) return;
   const map = getLocalMetaMap();
   map[key] = {
+    ...map[key],
     updatedAt: Date.now(),
     pendingUpload: true,
   };
   saveLocalMetaMap(map);
-  triggerDebouncedCloudSync();
+  triggerDebouncedCloudSync(15_000); // Quick 15s debounce when saves change
 }
 
-// Debounced Auto-Sync (10 minutes default)
-// Deferred automatically while active gameplay is running so serialization
-// never stalls the frame loop, and retried on its own after failures.
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 let gameplayActive = false;
 let deferredSyncPending = false;
@@ -538,30 +815,26 @@ export function setGameplayActive(active: boolean): void {
   gameplayActive = active;
   if (!active && deferredSyncPending) {
     deferredSyncPending = false;
-    const code = getSyncCode();
-    if (code && typeof navigator !== 'undefined' && navigator.onLine) {
-      triggerDebouncedCloudSync(4000);
+    if (hasValidToken() && typeof navigator !== 'undefined' && navigator.onLine) {
+      triggerDebouncedCloudSync(3000);
     }
   }
 }
 
-export function triggerDebouncedCloudSync(delayMs = 10 * 60 * 1000) {
-  if (debounceTimer) return; // keep schedule; don't reset on every minor change
+export function triggerDebouncedCloudSync(delayMs = 15_000) {
+  if (debounceTimer) clearTimeout(debounceTimer);
   debounceTimer = setTimeout(() => {
     debounceTimer = null;
     if (gameplayActive) {
       deferredSyncPending = true;
       return;
     }
-    const code = getSyncCode();
-    if (code && navigator.onLine) {
-      syncNow().catch((e) => console.warn('[CloudSync] Periodic auto-sync warning:', e));
+    if (hasValidToken() && typeof navigator !== 'undefined' && navigator.onLine) {
+      syncNow(false).catch((e) => console.warn('[CloudSync] Auto-sync warning:', e));
     }
   }, delayMs);
 }
 
-// Retry with exponential backoff. v1 just left pendingUpload=true and hoped a
-// future trigger would arrive; v2 retries on its own timer.
 const RETRY_DELAYS = [5_000, 30_000, 2 * 60_000, 10 * 60_000];
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let retryAttempt = 0;
@@ -575,64 +848,199 @@ function resetRetryTimer() {
 }
 
 function scheduleRetry() {
-  if (['syncing', 'offline', 'unlinked'].includes(currentStatus)) return;
+  if (['syncing', 'offline', 'unlinked', 'needs_reauth'].includes(currentStatus)) return;
   const delay = RETRY_DELAYS[Math.min(retryAttempt, RETRY_DELAYS.length - 1)];
   retryAttempt++;
   if (retryTimer) clearTimeout(retryTimer);
   retryTimer = setTimeout(() => {
     retryTimer = null;
-    const code = getSyncCode();
-    if (code && navigator.onLine && !gameplayActive) {
-      syncNow().catch(() => {});
-    } else if (code && gameplayActive) {
+    if (hasValidToken() && navigator.onLine && !gameplayActive) {
+      syncNow(false).catch(() => {});
+    } else if (hasValidToken() && gameplayActive) {
       deferredSyncPending = true;
     }
   }, delay);
 }
 
-// Network Online Listener
 if (typeof window !== 'undefined') {
   window.addEventListener('online', () => {
-    const code = getSyncCode();
-    if (code) {
-      setStatus('idle', 'Back online; syncing...');
-      resetRetryTimer();
-      syncNow().catch(() => {});
+    if (getCachedUserProfile()) {
+      if (hasValidToken()) {
+        setStatus('idle', 'Back online; syncing...');
+        resetRetryTimer();
+        syncNow(false).catch(() => {});
+      } else {
+        setStatus('needs_reauth', 'Session expired — tap Sync Now');
+      }
     }
   });
 
   window.addEventListener('offline', () => {
-    const code = getSyncCode();
-    if (code) {
+    if (getCachedUserProfile()) {
       setStatus('offline', 'Offline (saves kept locally)');
     }
   });
 }
 
 // ============================================================================
-// v2 SYNC ENGINE
+// GOOGLE DRIVE REST API HELPERS (appDataFolder)
 // ============================================================================
 
-export async function syncNow(forceCheck = false): Promise<{
-  success: boolean;
-  error?: string;
-  pulledCount: number;
-  pushedCount: number;
-}> {
-  if (activeSyncPromise) {
-    if (forceCheck) {
-      await activeSyncPromise.catch(() => {});
-      return executeSync(true);
+interface DriveFileEntry {
+  id: string;
+  name: string;
+  modifiedTime: string;
+  updatedAt: number;
+  size: number;
+}
+
+async function listAppDataFiles(token: string): Promise<DriveFileEntry[]> {
+  const results: DriveFileEntry[] = [];
+  let pageToken: string | undefined;
+
+  do {
+    const params = new URLSearchParams({
+      spaces: 'appDataFolder',
+      q: 'trashed=false',
+      fields: 'nextPageToken,files(id,name,modifiedTime,size)',
+      pageSize: '500',
+    });
+    if (pageToken) params.set('pageToken', pageToken);
+
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    });
+
+    if (res.status === 401) {
+      inMemoryAccessToken = null;
+      saveStoredToken(null, 0);
+      setStatus('needs_reauth', 'Session expired — tap Reconnect');
+      throw new Error('Google Drive session expired. Please tap Reconnect.');
     }
-    return activeSyncPromise;
+
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      throw new Error(`Drive list failed (HTTP ${res.status}): ${txt.slice(0, 120)}`);
+    }
+
+    const data = await res.json();
+    for (const f of data.files || []) {
+      results.push({
+        id: f.id,
+        name: f.name,
+        modifiedTime: f.modifiedTime,
+        updatedAt: Date.parse(f.modifiedTime) || 0,
+        size: Number(f.size) || 0,
+      });
+    }
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+
+  return results;
+}
+
+async function downloadDriveJson(token: string, fileId: string): Promise<any> {
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    }
+  );
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(`Download failed: HTTP ${res.status}`);
   }
-  activeSyncPromise = executeSync(forceCheck);
+  return await res.json();
+}
+
+async function uploadDriveJson(
+  token: string,
+  filename: string,
+  jsonString: string,
+  existingFileId?: string
+): Promise<{ id: string; updatedAt: number }> {
+  const boundary = '-------rs_drive_' + Math.random().toString(36).slice(2);
+  const metadata = existingFileId
+    ? { name: filename, mimeType: 'application/json' }
+    : { name: filename, mimeType: 'application/json', parents: ['appDataFolder'] };
+
+  const multipartBody =
+    `--${boundary}\r\n` +
+    `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
+    `${JSON.stringify(metadata)}\r\n` +
+    `--${boundary}\r\n` +
+    `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
+    `${jsonString}\r\n` +
+    `--${boundary}--`;
+
+  const url = existingFileId
+    ? `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(existingFileId)}?uploadType=multipart&fields=id,name,modifiedTime`
+    : `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,modifiedTime`;
+
+  const method = existingFileId ? 'PATCH' : 'POST';
+  const res = await fetch(url, {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': `multipart/related; boundary=${boundary}`,
+    },
+    body: multipartBody,
+  });
+
+  if (res.status === 404 && existingFileId) {
+    return uploadDriveJson(token, filename, jsonString, undefined);
+  }
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    throw new Error(`Upload failed (HTTP ${res.status}): ${errText.slice(0, 120)}`);
+  }
+
+  const data = await res.json();
+  return {
+    id: data.id,
+    updatedAt: Date.parse(data.modifiedTime) || Date.now(),
+  };
+}
+
+async function deleteDriveFile(token: string, fileId: string): Promise<boolean> {
   try {
-    return await activeSyncPromise;
-  } finally {
-    activeSyncPromise = null;
+    const res = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}`,
+      {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      }
+    );
+    return res.ok || res.status === 404;
+  } catch (e) {
+    return false;
   }
 }
+
+export async function deleteAllCloudSaves(): Promise<boolean> {
+  const token = await ensureToken(true);
+  if (!token) return false;
+
+  setStatus('syncing', 'Clearing Google Drive saves...');
+  try {
+    const files = await listAppDataFiles(token);
+    for (const f of files) {
+      await deleteDriveFile(token, f.id);
+    }
+    saveLocalMetaMap({});
+    setStatus('idle', 'Google Drive saves cleared');
+    return true;
+  } catch (err: any) {
+    setStatus('error', err?.message || 'Failed to clear cloud saves');
+    return false;
+  }
+}
+
+// ============================================================================
+// GOOGLE DRIVE SYNC ENGINE
+// ============================================================================
 
 let activeSyncPromise: Promise<{
   success: boolean;
@@ -641,32 +1049,53 @@ let activeSyncPromise: Promise<{
   pushedCount: number;
 }> | null = null;
 
-interface VaultIndex {
-  revision: number;
-  items: Record<string, { updatedAt: number; size: number }>;
-  deleted: Record<string, { updatedAt: number }>;
-}
-
-async function executeSync(forceCheck = false): Promise<{
+export async function syncNow(forceInteractive = false): Promise<{
   success: boolean;
   error?: string;
   pulledCount: number;
   pushedCount: number;
 }> {
-  const code = getSyncCode();
-  if (!code) {
-    setStatus('unlinked', 'No sync code linked');
-    return { success: false, error: 'No sync code linked', pulledCount: 0, pushedCount: 0 };
+  if (activeSyncPromise) {
+    if (forceInteractive) {
+      await activeSyncPromise.catch(() => {});
+      return executeSync(true);
+    }
+    return activeSyncPromise;
   }
+  activeSyncPromise = executeSync(forceInteractive);
+  try {
+    return await activeSyncPromise;
+  } finally {
+    activeSyncPromise = null;
+  }
+}
 
+interface RemoteTombstones {
+  deletedItems: Record<string, number>;
+  deletedGames: string[];
+}
+
+async function executeSync(interactive = false): Promise<{
+  success: boolean;
+  error?: string;
+  pulledCount: number;
+  pushedCount: number;
+}> {
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
     setStatus('offline', 'Offline (changes kept locally)');
     return { success: false, error: 'Device is offline', pulledCount: 0, pushedCount: 0 };
   }
 
-  setStatus('syncing', 'Syncing saves...');
+  const token = await ensureToken(interactive);
+  if (!token) {
+    const errMsg = getCachedUserProfile()
+      ? 'Google Drive session expired — tap Reconnect or Sync Now'
+      : 'Not signed in to Google Drive';
+    return { success: false, error: errMsg, pulledCount: 0, pushedCount: 0 };
+  }
 
-  const endpoint = getSyncEndpoint();
+  setStatus('syncing', 'Syncing with Google Drive...');
+
   const metaMap = getLocalMetaMap();
   const updatedLocalKeys: string[] = [];
   const touchedThisRun = new Set<string>();
@@ -674,39 +1103,78 @@ async function executeSync(forceCheck = false): Promise<{
   const errors: SyncReport['errors'] = [];
   let pulledCount = 0;
   let pushedCount = 0;
-  let revision = 0;
 
   try {
-    // -------- 1. Fetch vault index (one small request; no mega-blob) --------
-    const indexUrl = `${endpoint}/api/sync/${encodeURIComponent(code)}`;
-    const indexRes = await fetch(indexUrl, {
-      method: 'GET',
-      cache: 'no-store',
-      headers: { Accept: 'application/json' },
-    });
+    // -------- 1. List all files in Google Drive appDataFolder --------
+    const allFiles = await listAppDataFiles(token);
+    const remoteItems: Record<string, DriveFileEntry> = {};
+    let tombstonesFile: DriveFileEntry | null = null;
 
-    if (!indexRes.ok) {
-      const errText = await indexRes.text().catch(() => '');
-      let errorMsg = `Vault server error: HTTP ${indexRes.status}`;
-      try {
-        errorMsg = JSON.parse(errText).error || errorMsg;
-      } catch (e) {}
-      throw new Error(errorMsg);
+    for (const f of allFiles) {
+      if (f.name === TOMBSTONES_DRIVE_FILENAME) {
+        if (!tombstonesFile || f.updatedAt > tombstonesFile.updatedAt) {
+          tombstonesFile = f;
+        }
+        continue;
+      }
+      const key = driveFilenameToKey(f.name);
+      if (!key) continue;
+
+      const existing = remoteItems[key];
+      if (!existing) {
+        remoteItems[key] = f;
+      } else {
+        // Deduplicate if multiple files for the same key exist; keep newest
+        if (f.updatedAt >= existing.updatedAt) {
+          deleteDriveFile(token, existing.id).catch(() => {});
+          remoteItems[key] = f;
+        } else {
+          deleteDriveFile(token, f.id).catch(() => {});
+        }
+      }
     }
 
-    const vaultIndex: VaultIndex = await indexRes.json();
-    revision = vaultIndex.revision || 0;
-    const remoteItems = vaultIndex.items || {};
-    const remoteDeleted = vaultIndex.deleted || {};
+    let remoteTombstones: RemoteTombstones = { deletedItems: {}, deletedGames: [] };
+    if (tombstonesFile) {
+      try {
+        const tData = await downloadDriveJson(token, tombstonesFile.id);
+        if (tData && typeof tData === 'object') {
+          remoteTombstones = {
+            deletedItems: tData.deletedItems || {},
+            deletedGames: Array.isArray(tData.deletedGames) ? tData.deletedGames : [],
+          };
+        }
+      } catch (e) {}
+    }
 
-    // -------- 2. Pull phase: fetch remote items newer than local --------
-    const pullKeys = Object.keys(remoteItems).filter((k) =>
-      shouldPull(k, remoteItems[k].updatedAt, metaMap, remoteDeleted)
-    );
+    let tombstonesDirty = false;
+    const mergedDeletedGames = new Set<string>([
+      ...getDeletedGameIds(),
+      ...remoteTombstones.deletedGames,
+    ]);
+    if (mergedDeletedGames.size !== getDeletedGameIds().length) {
+      localStorage.setItem(DELETED_GAMES_KEY, JSON.stringify(Array.from(mergedDeletedGames)));
+      updatedLocalKeys.push(DELETED_GAMES_KEY);
+    }
+    if (mergedDeletedGames.size !== remoteTombstones.deletedGames.length) {
+      remoteTombstones.deletedGames = Array.from(mergedDeletedGames);
+      tombstonesDirty = true;
+    }
 
-    pulledCount = await pullItems({
-      endpoint,
-      code,
+    // -------- 2. Pull phase: download remote items newer than local --------
+    const pullKeys = Object.keys(remoteItems).filter((k) => {
+      const owningGame = isItemKey(k) ? gameIdFromItemKey(k) : null;
+      if (owningGame && mergedDeletedGames.has(owningGame)) return false;
+      const rItem = remoteItems[k];
+      const tombTs = remoteTombstones.deletedItems[k] || 0;
+      if (tombTs > rItem.updatedAt) return false;
+      const local = metaMap[k];
+      if (!local) return true;
+      return rItem.updatedAt > local.updatedAt;
+    });
+
+    pulledCount = await pullItemsFromDrive({
+      token,
       keys: pullKeys,
       remoteItems,
       metaMap,
@@ -716,10 +1184,10 @@ async function executeSync(forceCheck = false): Promise<{
       errors,
     });
 
-    // -------- 3. Push phase --------
-    // Candidate keys: everything we track locally plus everything remote
+    // -------- 3. Push & Reconcile phase --------
     const candidates = new Set<string>(['retro_games', 'library_games', DELETED_GAMES_KEY]);
     for (const k of Object.keys(metaMap)) if (isSyncableKey(k)) candidates.add(k);
+    for (const k of Object.keys(remoteItems)) if (isSyncableKey(k)) candidates.add(k);
     try {
       const idbKeys = await idbGetAllKeys();
       for (const k of idbKeys) {
@@ -728,153 +1196,126 @@ async function executeSync(forceCheck = false): Promise<{
       }
     } catch (e) {}
 
-    const deletedIds = new Set(getDeletedGameIds());
-    const idsNeedingRemoteDelete = new Set(deletedIds);
-
     for (const key of Array.from(candidates)) {
       if (touchedThisRun.has(key)) continue;
       const localMeta = metaMap[key];
       const remote = remoteItems[key];
-      const remoteTombstone = remoteDeleted[key];
+      const remoteTombTs = remoteTombstones.deletedItems[key] || 0;
 
-      // Per-save item keys for a game this device has tombstoned: ask the DO
-      // to purge every save/covers-related key server-side.
+      // Purge any remote files belonging to a deleted game
       const owningGameId = isItemKey(key) ? gameIdFromItemKey(key) : null;
-      if (owningGameId && deletedIds.has(owningGameId)) {
-        continue; // handled by the delete-games call below
-      }
-
-      // Remote tombstoned this item (deleted on another device): true
-      // tombstone semantics - delete locally too, unless we have unsent
-      // local changes in which case our re-push overwrites the tombstone.
-      if (remoteTombstone) {
-        let localVal: any = null;
-        if (isItemKey(key)) localVal = await idbGet(key).catch(() => null);
-        if (localVal != null && localMeta?.pendingUpload) {
-          continue; // fall through to normal push; PUT clears the tombstone
+      if (owningGameId && mergedDeletedGames.has(owningGameId)) {
+        if (remote) {
+          await deleteDriveFile(token, remote.id);
+          delete remoteItems[key];
         }
-        if (localVal != null) {
-          await idbDelete(key).catch(() => {});
-          delete metaMap[key];
-          updatedLocalKeys.push(key);
-        }
-        touchedThisRun.add(key);
+        delete metaMap[key];
         continue;
       }
 
-      // Load local value (null = not on this device)
+      // Load local value
       let localVal: any = null;
       if (key === 'retro_games') {
-        try { localVal = JSON.parse(localStorage.getItem('retro_games') || 'null'); } catch (e) {}
+        try {
+          localVal = JSON.parse(localStorage.getItem('retro_games') || 'null');
+        } catch (e) {}
       } else if (key === DELETED_GAMES_KEY) {
-        localVal = getDeletedGameIds();
+        localVal = Array.from(mergedDeletedGames);
       } else if (key === 'library_games' || isItemKey(key)) {
         localVal = await idbGet(key).catch(() => null);
       }
 
-      // Save slot/SRAM/cover exists on remote but not locally anymore AND we
-      // remember having had it; propagate the deletion to the vault.
-      // (Requires localMeta so a brand-new empty device can never purge a
-      // vault's saves just by connecting.)
-      if (remote && !localVal && localMeta && isItemKey(key)) {
-        const delRes = await fetch(
-          `${endpoint}/api/sync/${encodeURIComponent(code)}/item/${encodeURIComponent(key)}`,
-          { method: 'DELETE' }
-        );
-        if (delRes.ok) {
-          try {
-            const resp = await delRes.json();
-            if (typeof resp.revision === 'number') revision = resp.revision;
-          } catch (e) {}
-          touchedThisRun.add(key);
+      // Remote tombstoned this item
+      if (remoteTombTs > 0 && (!remote || remoteTombTs > remote.updatedAt)) {
+        if (localVal != null && localMeta?.pendingUpload && localMeta.updatedAt > remoteTombTs) {
+          // Local has a fresher edit; re-upload below and clear tombstone
+          delete remoteTombstones.deletedItems[key];
+          tombstonesDirty = true;
         } else {
-          errors.push({ key, message: `Tombstone delete failed: HTTP ${delRes.status}` });
+          if (localVal != null && isItemKey(key)) {
+            await idbDelete(key).catch(() => {});
+            delete metaMap[key];
+            updatedLocalKeys.push(key);
+          }
+          touchedThisRun.add(key);
+          continue;
         }
+      }
+
+      // Local item was deleted on this device (we have localMeta, no localVal, and remote exists)
+      if (remote && localVal == null && localMeta && isItemKey(key)) {
+        await deleteDriveFile(token, remote.id);
+        remoteTombstones.deletedItems[key] = Date.now();
+        tombstonesDirty = true;
+        delete metaMap[key];
+        touchedThisRun.add(key);
         continue;
       }
 
+      if (localVal == null) continue;
+
       if (remote && remote.updatedAt > (localMeta?.updatedAt || 0) && !localMeta?.pendingUpload) {
-        continue; // remote is newer and we're not pushing - pull phase handled it
+        continue;
       }
 
       const needsPush =
         Boolean(localMeta?.pendingUpload) ||
         !remote ||
-        (localVal != null && (localMeta?.updatedAt || 0) > remote.updatedAt);
+        (localMeta?.updatedAt || 0) > remote.updatedAt;
 
       if (!needsPush) continue;
 
-      // For list keys, fetch the remote list and merge locally BEFORE
-      // uploading so we can never wipe remote-only games.
+      // For game list keys, merge with remote list before pushing
       let remoteListForMerge: any[] | null = null;
-      if (key === 'retro_games' || key === 'library_games') {
-        remoteListForMerge = await fetchRemoteList(endpoint, code, key);
+      if ((key === 'retro_games' || key === 'library_games') && remote) {
+        try {
+          const rList = await downloadDriveJson(token, remote.id);
+          if (Array.isArray(rList)) remoteListForMerge = rList;
+        } catch (e) {}
       }
 
-      const prepared = await prepareUpload(key, localVal, remoteListForMerge);
-      if (!prepared.ok) {
-        if (prepared.reason) {
+      const prepared = prepareDrivePayload(key, localVal, remoteListForMerge);
+      if (!prepared.ok || !prepared.jsonString) {
+        if (prepared.reason && prepared.reason !== 'no local value') {
           skipped.push({ key, size: prepared.size || 0, reason: prepared.reason });
         }
         continue;
       }
-      const { body, contentType } = prepared;
-
-      // No manual Content-Length (browsers forbid it; fetch sets it itself)
-      const putRes = await fetch(
-        `${endpoint}/api/sync/${encodeURIComponent(code)}/item/${encodeURIComponent(key)}`,
-        {
-          method: 'PUT',
-          headers: { 'Content-Type': contentType },
-          body: body as any,
-        }
-      );
-
-      if (!putRes.ok) {
-        const errText = await putRes.text().catch(() => '');
-        let msg = `Upload failed: HTTP ${putRes.status}`;
-        try { msg = JSON.parse(errText).error || msg; } catch (e) {}
-        errors.push({ key, message: msg });
-        if (putRes.status >= 500 || putRes.status === 429) {
-          if (localMeta) metaMap[key] = { ...localMeta, pendingUpload: true };
-        }
-        continue;
-      }
 
       try {
-        const resp = await putRes.json();
-        const serverTs = Number(resp.updatedAt) || Date.now();
-        if (typeof resp.revision === 'number') revision = resp.revision;
-        metaMap[key] = { updatedAt: serverTs, pendingUpload: false }; // SERVER clock
-      } catch (e) {
-        metaMap[key] = { updatedAt: Date.now(), pendingUpload: false };
+        const driveFilename = keyToDriveFilename(key);
+        const uploaded = await uploadDriveJson(
+          token,
+          driveFilename,
+          prepared.jsonString,
+          remote?.id
+        );
+        metaMap[key] = {
+          updatedAt: uploaded.updatedAt,
+          pendingUpload: false,
+          fileId: uploaded.id,
+        };
+        if (remoteTombstones.deletedItems[key]) {
+          delete remoteTombstones.deletedItems[key];
+          tombstonesDirty = true;
+        }
+        touchedThisRun.add(key);
+        pushedCount++;
+      } catch (upErr: any) {
+        errors.push({ key, message: upErr?.message || 'Upload failed' });
+        if (localMeta) metaMap[key] = { ...localMeta, pendingUpload: true };
       }
-      touchedThisRun.add(key);
-      pushedCount++;
     }
 
-    // -------- 4. Tombstone purge request for any locally-deleted games --------
-    if (idsNeedingRemoteDelete.size > 0) {
+    if (tombstonesDirty) {
       try {
-        const purgeRes = await fetch(`${endpoint}/api/sync/${encodeURIComponent(code)}/delete-games`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ids: Array.from(idsNeedingRemoteDelete) }),
-        });
-        if (purgeRes.ok) {
-          try {
-            const resp = await purgeRes.json();
-            if (typeof resp.revision === 'number') revision = resp.revision;
-            if (typeof resp.deleted === 'number' && resp.deleted > 0) {
-              touchedThisRun.add(DELETED_GAMES_KEY);
-            }
-          } catch (e) {}
-        } else {
-          errors.push({ message: `delete-games failed: HTTP ${purgeRes.status}` });
-        }
-      } catch (e: any) {
-        errors.push({ message: `delete-games network error: ${e.message}` });
-      }
+        await uploadDriveJson(
+          token,
+          TOMBSTONES_DRIVE_FILENAME,
+          JSON.stringify(remoteTombstones),
+          tombstonesFile?.id
+        );
+      } catch (e) {}
     }
 
     saveLocalMetaMap(metaMap);
@@ -891,7 +1332,7 @@ async function executeSync(forceCheck = false): Promise<{
       pushed: pushedCount,
       skipped,
       errors,
-      revision,
+      revision: Date.now(),
     };
     resetRetryTimer();
 
@@ -909,62 +1350,37 @@ async function executeSync(forceCheck = false): Promise<{
       pushedCount,
     };
   } catch (err: any) {
-    console.error('[CloudSync] syncNow error:', err);
-    const msg = err?.message || 'Sync failed';
+    console.error('[CloudSync] Google Drive sync error:', err);
+    const msg = err?.message || 'Google Drive sync failed';
     lastSyncReport = {
       at: Date.now(),
       success: false,
-      pulled: 0,
+      pulled: pulledCount,
       pushed: pushedCount,
       skipped,
       errors: [{ message: msg }],
-      revision,
+      revision: 0,
     };
-    setStatus('error', msg);
-    scheduleRetry();
-    return { success: false, error: msg, pulledCount: 0, pushedCount };
+    if (currentStatus !== 'needs_reauth') {
+      setStatus('error', msg);
+      scheduleRetry();
+    }
+    return { success: false, error: msg, pulledCount, pushedCount };
   }
 }
 
-function shouldPull(
-  key: string,
-  remoteUpdatedAt: number,
-  metaMap: Record<string, SyncMeta>,
-  remoteDeleted: Record<string, any>
-): boolean {
-  if (remoteDeleted[key]) return false;
-  const local = metaMap[key];
-  if (!local) return true; // brand new on remote
-  if (local.pendingUpload) return remoteUpdatedAt > local.updatedAt;
-  return remoteUpdatedAt > local.updatedAt;
-}
-
-async function fetchRemoteList(endpoint: string, code: string, key: string): Promise<any[] | null> {
-  try {
-    const res = await fetch(
-      `${endpoint}/api/sync/${encodeURIComponent(code)}/item/${encodeURIComponent(key)}`,
-      { method: 'GET', cache: 'no-store' }
-    );
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data)) return data;
-    }
-  } catch (e) {}
-  return null;
-}
-
-async function prepareUpload(
+function prepareDrivePayload(
   key: string,
   localVal: any,
   remoteListForMerge: any[] | null
-): Promise<{ ok: boolean; body?: Uint8Array; contentType?: string; size?: number; reason?: string }> {
+): { ok: boolean; jsonString?: string; size?: number; reason?: string } {
   if (localVal == null) return { ok: false, reason: 'no local value' };
 
   if (key === DELETED_GAMES_KEY) {
-    const ids = Array.isArray(localVal) ? localVal : Array.from(getDeletedGameIds());
+    const ids = Array.isArray(localVal) ? localVal : getDeletedGameIds();
     const merged = Array.from(new Set([...(remoteListForMerge || []), ...ids]));
-    const body = new TextEncoder().encode(JSON.stringify(merged));
-    return { ok: true, body, contentType: 'application/json', size: body.byteLength };
+    const jsonString = JSON.stringify(merged);
+    return { ok: true, jsonString, size: jsonString.length };
   }
 
   if (key === 'retro_games' || key === 'library_games') {
@@ -973,8 +1389,8 @@ async function prepareUpload(
     const merged = mergeAndDeduplicateGames(localGames, remoteListForMerge || [], false).filter(
       (g: any) => g && g.id && !deletedSet.has(g.id) && !DEMO_GAME_IDS.has(String(g.id))
     );
-    const body = new TextEncoder().encode(JSON.stringify(merged));
-    return { ok: true, body, contentType: 'application/json', size: body.byteLength };
+    const jsonString = JSON.stringify(merged);
+    return { ok: true, jsonString, size: jsonString.length };
   }
 
   if (isStateLikeKey(key)) {
@@ -990,24 +1406,40 @@ async function prepareUpload(
     if (serializable.stateData) delete serializable.stateData.emuState;
 
     const emuBytes = localVal.emuState ? normalizeBinaryData(localVal.emuState) : null;
-    const stateBytes = localVal.stateData?.emuState ? normalizeBinaryData(localVal.stateData.emuState) : null;
-    if (!emuBytes && !stateBytes) return { ok: false, reason: 'no save state payload' };
+    const stateBytes = localVal.stateData?.emuState
+      ? normalizeBinaryData(localVal.stateData.emuState)
+      : null;
+    const existingB64 =
+      localVal.emuStateBase64 || localVal.stateData?.emuStateBase64 || null;
+
+    if (!emuBytes && !stateBytes && !existingB64) {
+      return { ok: false, reason: 'no save state payload' };
+    }
 
     const biggest = Math.max(emuBytes?.length || 0, stateBytes?.length || 0);
     if (biggest > CAP_STATE_BYTES) {
-      return { ok: false, reason: `state too large (${biggest} > ${CAP_STATE_BYTES} bytes)`, size: biggest };
+      return {
+        ok: false,
+        reason: `state too large (${biggest} > ${CAP_STATE_BYTES} bytes)`,
+        size: biggest,
+      };
     }
     if (emuBytes) serializable.emuStateBase64 = uint8ToBase64(emuBytes);
     if (stateBytes) {
-      serializable.stateData = { ...(serializable.stateData || {}), emuStateBase64: uint8ToBase64(stateBytes) };
+      serializable.stateData = {
+        ...(serializable.stateData || {}),
+        emuStateBase64: uint8ToBase64(stateBytes),
+      };
     }
-    const body = new TextEncoder().encode(JSON.stringify(serializable));
-    return { ok: true, body, contentType: 'application/json', size: body.byteLength };
+    const jsonString = JSON.stringify(serializable);
+    return { ok: true, jsonString, size: jsonString.length };
   }
 
   if (isBinaryKey(key)) {
     const bytes = normalizeBinaryData(localVal);
-    if (!bytes || bytes.length === 0) return { ok: false, reason: 'empty or unrecognized binary' };
+    if (!bytes || bytes.length === 0) {
+      return { ok: false, reason: 'empty or unrecognized binary' };
+    }
     if (bytes.length > CAP_SRAM_BYTES) {
       return {
         ok: false,
@@ -1015,7 +1447,12 @@ async function prepareUpload(
         size: bytes.length,
       };
     }
-    return { ok: true, body: bytes, contentType: 'application/octet-stream', size: bytes.length };
+    const jsonString = JSON.stringify({
+      __rsBinary: true,
+      key,
+      base64: uint8ToBase64(bytes),
+    });
+    return { ok: true, jsonString, size: bytes.length };
   }
 
   if (key.startsWith('cover:')) {
@@ -1027,72 +1464,56 @@ async function prepareUpload(
         size: localVal.length,
       };
     }
-    const body = new TextEncoder().encode(localVal);
-    return { ok: true, body, contentType: 'text/plain; charset=utf-8', size: body.byteLength };
+    const jsonString = JSON.stringify({
+      __rsCover: true,
+      dataUrl: localVal,
+    });
+    return { ok: true, jsonString, size: localVal.length };
   }
 
   return { ok: false, reason: 'unsupported key type' };
 }
 
-async function pullItems(opts: {
-  endpoint: string;
-  code: string;
+async function pullItemsFromDrive(opts: {
+  token: string;
   keys: string[];
-  remoteItems: VaultIndex['items'];
+  remoteItems: Record<string, DriveFileEntry>;
   metaMap: Record<string, SyncMeta>;
   updatedLocalKeys: string[];
   touchedThisRun: Set<string>;
   skipped: SyncReport['skipped'];
   errors: SyncReport['errors'];
 }): Promise<number> {
-  const { endpoint, code, keys, remoteItems, metaMap, updatedLocalKeys, touchedThisRun, skipped, errors } = opts;
+  const {
+    token,
+    keys,
+    remoteItems,
+    metaMap,
+    updatedLocalKeys,
+    touchedThisRun,
+    skipped,
+    errors,
+  } = opts;
   let pulledCount = 0;
 
   const pullOne = async (rKey: string) => {
+    const entry = remoteItems[rKey];
+    if (!entry) return;
     try {
-      const url = `${endpoint}/api/sync/${encodeURIComponent(code)}/item/${encodeURIComponent(rKey)}`;
-      const res = await fetch(url, { method: 'GET', cache: 'no-store' });
-      if (res.status === 404) return; // gone; index will self-correct next sync
-      if (!res.ok) {
-        errors.push({ key: rKey, message: `Download failed: HTTP ${res.status}` });
-        return;
-      }
+      const data = await downloadDriveJson(token, entry.id);
+      if (data == null) return;
 
-      const serverTs =
-        Number(res.headers.get('X-Retro-Updated-At')) || remoteItems[rKey]?.updatedAt || Date.now();
-      const contentType = res.headers.get('Content-Type') || '';
+      await applyPulledItem(rKey, data, updatedLocalKeys, skipped);
 
-      if (contentType.includes('application/json')) {
-        let data: any;
-        try {
-          data = await res.json();
-        } catch (e) {
-          errors.push({ key: rKey, message: 'Malformed JSON item on vault' });
-          return;
-        }
-        await applyJsonItem(rKey, data, updatedLocalKeys, skipped);
-      } else if (contentType.includes('octet-stream')) {
-        const bytes = new Uint8Array(await res.arrayBuffer());
-        await idbPut(rKey, bytes);
-        if (rKey.startsWith('srm:')) {
-          await idbDelete(`autosave:${rKey.slice('srm:'.length)}`).catch(() => {});
-        }
-        updatedLocalKeys.push(rKey);
-      } else if (contentType.startsWith('text/')) {
-        // cover art data-URL strings (plain text)
-        const str = await res.text();
-        await idbPut(rKey, str).catch(() => {});
-        updatedLocalKeys.push(rKey);
-      } else {
-        errors.push({ key: rKey, message: `Unknown content type: ${contentType}` });
-        return;
-      }
-
-      metaMap[rKey] = { updatedAt: serverTs, pendingUpload: false };
+      metaMap[rKey] = {
+        updatedAt: entry.updatedAt || Date.now(),
+        pendingUpload: false,
+        fileId: entry.id,
+      };
       touchedThisRun.add(rKey);
       pulledCount++;
     } catch (itemErr: any) {
-      console.warn(`[CloudSync] Error saving downloaded item ${rKey}:`, itemErr);
+      console.warn(`[CloudSync] Error pulling ${rKey} from Drive:`, itemErr);
       errors.push({ key: rKey, message: itemErr?.message || String(itemErr) });
     }
   };
@@ -1111,7 +1532,7 @@ async function pullItems(opts: {
   return pulledCount;
 }
 
-async function applyJsonItem(
+async function applyPulledItem(
   rKey: string,
   data: any,
   updatedLocalKeys: string[],
@@ -1128,13 +1549,15 @@ async function applyJsonItem(
 
   if (rKey === 'retro_games' || rKey === 'library_games') {
     if (!Array.isArray(data)) {
-      skipped.push({ key: rKey, size: 0, reason: 'malformed games list on vault' });
+      skipped.push({ key: rKey, size: 0, reason: 'malformed games list on Drive' });
       return;
     }
     const deletedSet = new Set(getDeletedGameIds());
     let localList: any[] = [];
     if (rKey === 'retro_games') {
-      try { localList = JSON.parse(localStorage.getItem('retro_games') || '[]'); } catch (e) {}
+      try {
+        localList = JSON.parse(localStorage.getItem('retro_games') || '[]');
+      } catch (e) {}
     } else {
       localList = (await idbGet('library_games').catch(() => [])) || [];
       if (!Array.isArray(localList)) localList = [];
@@ -1147,7 +1570,6 @@ async function applyJsonItem(
 
     if (rKey === 'retro_games') {
       localStorage.setItem('retro_games', JSON.stringify(merged));
-      // keep the IDB mirror in sync (dual-copy storage by design)
       await idbPut(
         'library_games',
         merged.filter((g: any) => g && g.real && !DEMO_GAME_IDS.has(String(g.id)))
@@ -1165,12 +1587,50 @@ async function applyJsonItem(
 
   if (isStateLikeKey(rKey)) {
     if (!data || typeof data !== 'object') return;
-    if (data.emuStateBase64) data.emuState = base64ToUint8(data.emuStateBase64);
-    if (data.stateData?.emuStateBase64) data.stateData.emuState = base64ToUint8(data.stateData.emuStateBase64);
+    if (data.emuStateBase64) {
+      data.emuState = base64ToUint8(data.emuStateBase64);
+    } else if (data.emuState) {
+      const repaired = normalizeBinaryData(data.emuState);
+      if (repaired) data.emuState = repaired;
+    }
+    if (data.stateData?.emuStateBase64) {
+      data.stateData.emuState = base64ToUint8(data.stateData.emuStateBase64);
+    } else if (data.stateData?.emuState) {
+      const repaired = normalizeBinaryData(data.stateData.emuState);
+      if (repaired) data.stateData.emuState = repaired;
+    }
     await idbPut(rKey, data);
     const gId = gameIdFromItemKey(rKey);
     if (gId) await idbDelete(`autosave:${gId}`).catch(() => {});
     updatedLocalKeys.push(rKey);
+    return;
+  }
+
+  if (isBinaryKey(rKey)) {
+    const bytes = normalizeBinaryData(data);
+    if (!bytes || bytes.length === 0) {
+      skipped.push({ key: rKey, size: 0, reason: 'corrupt or empty binary on Drive' });
+      return;
+    }
+    await idbPut(rKey, bytes);
+    if (rKey.startsWith('srm:')) {
+      await idbDelete(`autosave:${rKey.slice('srm:'.length)}`).catch(() => {});
+    }
+    updatedLocalKeys.push(rKey);
+    return;
+  }
+
+  if (rKey.startsWith('cover:')) {
+    const dataUrl =
+      typeof data === 'string'
+        ? data
+        : typeof data?.dataUrl === 'string'
+          ? data.dataUrl
+          : null;
+    if (dataUrl) {
+      await idbPut(rKey, dataUrl).catch(() => {});
+      updatedLocalKeys.push(rKey);
+    }
     return;
   }
 

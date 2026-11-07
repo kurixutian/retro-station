@@ -1,38 +1,39 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Cloud,
   X,
-  Copy,
   Check,
   RefreshCw,
-  KeyRound,
   ShieldCheck,
-  Server,
   LogOut,
-  Sparkles,
-  ArrowRight,
   ChevronDown,
   ChevronUp,
   AlertTriangle,
   FileWarning,
+  HardDrive,
+  Download,
+  Upload,
+  Trash2,
+  KeyRound,
 } from 'lucide-react';
 import { Theme } from '../../types';
 import {
-  getSyncCode,
-  setSyncCode,
-  clearSyncCode,
-  generateSyncCode,
-  setSyncEndpoint,
-  getCustomEndpoint,
   getSyncStatus,
   subscribeSyncStatus,
   getSyncReport,
-  getVaultHealth,
-  getSyncEndpoint,
   syncNow,
+  signInWithGoogle,
+  signOutGoogle,
+  getCachedUserProfile,
+  getCustomGoogleClientId,
+  setGoogleClientId,
+  DEFAULT_GOOGLE_CLIENT_ID,
+  deleteAllCloudSaves,
   CloudSyncStatus,
   SyncReport,
+  GoogleUserProfile,
 } from '../../cloudSync';
+import { createBackupFile, downloadBackup, importBackupFile } from '../../services/backup';
 
 interface CloudSyncModalProps {
   isOpen: boolean;
@@ -47,507 +48,524 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   theme,
   showToast,
 }) => {
-  const [syncCode, setLocalSyncCode] = useState<string | null>(getSyncCode());
-  const [inputCode, setInputCode] = useState('');
+  const [user, setUser] = useState<GoogleUserProfile | null>(getCachedUserProfile());
   const [syncStatus, setSyncStatus] = useState<CloudSyncStatus>('unlinked');
   const [statusDetails, setStatusDetails] = useState('');
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const [confirmClearCloud, setConfirmClearCloud] = useState(false);
   const [report, setReport] = useState<SyncReport>(getSyncReport());
-  const [healthProblem, setHealthProblem] = useState<string | null>(null);
-  const [endpointInput, setEndpointInput] = useState<string>(getCustomEndpoint() || '');
+  const [clientIdInput, setClientIdInput] = useState<string>(getCustomGoogleClientId() || '');
 
-  const runVaultHealthCheck = useCallback(async () => {
-    try {
-      const health = await getVaultHealth(getSyncEndpoint());
-      if (!health.ok) {
-        setHealthProblem(
-          health.storage === 'unreachable'
-            ? 'Vault server unreachable right now'
-            : `Vault server reports a misconfiguration: ${health.storage}`
-        );
-      } else {
-        setHealthProblem(null);
-      }
-    } catch (e) {
-      setHealthProblem('Vault server unreachable right now');
-    }
-  }, []);
+  // Manual Backup state
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [backupMsg, setBackupMsg] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!isOpen) return;
     const current = getSyncStatus();
-    setLocalSyncCode(current.syncCode);
+    setUser(current.user);
     setSyncStatus(current.status);
     setStatusDetails(current.details);
     setLastSyncTime(current.lastSyncTime);
-    setEndpointInput(getCustomEndpoint() || '');
+    setClientIdInput(getCustomGoogleClientId() || '');
     setReport(getSyncReport());
-    runVaultHealthCheck();
+    setConfirmDisconnect(false);
+    setConfirmClearCloud(false);
 
     const unsub = subscribeSyncStatus((status, details) => {
       setSyncStatus(status);
       setStatusDetails(details);
       const updated = getSyncStatus();
       setLastSyncTime(updated.lastSyncTime);
-      setLocalSyncCode(updated.syncCode);
-      if (status === 'idle' || status === 'error') {
+      setUser(updated.user);
+      if (status === 'idle' || status === 'error' || status === 'needs_reauth') {
         setReport(getSyncReport());
       }
     });
 
     return () => unsub();
-  }, [isOpen, runVaultHealthCheck]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const copyCode = async () => {
-    if (!syncCode) return;
+  const handleSignInAndSync = async () => {
+    setIsSyncing(true);
     try {
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(syncCode);
-      } else {
-        const input = document.createElement('input');
-        input.value = syncCode;
-        document.body.appendChild(input);
-        input.select();
-        document.execCommand('copy');
-        document.body.removeChild(input);
+      const ok = await signInWithGoogle();
+      if (!ok) {
+        showToast('Google sign-in was cancelled or blocked');
+        return;
       }
-      setCopied(true);
-      showToast('Sync Code copied to clipboard!');
-      setTimeout(() => setCopied(false), 2000);
-    } catch (e) {
-      showToast(`Code: ${syncCode}`);
+      setUser(getCachedUserProfile());
+      const res = await syncNow(true);
+      setReport(getSyncReport());
+      if (res.success) {
+        showToast(
+          `Synced with Google Drive (↓${res.pulledCount} pulled, ↑${res.pushedCount} pushed)`
+        );
+      } else {
+        showToast(res.error || 'Connected, but sync encountered an error');
+      }
+    } finally {
+      setIsSyncing(false);
     }
-  };
-
-  const afterSync = (res: { success: boolean; pulledCount: number; pushedCount: number; error?: string }) => {
-    setReport(getSyncReport());
-    runVaultHealthCheck();
-    if (res.success) {
-      showToast(`Vault synced! ${res.pushedCount} uploaded, ${res.pulledCount} downloaded`);
-    } else {
-      showToast(`Sync issue: ${res.error || 'will retry automatically'}`);
-    }
-  };
-
-  const handleGenerateCode = async () => {
-    const newCode = generateSyncCode();
-    setSyncCode(newCode);
-    setLocalSyncCode(newCode);
-    showToast(`Generated: ${newCode}`);
-    setIsSyncing(true);
-    const res = await syncNow(true);
-    setIsSyncing(false);
-    afterSync(res);
-  };
-
-  const handleConnectCode = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const clean = inputCode.trim().toUpperCase();
-    if (!clean || clean.length < 3) {
-      showToast('Please enter a valid Sync Code');
-      return;
-    }
-    // Fresh device: start from a clean local meta so vault contents strictly
-    // mirror the other device instead of racing with unknown local state.
-    try {
-      localStorage.removeItem('retro_sync_meta');
-    } catch (err) {}
-    setSyncCode(clean);
-    setLocalSyncCode(clean);
-    setInputCode('');
-    showToast(`Connected to vault ${clean}. Restoring progress...`);
-
-    setIsSyncing(true);
-    const res = await syncNow(true);
-    setIsSyncing(false);
-    afterSync(res);
   };
 
   const handleManualSync = async () => {
-    if (isSyncing) return;
     setIsSyncing(true);
-    const res = await syncNow(true);
-    setIsSyncing(false);
-    afterSync(res);
+    try {
+      const res = await syncNow(true);
+      setReport(getSyncReport());
+      if (res.success) {
+        if (res.pulledCount > 0 || res.pushedCount > 0) {
+          showToast(
+            `Google Drive Sync complete! (↓${res.pulledCount} pulled, ↑${res.pushedCount} pushed)`
+          );
+        } else {
+          showToast('Google Drive is up to date!');
+        }
+      } else {
+        showToast(res.error || 'Sync failed — check report below');
+      }
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
-  const handleDisconnect = () => {
-    clearSyncCode();
-    setLocalSyncCode(null);
-    setSyncStatus('unlinked');
-    setConfirmDisconnect(false);
-    showToast('Disconnected from Sync Code');
-  };
-
-  const handleSaveEndpoint = async () => {
-    const clean = endpointInput.trim();
-    if (!clean) {
-      handleResetEndpoint();
+  const handleDisconnect = async () => {
+    if (!confirmDisconnect) {
+      setConfirmDisconnect(true);
+      setTimeout(() => setConfirmDisconnect(false), 4000);
       return;
     }
-    setSyncEndpoint(clean);
-    showToast('Vault endpoint saved. Testing connection...');
+    await signOutGoogle();
+    setUser(null);
+    setConfirmDisconnect(false);
+    showToast('Disconnected from Google Drive (local saves kept safe)');
+  };
+
+  const handleClearCloud = async () => {
+    if (!confirmClearCloud) {
+      setConfirmClearCloud(true);
+      setTimeout(() => setConfirmClearCloud(false), 4000);
+      return;
+    }
     setIsSyncing(true);
-    const res = await syncNow(true);
-    setIsSyncing(false);
-    afterSync(res);
+    try {
+      const ok = await deleteAllCloudSaves();
+      setConfirmClearCloud(false);
+      if (ok) {
+        showToast('Cleared all RetroStation files from Google Drive');
+      } else {
+        showToast('Could not clear Google Drive files');
+      }
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
-  const handleResetEndpoint = () => {
-    setSyncEndpoint(null);
-    setEndpointInput('');
-    showToast('Reset vault endpoint to default');
-    runVaultHealthCheck();
+  const handleExportBackup = async () => {
+    setBackupBusy(true);
+    setBackupMsg(null);
+    try {
+      const backup = await createBackupFile();
+      downloadBackup(backup);
+      const count = Object.keys(backup.items).length;
+      setBackupMsg(`Exported ${count} save item(s) & ${backup.lists.retro_games?.length || 0} game(s).`);
+      showToast('Backup file downloaded!');
+    } catch (e: any) {
+      setBackupMsg(`Export failed: ${e?.message || 'unknown error'}`);
+    } finally {
+      setBackupBusy(false);
+    }
   };
 
-  const attemptedEndpoint = getSyncEndpoint();
+  const handleImportBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setBackupBusy(true);
+    setBackupMsg(null);
+    try {
+      const raw = await file.text();
+      const res = await importBackupFile(raw);
+      if (res.ok) {
+        setBackupMsg(
+          `Restored ${res.appliedListItemCount} game(s) & ${res.appliedItems} save item(s).`
+        );
+        showToast(`Restored ${res.appliedItems} save items from backup!`);
+      } else {
+        setBackupMsg(`Restore error: ${res.error || 'invalid file'}`);
+      }
+    } catch (err: any) {
+      setBackupMsg(`Restore error: ${err?.message || 'could not read file'}`);
+    } finally {
+      setBackupBusy(false);
+    }
+  };
+
+  const statusColor =
+    syncStatus === 'syncing' || isSyncing
+      ? 'text-amber-400 border-amber-500/30 bg-amber-500/10'
+      : syncStatus === 'error'
+        ? 'text-rose-400 border-rose-500/30 bg-rose-500/10'
+        : syncStatus === 'needs_reauth'
+          ? 'text-amber-300 border-amber-500/30 bg-amber-500/10'
+          : syncStatus === 'offline'
+            ? 'text-zinc-400 border-zinc-700 bg-zinc-800/60'
+            : user
+              ? 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10'
+              : 'text-zinc-400 border-zinc-700 bg-zinc-800/60';
+
+  const statusLabel =
+    syncStatus === 'syncing' || isSyncing
+      ? 'Syncing...'
+      : syncStatus === 'error'
+        ? 'Sync Error'
+        : syncStatus === 'needs_reauth'
+          ? 'Reconnect Needed'
+          : syncStatus === 'offline'
+            ? 'Offline Mode'
+            : user
+              ? 'Google Drive Linked'
+              : 'Not Linked';
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
-      style={{
-        paddingTop: 'max(env(safe-area-inset-top, 0px) + 20px, 36px)',
-        paddingBottom: 'max(env(safe-area-inset-bottom, 0px) + 20px, 36px)',
-        paddingLeft: 'max(env(safe-area-inset-left, 0px) + 12px, 16px)',
-        paddingRight: 'max(env(safe-area-inset-right, 0px) + 12px, 16px)',
-      }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fadeIn"
+      onClick={onClose}
     >
-      <div className="w-full max-w-lg max-h-[90vh] flex flex-col rounded-3xl bg-zinc-950 border border-zinc-800 shadow-2xl overflow-hidden my-auto hardware-panel">
+      <div
+        className={`relative w-full max-w-lg rounded-3xl border border-zinc-800 ${theme.cardBg} shadow-2xl overflow-hidden flex flex-col max-h-[90vh]`}
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
-        <div className="flex-none flex items-center justify-between px-5 py-4 border-b border-zinc-800 bg-zinc-950">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-400">
-              <Cloud className="w-4 h-4" />
+        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800/80 bg-zinc-900/50">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+              <Cloud className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-black text-white">Cloud Save Vault</h2>
-              <p className="text-[10px] text-zinc-400 font-medium">
-                Free Zero-Cost Sync • Works 100% Offline On The Go
+              <h2 className="text-base font-black tracking-tight text-white flex items-center gap-2">
+                Cloud Save & Backup
+                <span
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${statusColor}`}
+                >
+                  {statusLabel}
+                </span>
+              </h2>
+              <p className="text-xs text-zinc-400">
+                Google Drive Auto-Sync + Offline File Backup
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white tactile-btn border border-zinc-800"
-            aria-label="Close Cloud Save Vault"
+            className="p-2 rounded-xl bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 transition cursor-pointer"
+            title="Close"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Modal Body */}
-        <div className="flex-1 overflow-y-auto modal-scroll p-5 space-y-5">
-          {/* Offline-First Reassurance Banner */}
-          <div className="p-3.5 rounded-2xl bg-zinc-900/60 border border-zinc-800/80 flex items-start gap-3">
-            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0 mt-0.5">
-              <ShieldCheck className="w-4 h-4" />
-            </div>
-            <div className="text-xs space-y-1">
-              <div className="font-extrabold text-white flex items-center gap-1.5">
-                <span>Plays Offline Anywhere</span>
-                <span className="text-[9px] px-1.5 py-0.5 rounded uppercase font-black tracking-wider bg-emerald-500/20 text-emerald-300">
-                  Offline-First
-                </span>
+        {/* Body */}
+        <div className="p-5 overflow-y-auto space-y-4 text-sm">
+          {/* 1. GOOGLE DRIVE SYNC SECTION */}
+          {user ? (
+            <div className="space-y-3">
+              <div className="p-4 rounded-2xl bg-zinc-950/90 border border-emerald-500/30 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    {user.picture ? (
+                      <img
+                        src={user.picture}
+                        alt={user.name || 'User'}
+                        className="w-10 h-10 rounded-full border border-emerald-500/40 shrink-0"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-300 font-black text-sm shrink-0">
+                        {(user.name || user.email || 'G')[0].toUpperCase()}
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <div className="text-xs font-extrabold text-white truncate">
+                        {user.name || 'Google Drive Account'}
+                      </div>
+                      <div className="text-[11px] text-emerald-400 font-medium truncate">
+                        {user.email}
+                      </div>
+                    </div>
+                  </div>
+                  <span className="text-[11px] text-zinc-400 shrink-0">
+                    {lastSyncTime ? `Last sync: ${lastSyncTime}` : statusDetails || 'Ready'}
+                  </span>
+                </div>
+
+                {syncStatus === 'needs_reauth' && (
+                  <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-2 text-xs text-amber-200">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>Google session expired. Tap Sync Now to reconnect.</span>
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-2.5 pt-1">
+                  <button
+                    onClick={handleManualSync}
+                    disabled={isSyncing || syncStatus === 'syncing'}
+                    className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-zinc-950 font-black text-xs transition shadow-lg shadow-emerald-500/10 cursor-pointer"
+                  >
+                    <RefreshCw
+                      className={`w-4 h-4 ${
+                        isSyncing || syncStatus === 'syncing' ? 'animate-spin' : ''
+                      }`}
+                    />
+                    {isSyncing || syncStatus === 'syncing'
+                      ? 'Syncing...'
+                      : syncStatus === 'needs_reauth'
+                        ? 'Reconnect & Sync'
+                        : 'Sync Now'}
+                  </button>
+
+                  <button
+                    onClick={handleDisconnect}
+                    className={`flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border font-bold text-xs transition cursor-pointer ${
+                      confirmDisconnect
+                        ? 'bg-rose-500/20 border-rose-500 text-rose-300'
+                        : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-700/80 text-zinc-300'
+                    }`}
+                  >
+                    <LogOut className="w-4 h-4" />
+                    {confirmDisconnect ? 'Tap to Confirm' : 'Sign Out'}
+                  </button>
+                </div>
               </div>
-              <p className="text-zinc-400 leading-snug">
-                Your saves, states, and cartridge SRAM are saved locally to your device immediately.
-                When connected to Wi-Fi or mobile data, your progress syncs automatically.
-              </p>
-              <p className="text-zinc-500 leading-snug">
-                <span className="text-emerald-400 font-bold">Synced:</span> save states, cartridge SRAM/RTC, cover art, library&nbsp;•&nbsp;
-                <span className="text-amber-400 font-bold">Not synced:</span> ROM files — link them again on each new device.
+
+              {/* Sync Report Panel */}
+              {report.at > 0 && (
+                <div className="p-3.5 rounded-2xl bg-zinc-900/70 border border-zinc-800/80 space-y-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-zinc-300">Last Sync Report</span>
+                    <span className="text-[11px] text-zinc-400 font-mono">
+                      ↓ {report.pulled} pulled · ↑ {report.pushed} pushed
+                    </span>
+                  </div>
+
+                  {report.skipped.length > 0 && (
+                    <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 space-y-1">
+                      <div className="flex items-center gap-1.5 font-bold text-[11px]">
+                        <FileWarning className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        <span>{report.skipped.length} item(s) skipped:</span>
+                      </div>
+                      <ul className="text-[11px] text-amber-200/90 pl-5 list-disc space-y-0.5">
+                        {report.skipped.slice(0, 4).map((s, idx) => (
+                          <li key={idx} className="break-all">
+                            <span className="font-mono">{s.key}</span> — {s.reason}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {report.errors.length > 0 && (
+                    <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-200 space-y-1">
+                      <div className="flex items-center gap-1.5 font-bold text-[11px]">
+                        <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                        <span>{report.errors.length} error(s):</span>
+                      </div>
+                      <ul className="text-[11px] text-rose-200/90 pl-5 list-disc space-y-0.5">
+                        {report.errors.slice(0, 4).map((err, idx) => (
+                          <li key={idx} className="break-all">
+                            {err.key ? <span className="font-mono">{err.key}: </span> : null}
+                            {err.message}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-500/10 via-zinc-900/80 to-zinc-900 border border-emerald-500/25 space-y-3">
+              <div className="space-y-1">
+                <h3 className="text-sm font-extrabold text-white">
+                  Option 1: Google Drive Auto-Sync
+                </h3>
+                <p className="text-xs text-zinc-400 leading-relaxed">
+                  Sign in with Google to automatically sync your save states, battery saves
+                  (.srm), and game library to your private Google Drive{' '}
+                  <span className="text-zinc-200 font-semibold">appDataFolder</span>.
+                </p>
+              </div>
+              <button
+                onClick={handleSignInAndSync}
+                disabled={isSyncing}
+                className="w-full py-3 px-4 rounded-xl bg-white hover:bg-zinc-100 disabled:opacity-50 text-zinc-950 font-black text-xs flex items-center justify-center gap-2.5 transition shadow-lg cursor-pointer"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24">
+                  <path
+                    fill="#4285F4"
+                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                  />
+                  <path
+                    fill="#EA4335"
+                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                  />
+                </svg>
+                <span>{isSyncing ? 'Connecting...' : 'Sign in with Google Drive'}</span>
+              </button>
+            </div>
+          )}
+
+          {/* 2. MANUAL FILE BACKUP SECTION (Always available, 100% offline & reliable) */}
+          <div className="p-4 rounded-2xl border border-amber-500/25 bg-amber-500/5 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-white font-extrabold text-xs">
+                <HardDrive className="w-4 h-4 text-amber-400" />
+                <span>Option 2: Manual Backup File (.json)</span>
+              </div>
+              <span className="px-2 py-0.5 rounded-md text-[9px] font-black tracking-wider uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                100% Offline
+              </span>
+            </div>
+
+            {backupMsg && (
+              <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/25 text-[11px] text-amber-200 font-bold break-words">
+                {backupMsg}
+              </div>
+            )}
+
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Export all your save states, battery saves (.srm), and game library into a single
+              file. You can save it to your device or Google Drive manually and import it anywhere.
+            </p>
+
+            <div className="grid grid-cols-2 gap-2.5">
+              <button
+                onClick={handleExportBackup}
+                disabled={backupBusy}
+                className="py-2.5 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-zinc-950 transition active:scale-95 disabled:opacity-50 cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>{backupBusy ? 'Working...' : 'Export Backup'}</span>
+              </button>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={backupBusy}
+                className="py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700 transition active:scale-95 disabled:opacity-50 cursor-pointer"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>Import Backup</span>
+              </button>
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={handleImportBackup}
+            />
+          </div>
+
+          {/* Info Box */}
+          <div className="p-3.5 rounded-2xl bg-zinc-900/50 border border-zinc-800/80 space-y-2 text-xs text-zinc-400">
+            <div className="flex items-start gap-2.5">
+              <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+              <p className="leading-relaxed">
+                <span className="text-zinc-200 font-bold">Zero Server Bills & Private:</span>{' '}
+                Saves are stored in your own Google Drive or exported as a local file.{' '}
+                <span className="text-zinc-200 font-semibold">ROM binaries are not uploaded</span>{' '}
+                (simply re-select your ROM file on a new device and your saves attach
+                automatically).
               </p>
             </div>
           </div>
 
-          {/* ACTIVE STATE: SYNC CODE LINKED */}
-          {syncCode ? (
-            <div className="space-y-4">
-              {/* Sync Code Display Card */}
-              <div className="p-5 rounded-2xl bg-gradient-to-b from-zinc-900/90 to-zinc-950 border border-sky-500/30 shadow-lg space-y-3">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-[10px] font-black tracking-wider uppercase text-zinc-400">
-                    Active Sync Code
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    <span
-                      className={`w-2 h-2 rounded-full ${
-                        syncStatus === 'offline'
-                          ? 'bg-amber-400'
-                          : syncStatus === 'error'
-                          ? 'bg-rose-400'
-                          : 'bg-emerald-400'
-                      }`}
-                    />
-                    <span className="text-[11px] font-bold text-zinc-300 capitalize">
-                      {syncStatus === 'offline'
-                        ? 'Offline'
-                        : syncStatus === 'syncing'
-                        ? 'Syncing'
-                        : syncStatus === 'error'
-                        ? 'Connection Warning'
-                        : 'Active'}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 font-mono text-lg sm:text-xl font-black text-sky-300 bg-black/60 px-4 py-3 rounded-xl border border-sky-500/20 tracking-wider select-all text-center">
-                    {syncCode}
-                  </div>
-                  <button
-                    onClick={copyCode}
-                    className="p-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 transition active:scale-95 shrink-0 flex items-center justify-center"
-                    title="Copy Sync Code"
-                    aria-label="Copy Sync Code"
-                  >
-                    {copied ? (
-                      <Check className="w-5 h-5 text-emerald-400 stroke-[3]" />
-                    ) : (
-                      <Copy className="w-5 h-5" />
-                    )}
-                  </button>
-                </div>
-
-                {/* Error / Connection Notice */}
-                {syncStatus === 'error' && (
-                  <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-[11px] text-rose-300 leading-snug space-y-1">
-                    <div className="font-extrabold flex items-center gap-1.5 text-rose-200">
-                      <AlertTriangle className="w-3.5 h-3.5" />
-                      <span>Sync Notice:</span>
-                    </div>
-                    <p>{statusDetails || 'Could not connect to cloud vault.'}</p>
-                    <p className="text-zinc-400 text-[10px] pt-1">
-                      Retrying automatically. You can also tap &quot;Sync Now&quot; to retry now.
-                    </p>
-                  </div>
-                )}
-
-                <p className="text-[11px] text-zinc-400 text-center leading-snug">
-                  Enter this code on your phone, tablet, or PC to access all your save files and imported games!
-                </p>
-
-                {lastSyncTime && (
-                  <div className="pt-2 border-t border-zinc-800/80 flex items-center justify-between text-[11px] text-zinc-400">
-                    <span>Last Cloud Sync:</span>
-                    <span className="font-mono text-zinc-200">{lastSyncTime}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Last Sync Report */}
-              {(report.pushed > 0 ||
-                report.pulled > 0 ||
-                report.skipped.length > 0 ||
-                report.at > 0) && (
-                <div className="p-3.5 rounded-2xl bg-zinc-900/60 border border-zinc-800 space-y-2">
-                  <div className="flex items-center justify-between text-[10px] font-black tracking-wider uppercase text-zinc-500">
-                    <span>Last Sync Report</span>
-                    <span className="text-zinc-600 normal-case font-medium">
-                      {new Date(report.at).toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </span>
-                  </div>
-                  <div className="flex gap-3 text-[11px] font-bold">
-                    <span className="text-emerald-400">↓ {report.pulled} pulled</span>
-                    <span className="text-sky-400">↑ {report.pushed} pushed</span>
-                    {report.skipped.length > 0 && (
-                      <span className="text-amber-400">⚠ {report.skipped.length} skipped</span>
-                    )}
-                  </div>
-                  {report.skipped.map((s, i) => (
-                    <div
-                      key={`skip-${i}`}
-                      className="flex items-start gap-2 text-[10px] text-amber-300/90 bg-amber-500/5 border border-amber-500/20 rounded-lg px-2 py-1.5"
-                    >
-                      <FileWarning className="w-3 h-3 mt-0.5 shrink-0" />
-                      <span className="font-mono break-all">{s.key}</span>
-                      <span className="text-zinc-400 shrink-0">— {s.reason}</span>
-                    </div>
-                  ))}
-                  {report.errors.map((er, i) => (
-                    <div
-                      key={`err-${i}`}
-                      className="flex items-start gap-2 text-[10px] text-rose-300/90 bg-rose-500/5 border border-rose-500/20 rounded-lg px-2 py-1.5"
-                    >
-                      <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
-                      {er.key && <span className="font-mono break-all">{er.key}</span>}
-                      <span className="text-zinc-300 break-words">{er.message}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Action Buttons: Sync Now & Disconnect */}
-              <div className="flex gap-2.5">
-                <button
-                  onClick={handleManualSync}
-                  disabled={isSyncing}
-                  className={`flex-1 py-3 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition active:scale-95 ${
-                    isSyncing
-                      ? 'bg-zinc-800 text-zinc-400 cursor-not-allowed'
-                      : `${theme.accentBg}`
-                  }`}
-                >
-                  <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-                  <span>{isSyncing ? 'Syncing Vault...' : 'Sync Now'}</span>
-                </button>
-
-                {confirmDisconnect ? (
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={handleDisconnect}
-                      className="py-3 px-3 rounded-xl font-bold text-xs bg-rose-600 hover:bg-rose-500 text-white transition active:scale-95"
-                    >
-                      Disconnect?
-                    </button>
-                    <button
-                      onClick={() => setConfirmDisconnect(false)}
-                      className="py-3 px-2.5 rounded-xl text-xs text-zinc-400 hover:text-white bg-zinc-900 border border-zinc-800"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => setConfirmDisconnect(true)}
-                    className="py-3 px-4 rounded-xl font-bold text-xs bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-rose-400 transition active:scale-95 flex items-center gap-1.5"
-                    title="Disconnect Code"
-                  >
-                    <LogOut className="w-4 h-4" />
-                    <span className="hidden sm:inline">Disconnect</span>
-                  </button>
-                )}
-              </div>
-            </div>
-          ) : (
-            /* UNLINKED STATE: GENERATE OR ENTER CODE */
-            <div className="space-y-4">
-              {/* Option A: Generate New Code */}
-              <div className="p-4 rounded-2xl bg-zinc-900/70 border border-zinc-800 space-y-2.5">
-                <div className="flex items-center gap-2 text-white text-xs font-black">
-                  <Sparkles className="w-4 h-4 text-emerald-400" />
-                  <span>New to Cloud Save?</span>
-                </div>
-                <p className="text-xs text-zinc-400 leading-snug">
-                  Generate a private Sync Code with 1 tap. All your cartridge saves, save states, and imported game covers will be backed up automatically.
-                </p>
-                <button
-                  onClick={handleGenerateCode}
-                  className={`w-full py-3 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition active:scale-95 ${theme.accentBg}`}
-                >
-                  <KeyRound className="w-4 h-4" />
-                  <span>Generate New Sync Code</span>
-                </button>
-              </div>
-
-              {/* Option B: Enter Existing Code */}
-              <div className="p-4 rounded-2xl bg-zinc-900/70 border border-zinc-800 space-y-3">
-                <div className="flex items-center gap-2 text-white text-xs font-black">
-                  <Cloud className="w-4 h-4 text-sky-400" />
-                  <span>Already Have a Sync Code?</span>
-                </div>
-                <p className="text-xs text-zinc-400 leading-snug">
-                  Enter your code from another device to immediately sync and restore your progress.
-                </p>
-
-                <form onSubmit={handleConnectCode} className="space-y-2.5">
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={inputCode}
-                      onChange={(e) => setInputCode(e.target.value.toUpperCase())}
-                      placeholder="e.g. RETRO-7K9P-4X2B"
-                      aria-label="Enter Sync Code"
-                      className="w-full bg-black/60 border border-zinc-800 focus:border-sky-500 rounded-xl px-3.5 py-2.5 text-xs font-mono font-bold text-white placeholder-zinc-600 outline-none uppercase tracking-wider"
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={!inputCode.trim()}
-                    className="w-full py-2.5 px-4 rounded-xl font-bold text-xs bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 disabled:hover:bg-zinc-800 text-white border border-zinc-700 flex items-center justify-center gap-2 transition active:scale-95"
-                  >
-                    <span>Connect & Restore Saves</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </form>
-              </div>
-            </div>
-          )}
-
-          {/* Collapsible Advanced Settings (Custom Cloudflare Worker Endpoint) */}
-          <div className="pt-2 border-t border-zinc-900">
+          {/* Advanced Settings */}
+          <div className="border-t border-zinc-800/80 pt-2">
             <button
-              onClick={() => setShowAdvanced((v) => !v)}
-              className="w-full flex items-center justify-between text-[11px] font-bold text-zinc-400 hover:text-zinc-200 py-1 transition"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              className="w-full flex items-center justify-between py-2 text-xs font-bold text-zinc-400 hover:text-zinc-200 transition cursor-pointer"
             >
-              <div className="flex items-center gap-1.5">
-                <Server className="w-3.5 h-3.5" />
-                <span>Custom Cloud Vault Server (Optional)</span>
-              </div>
+              <span className="flex items-center gap-2">
+                <KeyRound className="w-3.5 h-3.5 text-zinc-500" />
+                Advanced / Self-Hosted OAuth Settings
+              </span>
               {showAdvanced ? (
-                <ChevronUp className="w-3.5 h-3.5" />
+                <ChevronUp className="w-4 h-4" />
               ) : (
-                <ChevronDown className="w-3.5 h-3.5" />
+                <ChevronDown className="w-4 h-4" />
               )}
             </button>
 
             {showAdvanced && (
-              <div className="mt-3 p-3.5 rounded-xl bg-black/40 border border-zinc-800/80 space-y-2.5">
-                <p className="text-[11px] text-zinc-400 leading-snug">
-                  By default, RetroStation uses the community Cloudflare Worker vault. If you deployed
-                  your own private worker, paste your worker URL below:
-                </p>
-                {attemptedEndpoint !== getSyncEndpoint() && (
-                  <p className="text-[11px] text-amber-400 font-bold break-all">
-                    Current endpoint: {attemptedEndpoint}
+              <div className="mt-2 p-3.5 rounded-2xl bg-zinc-950/80 border border-zinc-800/80 space-y-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-zinc-300 mb-1">
+                    Custom Google OAuth Client ID (Optional)
+                  </label>
+                  <p className="text-[11px] text-zinc-500 mb-2 leading-relaxed">
+                    Leave blank to use the built-in Client ID. If hosting on your own domain,
+                    paste your own Google Web Client ID here.
                   </p>
-                )}
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={endpointInput}
-                    onChange={(e) => setEndpointInput(e.target.value)}
-                    placeholder="https://your-worker.your-subdomain.workers.dev"
-                    aria-label="Custom Cloud Vault Server URL"
-                    className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-1.5 text-[11px] font-mono text-zinc-200 outline-none focus:border-zinc-700"
-                  />
-                  <button
-                    onClick={handleSaveEndpoint}
-                    className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-[11px] font-bold transition"
-                  >
-                    Save
-                  </button>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={clientIdInput}
+                      onChange={(e) => setClientIdInput(e.target.value)}
+                      placeholder={DEFAULT_GOOGLE_CLIENT_ID}
+                      className="flex-1 px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700/80 text-white font-mono text-xs focus:outline-none focus:border-emerald-500"
+                    />
+                    <button
+                      onClick={() => {
+                        setGoogleClientId(clientIdInput);
+                        showToast(
+                          clientIdInput.trim()
+                            ? 'Custom Google Client ID saved'
+                            : 'Reverted to default Google Client ID'
+                        );
+                      }}
+                      className="px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold text-xs transition cursor-pointer"
+                    >
+                      Save
+                    </button>
+                  </div>
                 </div>
-                {healthProblem && (
-                  <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[10px] text-amber-300 leading-snug flex items-start gap-1.5">
-                    <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                    <div>
-                      <p className="break-words">{healthProblem}</p>
-                      <p className="text-zinc-400 mt-0.5">
-                        Touching &quot;Reset to default URL&quot; below returns you to the working community vault.
-                        Your stored endpoint is never wiped automatically by a failed sync.
-                      </p>
-                    </div>
+
+                {user && (
+                  <div className="pt-2 border-t border-zinc-800/80 flex items-center justify-between">
+                    <span className="text-[11px] text-zinc-400">
+                      Delete all RetroStation saves from Google Drive
+                    </span>
+                    <button
+                      onClick={handleClearCloud}
+                      disabled={isSyncing}
+                      className={`px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                        confirmClearCloud
+                          ? 'bg-rose-500 text-white'
+                          : 'bg-rose-500/15 border border-rose-500/30 text-rose-300 hover:bg-rose-500/25'
+                      }`}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      {confirmClearCloud ? 'Confirm Wipe Cloud' : 'Clear Drive Saves'}
+                    </button>
                   </div>
                 )}
-                <div className="flex justify-end">
-                  <button
-                    onClick={handleResetEndpoint}
-                    className="text-[10px] text-zinc-500 hover:text-zinc-300 underline"
-                  >
-                    Reset to default URL
-                  </button>
-                </div>
               </div>
             )}
           </div>

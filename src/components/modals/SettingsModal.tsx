@@ -447,20 +447,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                   <p className="text-xs text-zinc-400 leading-snug">
                     {syncCode
-                      ? `Active Sync Code: ${syncCode}. Tap to manage or sync.`
-                      : 'Sync your saves, states & games across devices with a private code.'}
+                      ? `Connected: ${syncCode}. Tap to manage or sync.`
+                      : 'Sign in with Google Drive to sync saves, states & games across devices.'}
                   </p>
                 </div>
                 <ChevronRight className="w-4 h-4 text-zinc-500 shrink-0" />
               </button>
 
               <div className="p-4 rounded-2xl border border-zinc-800/80 bg-zinc-900/30 space-y-2 text-xs text-zinc-400">
-                <span className="font-bold text-zinc-300 block">About Cloud Vault</span>
+                <span className="font-bold text-zinc-300 block">About Google Drive Sync</span>
                 <p>
-                  Zero cost, zero registration. All your SRAM saves, game states, and custom library metadata synchronize securely via an edge-backed Cloudflare Worker.
+                  Zero server cost ($0.00 forever). Your SRAM battery saves, save states, and game library metadata synchronize directly to your personal Google Drive private appDataFolder.
                 </p>
                 <p>
-                  Works 100% offline first — whenever you are off the grid, saves write instantly to device storage and queue for sync when internet reconnects.
+                  Works 100% offline first — whenever you are off the grid, saves write instantly to device storage and sync when you reconnect.
                 </p>
               </div>
 
