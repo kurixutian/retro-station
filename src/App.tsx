@@ -437,7 +437,13 @@ export default function App() {
   };
 
   const sendKey = useCallback((name: string, down: boolean) => {
-    if (down) hasUserInteractedRef.current = true;
+    if (down) {
+      hasUserInteractedRef.current = true;
+      try {
+        const win = emuFrameRef.current?.contentWindow as any;
+        if (typeof win?.unlockAudio === 'function') win.unlockAudio();
+      } catch (e) {}
+    }
     const win = emuFrameRef.current?.contentWindow as any;
     if (!win) return;
 
@@ -1040,14 +1046,27 @@ export default function App() {
       console.warn('[App] flushLiveProgress on return home warning:', e);
     }
 
-    // 2. Switch back to library view
+    // 2. Teardown active emulator instance so no loops or audio linger
+    try {
+      const win = emuFrameRef.current?.contentWindow as any;
+      if (typeof win?.destroyEmulator === 'function') {
+        win.destroyEmulator();
+      } else if (win?.EJS_emulator?.gameManager?.toggleMainLoop) {
+        win.EJS_emulator.gameManager.toggleMainLoop(0);
+      }
+      if (typeof win?.setAudioMuted === 'function') win.setAudioMuted(true);
+      if (emuFrameRef.current) emuFrameRef.current.src = 'about:blank';
+    } catch (e) {}
+    setRomUrl(null);
+
+    // 3. Switch back to library view
     setCurrentView('home');
 
-    // 3. Mark gameplay inactive so cloud sync isn't deferred
+    // 4. Mark gameplay inactive so cloud sync isn't deferred
     (window as any).__retroGameplayActive = false;
     setGameplayActive(false);
 
-    // 4. Auto-sync saves to cloud vault if a sync code is linked and online
+    // 5. Auto-sync saves to cloud vault if a sync code is linked and online
     const code = getSyncCode();
     if (code && typeof navigator !== 'undefined' && navigator.onLine) {
       syncNow().catch((err) => {

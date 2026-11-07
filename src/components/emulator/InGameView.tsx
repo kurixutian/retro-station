@@ -250,6 +250,26 @@ export const InGameView: React.FC<InGameViewProps> = ({
     return () => document.removeEventListener('fullscreenchange', onFsChange);
   }, []);
 
+  React.useEffect(() => {
+    return () => {
+      try {
+        const frame = emuFrameRef.current;
+        const win = frame?.contentWindow as any;
+        if (win) {
+          if (typeof win.destroyEmulator === 'function') {
+            win.destroyEmulator();
+          } else if (win.EJS_emulator?.gameManager?.toggleMainLoop) {
+            win.EJS_emulator.gameManager.toggleMainLoop(0);
+          }
+          if (typeof win.setAudioMuted === 'function') win.setAudioMuted(true);
+        }
+        if (frame) {
+          frame.src = 'about:blank';
+        }
+      } catch (e) {}
+    };
+  }, [romUrl, emuFrameRef]);
+
   const toggleFullscreen = React.useCallback(() => {
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen().then(() => {
@@ -419,6 +439,10 @@ export const InGameView: React.FC<InGameViewProps> = ({
         if (e.cancelable) e.preventDefault();
         e.stopPropagation();
         activeDpadPointerId.current = e.pointerId;
+        const win = emuFrameRef.current?.contentWindow as any;
+        if (win && typeof win.unlockAudio === 'function') {
+          try { win.unlockAudio(); } catch (err) {}
+        }
         if (!dpadRectRef.current || dpadRectRef.current.width === 0) {
           dpadRectRef.current = e.currentTarget.getBoundingClientRect();
         }
