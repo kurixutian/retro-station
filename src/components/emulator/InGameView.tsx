@@ -1435,9 +1435,11 @@ export const InGameView: React.FC<InGameViewProps> = ({
           }`}
           style={{
             order: 0,
-            paddingTop: shaders.edgeToEdge
-              ? (isLandscape ? '0px' : 'env(safe-area-inset-top, 0px)')
-              : (isLandscape ? '6px' : 'max(env(safe-area-inset-top, 0px), 24px)'),
+            paddingTop: isLandscape
+              ? (shaders.edgeToEdge ? '0px' : '6px')
+              : shaders.edgeToEdge
+              ? `max(0px, max(env(safe-area-inset-top, 0px), calc(env(safe-area-inset-top, 0px) + ${(screenY - 0.5) * 35}vh)))`
+              : `max(0px, max(env(safe-area-inset-top, 0px), calc(24px + ${(screenY - 0.5) * 35}vh)))`,
             paddingBottom: shaders.edgeToEdge
               ? (isLandscape ? '0px' : undefined)
               : (isLandscape ? 'max(env(safe-area-inset-bottom, 0px), 6px)' : undefined),
@@ -1462,166 +1464,166 @@ export const InGameView: React.FC<InGameViewProps> = ({
             </div>
           )}
 
-          <div
-            onClick={() => {
-              if (customizing) {
-                setSelectedPad('screen');
-              }
-            }}
-            className={`relative bg-black overflow-hidden ${
-              isPoweringOff ? 'crt-power-off' : ''
-            } ${
-              customizing && selectedPad === 'screen'
-                ? 'border-2 border-emerald-400 ring-2 ring-emerald-400/50 cursor-pointer'
-                : customizing
-                ? 'border-2 border-white/30 cursor-pointer'
-                : shaders.edgeToEdge
-                ? 'border-0 shadow-none'
-                : isGba
-                ? 'border-2 border-zinc-800 shadow-2xl ring-1 ring-white/5'
-                : shaders.amoled
-                ? 'border-2 border-zinc-900 shadow-none'
-                : 'border-2 border-zinc-800 shadow-inner'
-            } ${
-              shaders.edgeToEdge
-                ? 'rounded-none'
-                : isGba
-                ? 'rounded-xl'
-                : shaders.crtCurve
-                ? 'rounded-2xl scale-[0.99]'
-                : 'rounded-lg'
-            }`}
-            style={{
-              aspectRatio: String(screenRatio),
-              maxWidth: isLandscape
-                ? '100%'
-                : `min(100%, calc(48lvh * ${screenRatio} * ${screenScale}))`,
-              maxHeight: isLandscape
-                ? `calc((100lvh - ${Math.round(22 * transportScale + 10)}px) * ${screenScale})`
-                : `calc(48lvh * ${screenScale})`,
-              width: isLandscape
-                ? `min(100%, calc(${(screenRatio * 92).toFixed(2)}lvh * ${screenScale}))`
-                : shaders.edgeToEdge
-                ? `calc(100% * ${screenScale})`
-                : `min(100%, calc(48lvh * ${screenRatio} * ${screenScale}))`,
-              height: isLandscape
-                ? `calc((100lvh - ${Math.round(22 * transportScale + 10)}px) * ${screenScale})`
-                : 'auto',
-              transform: !isLandscape && screenY !== 0.5
-                ? `translateY(calc(${(screenY - 0.5) * 30}vh))`
-                : undefined,
-              boxShadow: !shaders.edgeToEdge && !shaders.amoled && shaders.rgbBloom
-                ? `0 0 28px ${theme.hex}33, inset 0 0 18px rgba(0,0,0,0.75)`
-                : 'none',
-              filter: 'none',
-              contain: 'layout paint'
-            }}
-          >
-            {renderGameScreen()}
-
-            {/* Direct Vertical Screen Drag Handle in Customizing Mode (Strictly Centered Horizontally) */}
-            {customizing && (
-              <div
-                className={`absolute inset-0 touch-none cursor-ns-resize pointer-events-auto z-30 flex items-center justify-center ${
-                  selectedPad === 'screen'
-                    ? 'border-2 border-dashed border-emerald-400 bg-emerald-400/15'
-                    : 'border-2 border-dashed border-white/40 bg-black/40 hover:border-emerald-400/60'
-                }`}
-                onPointerDown={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  try {
-                    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-                  } catch (err) {}
-                  screenDraggingRef.current = true;
-                  screenStartClientYRef.current = e.clientY;
-                  screenInitialYRef.current = padLayout.screen?.y ?? 0.5;
+          {/* Portrait Screen + Lens Assembly (Centered horizontally, vertical position driven by flow paddingTop) */}
+          <div className="w-full flex flex-col items-center justify-center">
+            <div
+              onClick={() => {
+                if (customizing) {
                   setSelectedPad('screen');
-                }}
-                onPointerMove={(e) => {
-                  if (!screenDraggingRef.current) return;
-                  const deltaY = (e.clientY - screenStartClientYRef.current) / (window.innerHeight * 0.35);
-                  const rawY = Math.min(0.9, Math.max(0.1, screenInitialYRef.current + deltaY));
-                  let snappedY = rawY;
-                  let snapLabel: string | null = null;
-                  if (Math.abs(rawY - 0.5) < 0.035) {
-                    snappedY = 0.5;
-                    snapLabel = 'Screen Centered (0%)';
-                    if (!screenSnappedRef.current) {
-                      haptics.selection();
-                      screenSnappedRef.current = true;
+                }
+              }}
+              className={`relative bg-black overflow-hidden ${
+                isPoweringOff ? 'crt-power-off' : ''
+              } ${
+                customizing && selectedPad === 'screen'
+                  ? 'border-2 border-emerald-400 ring-2 ring-emerald-400/50 cursor-pointer'
+                  : customizing
+                  ? 'border-2 border-white/30 cursor-pointer'
+                  : shaders.edgeToEdge
+                  ? 'border-0 shadow-none'
+                  : isGba
+                  ? 'border-2 border-zinc-800 shadow-2xl ring-1 ring-white/5'
+                  : shaders.amoled
+                  ? 'border-2 border-zinc-900 shadow-none'
+                  : 'border-2 border-zinc-800 shadow-inner'
+              } ${
+                shaders.edgeToEdge
+                  ? 'rounded-none'
+                  : isGba
+                  ? 'rounded-xl'
+                  : shaders.crtCurve
+                  ? 'rounded-2xl scale-[0.99]'
+                  : 'rounded-lg'
+              }`}
+              style={{
+                aspectRatio: String(screenRatio),
+                maxWidth: isLandscape
+                  ? '100%'
+                  : `min(100%, calc(48lvh * ${screenRatio} * ${screenScale}))`,
+                maxHeight: isLandscape
+                  ? `calc((100lvh - ${Math.round(22 * transportScale + 10)}px) * ${screenScale})`
+                  : `calc(48lvh * ${screenScale})`,
+                width: isLandscape
+                  ? `min(100%, calc(${(screenRatio * 92).toFixed(2)}lvh * ${screenScale}))`
+                  : shaders.edgeToEdge
+                  ? `calc(100% * ${screenScale})`
+                  : `min(100%, calc(48lvh * ${screenRatio} * ${screenScale}))`,
+                height: isLandscape
+                  ? `calc((100lvh - ${Math.round(22 * transportScale + 10)}px) * ${screenScale})`
+                  : 'auto',
+                boxShadow: !shaders.edgeToEdge && !shaders.amoled && shaders.rgbBloom
+                  ? `0 0 28px ${theme.hex}33, inset 0 0 18px rgba(0,0,0,0.75)`
+                  : 'none',
+                filter: 'none',
+                contain: 'layout paint'
+              }}
+            >
+              {renderGameScreen()}
+
+              {/* Direct Vertical Screen Drag Handle in Customizing Mode (Strictly Centered Horizontally) */}
+              {customizing && (
+                <div
+                  className={`absolute inset-0 touch-none cursor-ns-resize pointer-events-auto z-30 flex items-center justify-center ${
+                    selectedPad === 'screen'
+                      ? 'border-2 border-dashed border-emerald-400 bg-emerald-400/15'
+                      : 'border-2 border-dashed border-white/40 bg-black/40 hover:border-emerald-400/60'
+                  }`}
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    try {
+                      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                    } catch (err) {}
+                    screenDraggingRef.current = true;
+                    screenStartClientYRef.current = e.clientY;
+                    screenInitialYRef.current = padLayout.screen?.y ?? 0.5;
+                    setSelectedPad('screen');
+                  }}
+                  onPointerMove={(e) => {
+                    if (!screenDraggingRef.current) return;
+                    const deltaY = (e.clientY - screenStartClientYRef.current) / (window.innerHeight * 0.35);
+                    const rawY = Math.min(0.9, Math.max(0.1, screenInitialYRef.current + deltaY));
+                    let snappedY = rawY;
+                    let snapLabel: string | null = null;
+                    if (Math.abs(rawY - 0.5) < 0.035) {
+                      snappedY = 0.5;
+                      snapLabel = 'Screen Centered (0%)';
+                      if (!screenSnappedRef.current) {
+                        haptics.selection();
+                        screenSnappedRef.current = true;
+                      }
+                    } else {
+                      screenSnappedRef.current = false;
+                      const offsetPct = Math.round((snappedY - 0.5) * 200);
+                      snapLabel = offsetPct > 0 ? `Screen Slide Down +${offsetPct}%` : `Screen Slide Up ${offsetPct}%`;
                     }
-                  } else {
-                    screenSnappedRef.current = false;
-                    const offsetPct = Math.round((snappedY - 0.5) * 200);
-                    snapLabel = offsetPct > 0 ? `Screen Slide Down +${offsetPct}%` : `Screen Slide Up ${offsetPct}%`;
-                  }
-                  setActiveSnapGuide({ y: snappedY === 0.5 ? 0.5 : null, label: snapLabel });
-                  movePad('screen', 0.5, snappedY); // X is strictly 0.5 (CENTERED, NO LEFT/RIGHT!)
-                }}
-                onPointerUp={(e) => {
-                  if (screenDraggingRef.current) {
-                    screenDraggingRef.current = false;
-                    screenSnappedRef.current = false;
-                    setActiveSnapGuide(null);
-                    try {
-                      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-                    } catch (err) {}
-                  }
-                }}
-                onPointerCancel={(e) => {
-                  if (screenDraggingRef.current) {
-                    screenDraggingRef.current = false;
-                    screenSnappedRef.current = false;
-                    setActiveSnapGuide(null);
-                    try {
-                      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-                    } catch (err) {}
-                  }
-                }}
-              >
-                {selectedPad === 'screen' && (
-                  <div className="px-3 py-1.5 rounded-xl bg-black/85 border border-emerald-400/80 text-emerald-300 text-xs font-mono font-bold shadow-2xl flex items-center gap-2 pointer-events-none select-none backdrop-blur-md">
-                    <GripVertical className="w-4 h-4 text-emerald-400" />
-                    <span>Slide Up / Down • Centered X</span>
+                    setActiveSnapGuide({ y: snappedY === 0.5 ? 0.5 : null, label: snapLabel });
+                    movePad('screen', 0.5, snappedY); // X is strictly 0.5 (CENTERED, NO LEFT/RIGHT!)
+                  }}
+                  onPointerUp={(e) => {
+                    if (screenDraggingRef.current) {
+                      screenDraggingRef.current = false;
+                      screenSnappedRef.current = false;
+                      setActiveSnapGuide(null);
+                      try {
+                        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+                      } catch (err) {}
+                    }
+                  }}
+                  onPointerCancel={(e) => {
+                    if (screenDraggingRef.current) {
+                      screenDraggingRef.current = false;
+                      screenSnappedRef.current = false;
+                      setActiveSnapGuide(null);
+                      try {
+                        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+                      } catch (err) {}
+                    }
+                  }}
+                >
+                  {selectedPad === 'screen' && (
+                    <div className="px-3 py-1.5 rounded-xl bg-black/85 border border-emerald-400/80 text-emerald-300 text-xs font-mono font-bold shadow-2xl flex items-center gap-2 pointer-events-none select-none backdrop-blur-md">
+                      <GripVertical className="w-4 h-4 text-emerald-400" />
+                      <span>Slide Up / Down • Centered X</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Authentic Handheld Screen Lens Badge (Only when not in Edge-to-Edge mode) */}
+            {!shaders.edgeToEdge && !isLandscape && (
+              <div className="w-full flex items-center justify-center pt-2 pb-0.5 select-none pointer-events-none">
+                {isGba ? (
+                  <div className="flex items-center gap-1.5 opacity-85 tracking-widest text-[11px] font-sans">
+                    <span className="font-black text-zinc-300">GAME BOY</span>
+                    <span className="italic font-black text-indigo-400 text-xs">ADVANCE</span>
                   </div>
-                )}
+                ) : isGbc ? (
+                  <div className="flex items-center gap-1 opacity-85 font-sans font-black tracking-widest text-[10px] text-zinc-300">
+                    <span>GAME BOY</span>
+                    <span className="font-extrabold tracking-normal inline-flex text-[9px] gap-0.5">
+                      <span className="text-rose-500">C</span>
+                      <span className="text-amber-400">O</span>
+                      <span className="text-emerald-400">L</span>
+                      <span className="text-cyan-400">O</span>
+                      <span className="text-indigo-400">R</span>
+                    </span>
+                  </div>
+                ) : isGb ? (
+                  <div className="w-full flex items-center justify-between px-3 opacity-75">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                      <span className="text-[8px] font-mono font-bold tracking-wider text-zinc-400">BATTERY</span>
+                    </div>
+                    <span className="text-[8px] font-mono font-bold tracking-widest text-zinc-400">
+                      DOT MATRIX WITH STEREO SOUND
+                    </span>
+                  </div>
+                ) : null}
               </div>
             )}
           </div>
-
-          {/* Authentic Handheld Screen Lens Badge (Only when not in Edge-to-Edge mode) */}
-          {!shaders.edgeToEdge && !isLandscape && (
-            <div className="w-full flex items-center justify-center pt-2 pb-0.5 select-none pointer-events-none">
-              {isGba ? (
-                <div className="flex items-center gap-1.5 opacity-85 tracking-widest text-[11px] font-sans">
-                  <span className="font-black text-zinc-300">GAME BOY</span>
-                  <span className="italic font-black text-indigo-400 text-xs">ADVANCE</span>
-                </div>
-              ) : isGbc ? (
-                <div className="flex items-center gap-1 opacity-85 font-sans font-black tracking-widest text-[10px] text-zinc-300">
-                  <span>GAME BOY</span>
-                  <span className="font-extrabold tracking-normal inline-flex text-[9px] gap-0.5">
-                    <span className="text-rose-500">C</span>
-                    <span className="text-amber-400">O</span>
-                    <span className="text-emerald-400">L</span>
-                    <span className="text-cyan-400">O</span>
-                    <span className="text-indigo-400">R</span>
-                  </span>
-                </div>
-              ) : isGb ? (
-                <div className="w-full flex items-center justify-between px-3 opacity-75">
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-                    <span className="text-[8px] font-mono font-bold tracking-wider text-zinc-400">BATTERY</span>
-                  </div>
-                  <span className="text-[8px] font-mono font-bold tracking-widest text-zinc-400">
-                    DOT MATRIX WITH STEREO SOUND
-                  </span>
-                </div>
-              ) : null}
-            </div>
-          )}
 
           {/* Compact Transport Bar in Landscape: Positioned cleanly BELOW screen so it never obscures game content */}
           {isLandscape && (
