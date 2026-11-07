@@ -1168,7 +1168,11 @@ export default function App() {
       if (e.code === 'KeyM') toggleAudio();
       if (e.code === 'F1') {
         e.preventDefault();
-        if (activeGame) saveStateToGameSlot(activeGame, 1);
+        if (e.shiftKey) {
+          if (activeGame) saveStateToGameSlot(activeGame, 1);
+        } else {
+          showToast('Press Shift + F1 to Quick Save (Slot 1)');
+        }
       }
       if (e.code === 'F3') {
         e.preventDefault();

@@ -25,6 +25,7 @@ import {
   Layers,
   Pencil,
   Check,
+  Tv,
 } from 'lucide-react';
 import { Game, Theme, PadLayout, PadGroupId } from '../../types';
 import { coreRatio, formatGameTitle, EJS_CORES } from '../../constants/cores';
@@ -1021,9 +1022,11 @@ export const InGameView: React.FC<InGameViewProps> = ({
         <button
           aria-label="Show top bar"
           onClick={() => revealTopBar()}
-          className={`absolute top-0 ${isLandscape ? 'left-1/3 right-1/3' : 'left-0 right-0'} z-30 cursor-pointer`}
+          className={`absolute top-0 ${isLandscape ? 'left-1/3 right-1/3' : 'left-0 right-0'} z-30 cursor-pointer flex flex-col items-center pt-2`}
           style={{ height: 'max(env(safe-area-inset-top, 0px) + 28px, 44px)' }}
-        />
+        >
+          <span className="w-10 h-1 rounded-full bg-white/20 border border-white/10 shadow-sm opacity-50 hover:opacity-100 transition-opacity" />
+        </button>
 
         {/* 1. TOP BAR (auto-hides) */}
         <div
@@ -1111,44 +1114,71 @@ export const InGameView: React.FC<InGameViewProps> = ({
             onClick={() => setInGameMenuOpen(false)}
           >
             <div
-              className="w-full max-w-sm max-h-[85vh] overflow-y-auto modal-scroll bg-zinc-950 border border-zinc-700 rounded-2xl shadow-2xl p-4 space-y-2.5"
+              className="w-full max-w-sm max-h-[85vh] overflow-y-auto modal-scroll bg-zinc-950 border border-zinc-800 rounded-3xl shadow-2xl p-4 space-y-3 hardware-panel"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black uppercase tracking-wider text-zinc-300">
-                  MENU
-                </span>
+              <div className="flex items-center justify-between pb-1 border-b border-zinc-800/80">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 hardware-led" />
+                  <span className="text-xs font-black uppercase tracking-wider text-zinc-200">
+                    PAUSE MENU
+                  </span>
+                </div>
                 <button
                   onClick={() => setInGameMenuOpen(false)}
-                  className="p-1 rounded-lg bg-zinc-900 text-zinc-400 hover:text-white"
+                  className="p-1.5 rounded-xl bg-zinc-900 text-zinc-400 hover:text-white tactile-btn border border-zinc-800"
+                  aria-label="Close Pause Menu"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
 
+              {/* Tier 1: Primary State Actions */}
               <div className="grid grid-cols-2 gap-2">
-                {/* Save State Button */}
                 <button
                   onClick={() => {
                     setInGameMenuOpen(false);
                     setInGameSaveModalMode('save');
                   }}
-                  className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 text-xs font-bold transition"
+                  className="flex flex-col items-start gap-1 p-3 rounded-2xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 transition active:scale-[0.98] tactile-btn text-left"
                 >
-                  <Save className="w-4 h-4" />
-                  <span>Save State Slots</span>
+                  <div className="flex items-center gap-1.5 w-full justify-between">
+                    <Save className="w-4 h-4 text-emerald-400" />
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold uppercase">SLOTS</span>
+                  </div>
+                  <span className="text-xs font-bold text-white mt-1">Save State</span>
+                  <span className="text-[10px] text-emerald-400/80">Capture frame</span>
                 </button>
 
-                {/* Load State Button */}
                 <button
                   onClick={() => {
                     setInGameMenuOpen(false);
                     setInGameSaveModalMode('load');
                   }}
-                  className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-cyan-300 text-xs font-bold transition"
+                  className="flex flex-col items-start gap-1 p-3 rounded-2xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 transition active:scale-[0.98] tactile-btn text-left"
                 >
-                  <FolderOpen className="w-4 h-4" />
-                  <span>Load State Slots</span>
+                  <div className="flex items-center gap-1.5 w-full justify-between">
+                    <FolderOpen className="w-4 h-4 text-cyan-400" />
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-bold uppercase">4 SLOTS</span>
+                  </div>
+                  <span className="text-xs font-bold text-white mt-1">Load State</span>
+                  <span className="text-[10px] text-cyan-400/80">Restore bookmark</span>
+                </button>
+              </div>
+
+              {/* Tier 2: Quick Control & Display Toggles (Compact horizontal pill row) */}
+              <div className="grid grid-cols-3 gap-1.5">
+                <button
+                  onClick={toggleAudio}
+                  className={`flex flex-col items-center justify-center gap-1 p-2 rounded-xl border text-center transition active:scale-95 ${
+                    isMuted
+                      ? 'bg-rose-500/15 border-rose-500/40 text-rose-300'
+                      : 'bg-zinc-900/80 border-zinc-800 text-zinc-300 hover:bg-zinc-900'
+                  }`}
+                  title="Toggle Audio Mute"
+                >
+                  {isMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
+                  <span className="text-[10px] font-bold">{isMuted ? 'Muted' : 'Audio On'}</span>
                 </button>
 
                 <button
@@ -1158,67 +1188,38 @@ export const InGameView: React.FC<InGameViewProps> = ({
                     setCustomizing(true);
                     setSelectedPad('dpad');
                   }}
-                  className="flex items-center gap-2 px-3 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 text-xs font-semibold transition"
+                  className="flex flex-col items-center justify-center gap-1 p-2 rounded-xl bg-zinc-900/80 hover:bg-zinc-900 border border-zinc-800 text-zinc-300 text-center transition active:scale-95"
+                  title="Reposition and scale touch controls"
                 >
                   <Sliders className="w-4 h-4 text-sky-400" />
-                  <span>Customize Controls</span>
+                  <span className="text-[10px] font-bold">Edit Pad</span>
                 </button>
 
-                {/* CRT & Game Boy LCD Grid Shader Settings */}
                 <button
                   onClick={() => {
                     setInGameMenuOpen(false);
                     setGlobalSettingsOpen(true);
                   }}
-                  className="flex items-center gap-2 px-3 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 text-xs font-semibold transition"
+                  className="flex flex-col items-center justify-center gap-1 p-2 rounded-xl bg-zinc-900/80 hover:bg-zinc-900 border border-zinc-800 text-zinc-300 text-center transition active:scale-95"
+                  title="CRT Scanlines & Visual Settings"
                 >
-                  <Sliders className="w-4 h-4 text-purple-400" />
-                  <span>Shaders & Theme</span>
+                  <Tv className="w-4 h-4 text-purple-400" />
+                  <span className="text-[10px] font-bold">Shaders</span>
                 </button>
-
-                {/* Controls & Keybindings Guide */}
-                {onOpenControls && (
-                  <button
-                    onClick={() => {
-                      setInGameMenuOpen(false);
-                      onOpenControls();
-                    }}
-                    className="flex items-center gap-2 px-3 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 text-xs font-semibold transition"
-                  >
-                    <Gamepad2 className="w-4 h-4 text-emerald-400" />
-                    <span>Controls Guide</span>
-                  </button>
-                )}
-
-                {/* Reboot Core / Hard Reset */}
-                {launchGame && (
-                  <button
-                    onClick={() => {
-                      setInGameMenuOpen(false);
-                      launchGame(activeGame);
-                      showToast(`Rebooted ${activeGame.title}`);
-                    }}
-                    className="flex items-center gap-2 px-3 py-2 rounded-xl bg-zinc-900 hover:bg-rose-900/20 border border-zinc-800 hover:border-rose-500/30 text-zinc-300 hover:text-rose-300 text-xs font-semibold transition"
-                    title="Reload cartridge and restart emulator core"
-                  >
-                    <RefreshCw className="w-4 h-4 text-amber-400" />
-                    <span>Reboot Core</span>
-                  </button>
-                )}
               </div>
 
-              {/* Cartridge Battery Save (.SAV / .SRM) Export */}
-              <div className="pt-2 border-t border-zinc-800/80 space-y-1.5">
-                <div className="flex items-center justify-between text-[10px] text-zinc-400">
+              {/* Tier 3: Session & Cartridge Tools */}
+              <div className="pt-2 border-t border-zinc-800/80 space-y-2">
+                <div className="flex items-center justify-between text-[10px] text-zinc-400 px-0.5">
                   <span className="font-bold uppercase tracking-wider text-amber-300/90">
-                    Export Battery Save (.sav / .srm)
+                    Cartridge Save (.sav / .srm)
                   </span>
-                  <span className="text-emerald-400">Auto-Saved Offline</span>
+                  <span className="text-emerald-400 font-mono text-[9px]">Offline Ready</span>
                 </div>
                 <div className="grid grid-cols-2 gap-1.5">
                   <button
                     onClick={() => exportBatterySave(activeGame, 'sav')}
-                    className="flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 text-[11px] font-bold transition"
+                    className="flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-[11px] font-bold transition active:scale-95"
                     title="Download .sav for physical cartridge flashers (GB Operator / FlashGBX)"
                   >
                     <Download className="w-3.5 h-3.5" />
@@ -1226,35 +1227,43 @@ export const InGameView: React.FC<InGameViewProps> = ({
                   </button>
                   <button
                     onClick={() => exportBatterySave(activeGame, 'srm')}
-                    className="flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 text-[11px] font-semibold transition"
+                    className="flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 text-[11px] font-semibold transition active:scale-95"
                     title="Download .srm for RetroArch"
                   >
                     <Download className="w-3.5 h-3.5 text-amber-400" />
                     <span>Export .SRM</span>
                   </button>
                 </div>
-              </div>
 
-              {/* Audio Toggle Row */}
-              <div className="flex items-center justify-between pt-1 border-t border-zinc-800/80 text-xs">
-                <div className="flex items-center gap-1.5 text-zinc-300 font-bold">
-                  {isMuted ? (
-                    <VolumeX className="w-4 h-4 text-rose-400" />
-                  ) : (
-                    <Volume2 className="w-4 h-4 text-emerald-400" />
+                <div className="flex items-center gap-1.5 pt-1">
+                  {onOpenControls && (
+                    <button
+                      onClick={() => {
+                        setInGameMenuOpen(false);
+                        onOpenControls();
+                      }}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 text-[11px] font-semibold transition active:scale-95"
+                    >
+                      <Gamepad2 className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Controls Guide</span>
+                    </button>
                   )}
-                  <span>Game Audio</span>
+
+                  {launchGame && (
+                    <button
+                      onClick={() => {
+                        setInGameMenuOpen(false);
+                        launchGame(activeGame);
+                        showToast(`Rebooted ${activeGame.title}`);
+                      }}
+                      className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-zinc-900/90 hover:bg-rose-950/30 border border-zinc-800 hover:border-rose-500/30 text-zinc-400 hover:text-rose-300 text-[11px] font-semibold transition active:scale-95"
+                      title="Reload cartridge and restart emulator core"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Reboot</span>
+                    </button>
+                  )}
                 </div>
-                <button
-                  onClick={toggleAudio}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold transition active:scale-95 ${
-                    isMuted
-                      ? 'bg-rose-500/15 border-rose-500/40 text-rose-300 hover:bg-rose-500/25'
-                      : 'bg-zinc-900 border-zinc-800 text-zinc-200 hover:bg-zinc-800'
-                  }`}
-                >
-                  <span>{isMuted ? 'Muted' : 'Audio On'}</span>
-                </button>
               </div>
             </div>
           </div>

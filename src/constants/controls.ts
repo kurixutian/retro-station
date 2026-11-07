@@ -55,7 +55,7 @@ export const CONTROL_BINDINGS: ControlBinding[] = [
   { category: 'Hotkeys', name: 'Pause / Resume', primaryKey: 'P', altKey: '—', gamepad: '—' },
   { category: 'Hotkeys', name: 'Rewind (Hold)', primaryKey: 'R', altKey: 'Backspace', gamepad: '—' },
   { category: 'Hotkeys', name: 'Fast-Forward', primaryKey: 'F', altKey: '—', gamepad: '—' },
-  { category: 'Hotkeys', name: 'Quick Save (Slot 1)', primaryKey: 'F1', altKey: '—', gamepad: '—' },
+  { category: 'Hotkeys', name: 'Quick Save (Slot 1)', primaryKey: 'Shift + F1', altKey: '—', gamepad: '—' },
   { category: 'Hotkeys', name: 'Quick Load (Slot 1)', primaryKey: 'F3', altKey: '—', gamepad: '—' },
   { category: 'Hotkeys', name: 'Mute Audio', primaryKey: 'M', altKey: '—', gamepad: '—' },
 ];

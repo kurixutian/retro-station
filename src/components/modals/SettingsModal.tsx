@@ -1,5 +1,5 @@
-import React from 'react';
-import { Sliders, X, Tv, Palette, Check, Vibrate, Cloud, ChevronRight, Sparkles } from 'lucide-react';
+import React, { useState } from 'react';
+import { Sliders, X, Tv, Palette, Check, Vibrate, Cloud, ChevronRight, Sparkles, Gamepad2 } from 'lucide-react';
 import { THEMES } from '../../constants/themes';
 import { COLOR_PROFILES } from '../../constants/shaders';
 import { Theme } from '../../types';
@@ -33,6 +33,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   setHapticsEnabled,
   onOpenCloudSync,
 }) => {
+  const [activeTab, setActiveTab] = useState<'display' | 'controls' | 'themes' | 'vault'>('display');
+
   if (!isOpen) return null;
   const syncCode = getSyncCode();
 
@@ -61,263 +63,330 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-5 space-y-6">
-          {/* Cloud Save Vault Card */}
-          <div
-            onClick={() => {
-              onClose();
-              onOpenCloudSync?.();
-            }}
-            className="p-4 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 bg-zinc-900/70 border-zinc-800 text-zinc-300 hover:bg-zinc-900 hover:border-zinc-700"
-          >
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <Cloud className="w-4 h-4 text-sky-400" />
-                <span className="text-sm font-extrabold text-white">Cloud Save Vault</span>
-                <span className={`px-2 py-0.5 rounded-md text-[9px] font-black tracking-wider uppercase ${
-                  syncCode
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                    : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
-                }`}>
-                  {syncCode ? 'Linked' : 'Not Linked'}
-                </span>
-              </div>
-              <p className="text-xs text-zinc-400 leading-snug">
-                {syncCode
-                  ? `Active Sync Code: ${syncCode}. Tap to manage or sync.`
-                  : 'Sync your saves, states & games across devices with a private code.'}
-              </p>
-            </div>
-            <ChevronRight className="w-4 h-4 text-zinc-500 shrink-0" />
-          </div>
-
-          {/* Controls & Haptic Feedback Toggle Card */}
-          <div
-            onClick={() => {
-              const next = !hapticsEnabled;
-              setHapticsEnabled?.(next);
-              haptics.setEnabled(next);
-            }}
-            className={`p-4 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 ${
-              hapticsEnabled
-                ? 'bg-sky-500/15 border-sky-500/50 text-white'
-                : 'bg-zinc-900/70 border-zinc-800 text-zinc-300 hover:bg-zinc-900'
-            }`}
-          >
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <Vibrate className={`w-4 h-4 ${hapticsEnabled ? 'text-sky-400' : 'text-zinc-500'}`} />
-                <span className="text-sm font-extrabold text-white">Haptic Vibration</span>
-                <span className="px-2 py-0.5 rounded-md text-[9px] font-black tracking-wider uppercase bg-sky-500/20 text-sky-300 border border-sky-500/30">
-                  Touchpad
-                </span>
-              </div>
-              <p className="text-xs text-zinc-400 leading-snug">
-                Vibration on buttons.
-              </p>
-            </div>
-
-            <div
-              className={`shrink-0 w-12 h-6 rounded-full transition-colors p-0.5 flex items-center ${
-                hapticsEnabled ? 'bg-sky-500 justify-end' : 'bg-zinc-800 border border-zinc-700 justify-start'
-              }`}
-            >
-              <div className="w-5 h-5 rounded-full bg-white shadow-md" />
-            </div>
-          </div>
-
-          {/* AMOLED Battery Saver Dedicated Toggle Card */}
-          <div
-            onClick={() => toggleShader('amoled')}
-            className={`p-4 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 ${
-              shaders.amoled
-                ? 'bg-emerald-500/15 border-emerald-500/50 text-white'
-                : 'bg-zinc-900/70 border-zinc-800 text-zinc-300 hover:bg-zinc-900'
-            }`}
-          >
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <span className={`w-2.5 h-2.5 rounded-full ${shaders.amoled ? 'bg-emerald-400' : 'bg-zinc-600'}`} />
-                <span className="text-sm font-extrabold text-white">AMOLED Black Mode</span>
-                <span className="px-2 py-0.5 rounded-md text-[9px] font-black tracking-wider uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                  Battery Saver
-                </span>
-              </div>
-              <p className="text-xs text-zinc-400 leading-snug">
-                Pure true-black screen — OLED pixels fully turn off, saving battery.
-              </p>
-            </div>
-
-            <div
-              className={`shrink-0 w-12 h-6 rounded-full transition-colors p-0.5 flex items-center ${
-                shaders.amoled ? 'bg-emerald-500 justify-end' : 'bg-zinc-800 border border-zinc-700 justify-start'
-              }`}
-            >
-              <div className="w-5 h-5 rounded-full bg-white shadow-md" />
-            </div>
-          </div>
-
-          {/* Section: COLOR ACCURACY & CONTRAST (RETROARCH) */}
-          <div className="space-y-2.5">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
-                <Sparkles className="w-4 h-4 text-amber-400" />
-                <span>COLOR ACCURACY & CONTRAST</span>
-              </h3>
+        {/* Segmented Category Navigation */}
+        <div className="flex-none px-4 pt-3 pb-2.5 border-b border-zinc-800/80 bg-zinc-950/90 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+          {[
+            { id: 'display', label: 'Display & CRT', icon: Tv },
+            { id: 'controls', label: 'Controls & Haptic', icon: Vibrate },
+            { id: 'themes', label: 'Themes', icon: Palette },
+            { id: 'vault', label: 'Cloud Vault', icon: Cloud },
+          ].map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
               <button
-                onClick={() => toggleShader('colorCorrection')}
-                className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border transition ${
-                  shaders.colorCorrection !== false && shaders.colorProfile !== 'off'
-                    ? 'bg-amber-400/20 border-amber-400/50 text-amber-300'
-                    : 'bg-zinc-900 border-zinc-800 text-zinc-500'
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap active:scale-95 ${
+                  isActive
+                    ? 'bg-zinc-800 text-white shadow-sm border border-zinc-700'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60 border border-transparent'
                 }`}
               >
-                {shaders.colorCorrection !== false && shaders.colorProfile !== 'off' ? 'ACTIVE' : 'OFF'}
+                <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-emerald-400' : 'text-zinc-500'}`} />
+                <span>{tab.label}</span>
               </button>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {COLOR_PROFILES.map((prof) => {
-                const isSelected =
-                  (shaders.colorProfile || 'vivid') === prof.id &&
-                  (prof.id === 'off' || shaders.colorCorrection !== false);
-                return (
+            );
+          })}
+        </div>
+
+        <div className="flex-1 overflow-y-auto modal-scroll p-5 space-y-6">
+          {/* TAB 1: DISPLAY & CRT */}
+          {activeTab === 'display' && (
+            <div className="space-y-6">
+              {/* AMOLED Battery Saver Dedicated Toggle Card */}
+              <div
+                onClick={() => toggleShader('amoled')}
+                className={`p-4 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 ${
+                  shaders.amoled
+                    ? 'bg-emerald-500/15 border-emerald-500/50 text-white'
+                    : 'bg-zinc-900/70 border-zinc-800 text-zinc-300 hover:bg-zinc-900'
+                }`}
+              >
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2.5 h-2.5 rounded-full ${shaders.amoled ? 'bg-emerald-400' : 'bg-zinc-600'}`} />
+                    <span className="text-sm font-extrabold text-white">AMOLED Black Mode</span>
+                    <span className="px-2 py-0.5 rounded-md text-[9px] font-black tracking-wider uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      Battery Saver
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-400 leading-snug">
+                    Pure true-black screen — OLED pixels fully turn off, saving battery.
+                  </p>
+                </div>
+
+                <div
+                  className={`shrink-0 w-12 h-6 rounded-full transition-colors p-0.5 flex items-center ${
+                    shaders.amoled ? 'bg-emerald-500 justify-end' : 'bg-zinc-800 border border-zinc-700 justify-start'
+                  }`}
+                >
+                  <div className="w-5 h-5 rounded-full bg-white shadow-md" />
+                </div>
+              </div>
+
+              {/* Section: COLOR ACCURACY & CONTRAST (RETROARCH) */}
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-amber-400" />
+                    <span>COLOR ACCURACY & CONTRAST</span>
+                  </h3>
                   <button
-                    key={prof.id}
-                    onClick={() => {
-                      if (setColorProfile) {
-                        setColorProfile(prof.id);
-                      } else {
-                        toggleShader('colorCorrection');
-                      }
-                    }}
-                    className={`text-left p-3 rounded-2xl border transition flex items-start justify-between gap-2 ${
-                      isSelected
-                        ? 'bg-amber-500/15 border-amber-500/50 text-white shadow-md'
-                        : 'bg-zinc-900/70 border-zinc-800 text-zinc-400 hover:bg-zinc-900'
+                    onClick={() => toggleShader('colorCorrection')}
+                    className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border transition ${
+                      shaders.colorCorrection !== false && shaders.colorProfile !== 'off'
+                        ? 'bg-amber-400/20 border-amber-400/50 text-amber-300'
+                        : 'bg-zinc-900 border-zinc-800 text-zinc-500'
                     }`}
                   >
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-white">{prof.name}</span>
-                        <span className="text-[9px] font-mono px-1.5 py-0.2 rounded uppercase font-bold bg-zinc-800 text-amber-300 border border-white/5">
-                          {prof.badge}
-                        </span>
-                      </div>
-                      <p className="text-[10px] text-zinc-400 leading-snug">
-                        {prof.desc}
-                      </p>
-                    </div>
-                    {isSelected && (
-                      <div className="mt-0.5 w-5 h-5 rounded-md flex items-center justify-center bg-amber-400 text-zinc-950 shrink-0">
-                        <Check className="w-3.5 h-3.5 stroke-[3]" />
-                      </div>
-                    )}
+                    {shaders.colorCorrection !== false && shaders.colorProfile !== 'off' ? 'ACTIVE' : 'OFF'}
                   </button>
-                );
-              })}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {COLOR_PROFILES.map((prof) => {
+                    const isSelected =
+                      (shaders.colorProfile || 'vivid') === prof.id &&
+                      (prof.id === 'off' || shaders.colorCorrection !== false);
+                    return (
+                      <button
+                        key={prof.id}
+                        onClick={() => {
+                          if (setColorProfile) {
+                            setColorProfile(prof.id);
+                          } else {
+                            toggleShader('colorCorrection');
+                          }
+                        }}
+                        className={`text-left p-3 rounded-2xl border transition flex items-start justify-between gap-2 ${
+                          isSelected
+                            ? 'bg-amber-500/15 border-amber-500/50 text-white shadow-md'
+                            : 'bg-zinc-900/70 border-zinc-800 text-zinc-400 hover:bg-zinc-900'
+                        }`}
+                      >
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-white">{prof.name}</span>
+                            <span className="text-[9px] font-mono px-1.5 py-0.2 rounded uppercase font-bold bg-zinc-800 text-amber-300 border border-white/5">
+                              {prof.badge}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-zinc-400 leading-snug">
+                            {prof.desc}
+                          </p>
+                        </div>
+                        {isSelected && (
+                          <div className="mt-0.5 w-5 h-5 rounded-md flex items-center justify-center bg-amber-400 text-zinc-950 shrink-0">
+                            <Check className="w-3.5 h-3.5 stroke-[3]" />
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Section 1: CRT & LCD SHADER FILTER */}
+              <div className="space-y-2.5">
+                <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                  <Tv className="w-4 h-4 text-emerald-400" />
+                  <span>CRT & LCD SHADER FILTER</span>
+                </h3>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {[
+                    {
+                      key: 'scanlines',
+                      title: 'CRT Scanlines',
+                      desc: 'Authentic horizontal phosphor scanline grilles'
+                    },
+                    {
+                      key: 'gbGrid',
+                      title: 'Game Boy LCD Grid Lines',
+                      desc: 'Dot-matrix pixel grid overlay (combines with AMOLED black!)'
+                    },
+                    {
+                      key: 'rgbBloom',
+                      title: 'Post-RGB Phosphor Bloom',
+                      desc: 'High-contrast halation glow & color boost'
+                    },
+                    {
+                      key: 'bezelVignette',
+                      title: 'Bezel Vignette Shadow',
+                      desc: 'Subtle tube corner darkening around screen edges'
+                    },
+                    {
+                      key: 'crtCurve',
+                      title: 'CRT Curved Glass',
+                      desc: 'Rounded Trinitron-style cabinet bezel corners'
+                    }
+                  ].map((item) => {
+                    const checked = shaders[item.key];
+                    return (
+                      <button
+                        key={item.key}
+                        onClick={() => toggleShader(item.key)}
+                        className={`text-left p-3 rounded-2xl border transition flex items-start gap-3 ${
+                          checked
+                            ? 'bg-emerald-500/15 border-emerald-500/50 text-white'
+                            : 'bg-zinc-900/70 border-zinc-800 text-zinc-400 hover:bg-zinc-900'
+                        }`}
+                      >
+                        <div
+                          className={`mt-0.5 w-5 h-5 rounded-md flex items-center justify-center border shrink-0 ${
+                            checked
+                              ? 'bg-emerald-400 border-emerald-300 text-zinc-950'
+                              : 'border-zinc-700 bg-zinc-950'
+                          }`}
+                        >
+                          {checked && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                        </div>
+                        <div>
+                          <div className="text-xs font-bold">{item.title}</div>
+                          <div className="text-[10px] text-zinc-400 leading-snug mt-0.5">
+                            {item.desc}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Section 1: CRT & LCD SHADER FILTER */}
-          <div className="space-y-2.5">
-            <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
-              <Tv className="w-4 h-4 text-emerald-400" />
-              <span>CRT & LCD SHADER FILTER</span>
-            </h3>
+          {/* TAB 2: CONTROLS & HAPTIC */}
+          {activeTab === 'controls' && (
+            <div className="space-y-6">
+              {/* Controls & Haptic Feedback Toggle Card */}
+              <div
+                onClick={() => {
+                  const next = !hapticsEnabled;
+                  setHapticsEnabled?.(next);
+                  haptics.setEnabled(next);
+                }}
+                className={`p-4 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 ${
+                  hapticsEnabled
+                    ? 'bg-sky-500/15 border-sky-500/50 text-white'
+                    : 'bg-zinc-900/70 border-zinc-800 text-zinc-300 hover:bg-zinc-900'
+                }`}
+              >
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Vibrate className={`w-4 h-4 ${hapticsEnabled ? 'text-sky-400' : 'text-zinc-500'}`} />
+                    <span className="text-sm font-extrabold text-white">Haptic Vibration</span>
+                    <span className="px-2 py-0.5 rounded-md text-[9px] font-black tracking-wider uppercase bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                      Touchpad
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-400 leading-snug">
+                    Tactile vibration feedback on on-screen button presses.
+                  </p>
+                </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {[
-                {
-                  key: 'scanlines',
-                  title: 'CRT Scanlines',
-                  desc: 'Authentic horizontal phosphor scanline grilles'
-                },
-                {
-                  key: 'gbGrid',
-                  title: 'Game Boy LCD Grid Lines',
-                  desc: 'Dot-matrix pixel grid overlay (combines with AMOLED black!)'
-                },
-                {
-                  key: 'rgbBloom',
-                  title: 'Post-RGB Phosphor Bloom',
-                  desc: 'High-contrast halation glow & color boost'
-                },
-                {
-                  key: 'bezelVignette',
-                  title: 'Bezel Vignette Shadow',
-                  desc: 'Subtle tube corner darkening around screen edges'
-                },
-                {
-                  key: 'crtCurve',
-                  title: 'CRT Curved Glass',
-                  desc: 'Rounded Trinitron-style cabinet bezel corners'
-                }
-              ].map((item) => {
-                const checked = shaders[item.key];
-                return (
-                  <button
-                    key={item.key}
-                    onClick={() => toggleShader(item.key)}
-                    className={`text-left p-3 rounded-2xl border transition flex items-start gap-3 ${
-                      checked
-                        ? 'bg-emerald-500/15 border-emerald-500/50 text-white'
-                        : 'bg-zinc-900/70 border-zinc-800 text-zinc-400 hover:bg-zinc-900'
-                    }`}
-                  >
-                    <div
-                      className={`mt-0.5 w-5 h-5 rounded-md flex items-center justify-center border shrink-0 ${
-                        checked
-                          ? 'bg-emerald-400 border-emerald-300 text-zinc-950'
-                          : 'border-zinc-700 bg-zinc-950'
+                <div
+                  className={`shrink-0 w-12 h-6 rounded-full transition-colors p-0.5 flex items-center ${
+                    hapticsEnabled ? 'bg-sky-500 justify-end' : 'bg-zinc-800 border border-zinc-700 justify-start'
+                  }`}
+                >
+                  <div className="w-5 h-5 rounded-full bg-white shadow-md" />
+                </div>
+              </div>
+
+              {/* Gamepad & Keyboard Integration Card */}
+              <div className="p-4 rounded-2xl border border-zinc-800 bg-zinc-900/50 space-y-2">
+                <div className="flex items-center gap-2 text-white font-extrabold text-xs">
+                  <Gamepad2 className="w-4 h-4 text-emerald-400" />
+                  <span>Physical Gamepad Support</span>
+                </div>
+                <p className="text-xs text-zinc-400 leading-relaxed">
+                  Bluetooth & USB controllers (Xbox, DualShock, DualSense, 8BitDo) connect automatically via the standard HTML5 Gamepad API with zero idle battery overhead.
+                </p>
+                <div className="text-[11px] text-zinc-500 font-mono pt-1">
+                  Keyboard Quick Save: <span className="text-amber-300 font-bold">Shift + F1</span> • Quick Load: <span className="text-cyan-300 font-bold">F3</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: THEMES */}
+          {activeTab === 'themes' && (
+            <div className="space-y-2.5">
+              <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                <Palette className="w-4 h-4 text-amber-400" />
+                <span>COLOR THEMES</span>
+              </h3>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {Object.values(THEMES).map((t) => {
+                  const active = themeId === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() => applyTheme(t.id)}
+                      className={`p-3 rounded-2xl border text-left transition flex items-center justify-between ${
+                        active
+                          ? 'bg-zinc-900 border-emerald-400 text-white shadow-lg'
+                          : 'bg-zinc-900/50 border-zinc-800 text-zinc-300 hover:bg-zinc-900'
                       }`}
                     >
-                      {checked && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                    </div>
-                    <div>
-                      <div className="text-xs font-bold">{item.title}</div>
-                      <div className="text-[10px] text-zinc-400 leading-snug mt-0.5">
-                        {item.desc}
+                      <div className="text-xs font-bold flex items-center gap-2">
+                        <span
+                          className="w-3.5 h-3.5 rounded-full inline-block border border-white/20"
+                          style={{ backgroundColor: t.hex }}
+                        />
+                        <span>{t.name}</span>
                       </div>
-                    </div>
-                  </button>
-                );
-              })}
+                      {active && <Check className="w-4 h-4 text-emerald-400 shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Section 2: THEME */}
-          <div className="space-y-2.5">
-            <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
-              <Palette className="w-4 h-4 text-amber-400" />
-              <span>THEME</span>
-            </h3>
+          {/* TAB 4: CLOUD VAULT */}
+          {activeTab === 'vault' && (
+            <div className="space-y-4">
+              <div
+                onClick={() => {
+                  onClose();
+                  onOpenCloudSync?.();
+                }}
+                className="p-4 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 bg-zinc-900/70 border-zinc-800 text-zinc-300 hover:bg-zinc-900 hover:border-zinc-700"
+              >
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Cloud className="w-4 h-4 text-sky-400" />
+                    <span className="text-sm font-extrabold text-white">Cloud Save Vault</span>
+                    <span className={`px-2 py-0.5 rounded-md text-[9px] font-black tracking-wider uppercase ${
+                      syncCode
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                        : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+                    }`}>
+                      {syncCode ? 'Linked' : 'Not Linked'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-400 leading-snug">
+                    {syncCode
+                      ? `Active Sync Code: ${syncCode}. Tap to manage or sync.`
+                      : 'Sync your saves, states & games across devices with a private code.'}
+                  </p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-zinc-500 shrink-0" />
+              </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {Object.values(THEMES).map((t) => {
-                const active = themeId === t.id;
-                return (
-                  <button
-                    key={t.id}
-                    onClick={() => applyTheme(t.id)}
-                    className={`p-3 rounded-2xl border text-left transition flex items-center justify-between ${
-                      active
-                        ? 'bg-zinc-900 border-emerald-400 text-white shadow-lg'
-                        : 'bg-zinc-900/50 border-zinc-800 text-zinc-300 hover:bg-zinc-900'
-                    }`}
-                  >
-                    <div className="text-xs font-bold flex items-center gap-2">
-                      <span
-                        className="w-3.5 h-3.5 rounded-full inline-block border border-white/20"
-                        style={{ backgroundColor: t.hex }}
-                      />
-                      <span>{t.name}</span>
-                    </div>
-                    {active && <Check className="w-4 h-4 text-emerald-400 shrink-0" />}
-                  </button>
-                );
-              })}
+              <div className="p-4 rounded-2xl border border-zinc-800/80 bg-zinc-900/30 space-y-2 text-xs text-zinc-400">
+                <span className="font-bold text-zinc-300 block">About Cloud Vault</span>
+                <p>
+                  Zero cost, zero registration. All your SRAM saves, game states, and custom library metadata synchronize securely via an edge-backed Cloudflare Worker.
+                </p>
+                <p>
+                  Works 100% offline first — whenever you are off the grid, saves write instantly to device storage and queue for sync when internet reconnects.
+                </p>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     </div>

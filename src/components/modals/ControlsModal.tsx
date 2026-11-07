@@ -119,7 +119,7 @@ export const ControlsModal: React.FC<ControlsModalProps> = ({
         </div>
 
         {/* Modal Body */}
-        <div className="p-5 space-y-4 flex-1 overflow-y-auto">
+        <div className="p-5 space-y-4 flex-1 overflow-y-auto modal-scroll">
           {activeTab === 'keyboard' ? (
             <div className="space-y-4">
               <div className="p-3 rounded-xl bg-zinc-900/40 border border-zinc-800/80 text-[11px] text-zinc-400 leading-relaxed">
