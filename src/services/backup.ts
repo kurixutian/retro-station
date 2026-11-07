@@ -67,18 +67,21 @@ export async function createBackupFile(): Promise<BackupFile> {
       } else if (val instanceof Uint8Array) {
         items[key] = uint8ToBase64(val); // srm:/rtc:
       } else if (typeof val === 'object') {
-        // state: JSON with embedded binary -> base64'd copy
-        const copy = JSON.parse(JSON.stringify(val));
-        const emu = normalizeBinaryData(val.emuState);
+        // state: JSON with embedded binary -> base64'd copy (never JSON.stringify raw Uint8Array)
+        const { emuState: rawEmu, stateData: rawStateData, ...rest } = val;
+        const copy: any = { ...rest };
+        if (rawStateData && typeof rawStateData === 'object') {
+          const { emuState: _nestedEmu, ...restStateData } = rawStateData;
+          copy.stateData = { ...restStateData };
+        }
+        const emu = normalizeBinaryData(rawEmu);
         if (emu) {
           copy.emuStateBase64 = uint8ToBase64(emu);
-          delete copy.emuState;
         }
-        if (val.stateData?.emuState) {
-          const emu2 = normalizeBinaryData(val.stateData.emuState);
+        if (rawStateData?.emuState) {
+          const emu2 = normalizeBinaryData(rawStateData.emuState);
           if (emu2) {
-            copy.stateData = { ...copy.stateData, emuStateBase64: uint8ToBase64(emu2) };
-            delete copy.stateData.emuState;
+            copy.stateData = { ...(copy.stateData || {}), emuStateBase64: uint8ToBase64(emu2) };
           }
         }
         items[key] = uint8ToBase64(new TextEncoder().encode(JSON.stringify(copy)));

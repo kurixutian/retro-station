@@ -96,3 +96,31 @@ test('Google Drive filename encoding round-trips keys with double underscores an
   }
 });
 
+test('save state serialization strips raw Uint8Array before JSON.stringify and preserves base64 payload', () => {
+  const localVal = {
+    slot: 1,
+    gameId: 'rom_0x12345678',
+    gameTitle: 'Pokemon Emerald',
+    fileName: 'Pokemon Emerald.gba',
+    crc32: '0x12345678',
+    label: 'Saved 10:30:00',
+    timestamp: '10:30:00',
+    screenshot: 'data:image/jpeg;base64,abc',
+    emuState: new Uint8Array([10, 20, 30, 40, 255]),
+  };
+
+  const { emuState: rawEmuState, stateData: rawStateData, ...restMeta } = localVal;
+  const serializable = {
+    ...restMeta,
+    emuStateBase64: Buffer.from(rawEmuState).toString('base64'),
+  };
+  const jsonString = JSON.stringify(serializable);
+  const parsed = JSON.parse(jsonString);
+
+  assert.equal(parsed.emuState, undefined);
+  assert.equal(typeof parsed.emuStateBase64, 'string');
+  const restoredBytes = new Uint8Array(Buffer.from(parsed.emuStateBase64, 'base64'));
+  assert.deepEqual(Array.from(restoredBytes), [10, 20, 30, 40, 255]);
+});
+
+

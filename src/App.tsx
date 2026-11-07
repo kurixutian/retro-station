@@ -65,27 +65,65 @@ function applySlotUpdates(
   updates: SlotUpdateRecord[]
 ): Record<string, SaveSlot[]> {
   const next = { ...prev };
+  let knownGames: any[] = [];
+  try {
+    knownGames = JSON.parse(localStorage.getItem('retro_games') || '[]') || [];
+  } catch (e) {}
+
   for (const { gId, slotN, key, val } of updates) {
-    const list = next[gId] || createEmptySlotsForGame(gId);
-    next[gId] = list.map((s) =>
-      s.slot === slotN
-        ? {
-            slot: slotN,
-            empty: false,
-            label: val.label || `Slot #${slotN}`,
-            timestamp: val.timestamp || '',
-            score: 0,
-            frame: 0,
-            screenshot: val.screenshot || null,
-            stateData: {
-              version: 'EJS_STATE',
-              gameId: gId,
-              timestamp: val.timestamp,
-              lazyIdbKey: key,
-            }
-          }
-        : s
-    );
+    const targetIds = new Set<string>([gId]);
+    // Also map to any local game that matches by aliasIds, crc32, fileName, or title
+    if (Array.isArray(knownGames)) {
+      for (const g of knownGames) {
+        if (!g?.id) continue;
+        if (Array.isArray(g.aliasIds) && g.aliasIds.includes(gId)) {
+          targetIds.add(String(g.id));
+          continue;
+        }
+        if (
+          val &&
+          ((val.crc32 && g.crc32 && String(val.crc32).toLowerCase() === String(g.crc32).toLowerCase()) ||
+            (val.fileName && g.fileName && String(val.fileName).toLowerCase() === String(g.fileName).toLowerCase()) ||
+            (val.gameTitle && g.title && String(val.gameTitle).toLowerCase() === String(g.title).toLowerCase()))
+        ) {
+          targetIds.add(String(g.id));
+        }
+      }
+    }
+
+    for (const targetId of Array.from(targetIds)) {
+      const list = next[targetId] || createEmptySlotsForGame(targetId);
+      next[targetId] = list.map((s) =>
+        s.slot === slotN
+          ? val
+            ? {
+                slot: slotN,
+                empty: false,
+                label: val.label || `Slot #${slotN}`,
+                timestamp: val.timestamp || '',
+                score: 0,
+                frame: 0,
+                screenshot: val.screenshot || null,
+                stateData: {
+                  version: 'EJS_STATE',
+                  gameId: targetId,
+                  timestamp: val.timestamp,
+                  lazyIdbKey: key,
+                },
+              }
+            : {
+                slot: slotN,
+                empty: true,
+                label: 'Empty Slot',
+                timestamp: null,
+                score: 0,
+                frame: 0,
+                screenshot: null,
+                stateData: null,
+              }
+          : s
+      );
+    }
   }
   return next;
 }
@@ -198,6 +236,34 @@ export default function App() {
             });
             return next;
           });
+          // Re-bind any save states in IndexedDB (including alias IDs) to the updated game list
+          (async () => {
+            try {
+              const db = await idbOpen();
+              const tx = db.transaction('roms', 'readonly');
+              const store = tx.objectStore('roms');
+              const req = store.openCursor();
+              const pendingSlots: Array<{ gId: string; slotN: number; key: string; val: any }> = [];
+              req.onsuccess = (e) => {
+                const cursor = (e.target as IDBRequest).result;
+                if (cursor) {
+                  const key = String(cursor.key);
+                  if (key.startsWith('state:')) {
+                    const parts = key.split(':');
+                    const slotN = parseInt(parts[parts.length - 1], 10);
+                    const gId = parts.slice(1, parts.length - 1).join(':');
+                    const val = cursor.value;
+                    if (val && gId && slotN) {
+                      pendingSlots.push({ gId, slotN, key, val });
+                    }
+                  }
+                  cursor.continue();
+                } else if (pendingSlots.length > 0) {
+                  setSavesByGameId((prev) => applySlotUpdates(prev, pendingSlots));
+                }
+              };
+            } catch (err) {}
+          })();
         };
 
         let saved: any[] | null = null;
@@ -217,7 +283,7 @@ export default function App() {
       } catch (e) {}
     };
 
-    const unsubSync = onDataUpdated((keys) => {
+    const handleUpdatedKeys = (keys: string[]) => {
       if (
         keys.includes('retro_games') ||
         keys.includes('library_games') ||
@@ -235,7 +301,7 @@ export default function App() {
             const slotN = parseInt(parts[parts.length - 1], 10);
             const gId = parts.slice(1, parts.length - 1).join(':');
             const val = await idbGet(key).catch(() => null);
-            if (val && gId && slotN) {
+            if (gId && slotN) {
               updates.push({ gId, slotN, key, val });
             }
           }
@@ -244,11 +310,10 @@ export default function App() {
           }
         })();
       }
-    });
+    };
 
-    const unsubBackup = onBackupApplied(() => {
-      refreshGameList();
-    });
+    const unsubSync = onDataUpdated(handleUpdatedKeys);
+    const unsubBackup = onBackupApplied(handleUpdatedKeys);
 
     return () => {
       unsubSync();
@@ -786,7 +851,7 @@ export default function App() {
 
     setSavesByGameId((prev) => ({
       ...prev,
-      [newGame.id]: createEmptySlotsForGame(newGame.id)
+      [newGame.id]: prev[newGame.id] || createEmptySlotsForGame(newGame.id)
     }));
     setDetailGame(newGame);
     soundFX.save();
@@ -931,6 +996,10 @@ export default function App() {
       });
       idbPut(slotIdbKey, {
         slot: slotNumber,
+        gameId: game.id,
+        gameTitle: game.title,
+        fileName: game.fileName,
+        crc32: game.crc32,
         label: `Saved ${timeStr0}`,
         timestamp: timeStr0,
         screenshot: shot,

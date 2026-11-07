@@ -642,7 +642,10 @@ export function mergeAndDeduplicateGames(
       if (!g || !g.id || deletedSet.has(g.id)) continue;
       const idx = findExistingIndex(g);
       if (idx >= 0) {
-        result[idx] = { ...result[idx], ...g };
+        const aliases = Array.from(
+          new Set([...(result[idx].aliasIds || []), ...(g.aliasIds || []), result[idx].id, g.id])
+        );
+        result[idx] = { ...result[idx], ...g, aliasIds: aliases };
       } else {
         result.push({ ...g });
       }
@@ -654,8 +657,13 @@ export function mergeAndDeduplicateGames(
       if (!g || !g.id || deletedSet.has(g.id)) continue;
       const idx = findExistingIndex(g);
       if (idx >= 0) {
+        const aliases = Array.from(
+          new Set([...(result[idx].aliasIds || []), ...(g.aliasIds || []), result[idx].id, g.id])
+        );
         if (!preferRemote) {
-          result[idx] = { ...result[idx], ...g };
+          result[idx] = { ...result[idx], ...g, aliasIds: aliases };
+        } else {
+          result[idx] = { ...result[idx], aliasIds: aliases };
         }
       } else {
         result.push({ ...g });
@@ -804,7 +812,9 @@ export async function markLocalSaveModified(key: string): Promise<void> {
     pendingUpload: true,
   };
   saveLocalMetaMap(map);
-  triggerDebouncedCloudSync(15_000); // Quick 15s debounce when saves change
+  // Save states and battery saves sync quickly (2.5s) even while in-game
+  const isUrgentSave = key.startsWith('state:') || key.startsWith('srm:') || key.startsWith('rtc:');
+  triggerDebouncedCloudSync(isUrgentSave ? 2500 : 8000, isUrgentSave);
 }
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -816,16 +826,16 @@ export function setGameplayActive(active: boolean): void {
   if (!active && deferredSyncPending) {
     deferredSyncPending = false;
     if (hasValidToken() && typeof navigator !== 'undefined' && navigator.onLine) {
-      triggerDebouncedCloudSync(3000);
+      triggerDebouncedCloudSync(2000, true);
     }
   }
 }
 
-export function triggerDebouncedCloudSync(delayMs = 15_000) {
+export function triggerDebouncedCloudSync(delayMs = 8000, allowDuringGameplay = false) {
   if (debounceTimer) clearTimeout(debounceTimer);
   debounceTimer = setTimeout(() => {
     debounceTimer = null;
-    if (gameplayActive) {
+    if (gameplayActive && !allowDuringGameplay) {
       deferredSyncPending = true;
       return;
     }
@@ -966,14 +976,16 @@ async function uploadDriveJson(
     ? { name: filename, mimeType: 'application/json' }
     : { name: filename, mimeType: 'application/json', parents: ['appDataFolder'] };
 
-  const multipartBody =
+  const headerPart =
     `--${boundary}\r\n` +
     `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
     `${JSON.stringify(metadata)}\r\n` +
     `--${boundary}\r\n` +
-    `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
-    `${jsonString}\r\n` +
-    `--${boundary}--`;
+    `Content-Type: application/json; charset=UTF-8\r\n\r\n`;
+  const footerPart = `\r\n--${boundary}--`;
+  const multipartBlob = new Blob([headerPart, jsonString, footerPart], {
+    type: `multipart/related; boundary=${boundary}`,
+  });
 
   const url = existingFileId
     ? `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(existingFileId)}?uploadType=multipart&fields=id,name,modifiedTime`
@@ -986,7 +998,7 @@ async function uploadDriveJson(
       Authorization: `Bearer ${token}`,
       'Content-Type': `multipart/related; boundary=${boundary}`,
     },
-    body: multipartBody,
+    body: multipartBlob,
   });
 
   if (res.status === 404 && existingFileId) {
@@ -1386,7 +1398,7 @@ function prepareDrivePayload(
   if (key === 'retro_games' || key === 'library_games') {
     const localGames = Array.isArray(localVal) ? localVal : [];
     const deletedSet = new Set(getDeletedGameIds());
-    const merged = mergeAndDeduplicateGames(localGames, remoteListForMerge || [], false).filter(
+    const merged = mergeAndDeduplicateGames(localGames, remoteListForMerge || [], true).filter(
       (g: any) => g && g.id && !deletedSet.has(g.id) && !DEMO_GAME_IDS.has(String(g.id))
     );
     const jsonString = JSON.stringify(merged);
@@ -1396,21 +1408,20 @@ function prepareDrivePayload(
   if (isStateLikeKey(key)) {
     if (!localVal || typeof localVal !== 'object') return { ok: false, reason: 'no local value' };
 
-    let serializable: any;
-    try {
-      serializable = JSON.parse(JSON.stringify({ ...localVal }));
-    } catch (e) {
-      return { ok: false, reason: 'state not serializable' };
+    // Extract raw binary BEFORE cloning metadata so JSON.stringify never touches multi-MB Uint8Arrays
+    const { emuState: rawEmuState, stateData: rawStateData, ...restMeta } = localVal;
+    const serializable: any = { ...restMeta };
+    if (rawStateData && typeof rawStateData === 'object') {
+      const { emuState: _nestedEmu, ...restStateData } = rawStateData;
+      serializable.stateData = { ...restStateData };
     }
-    delete serializable.emuState;
-    if (serializable.stateData) delete serializable.stateData.emuState;
 
-    const emuBytes = localVal.emuState ? normalizeBinaryData(localVal.emuState) : null;
-    const stateBytes = localVal.stateData?.emuState
-      ? normalizeBinaryData(localVal.stateData.emuState)
+    const emuBytes = rawEmuState ? normalizeBinaryData(rawEmuState) : null;
+    const stateBytes = rawStateData?.emuState
+      ? normalizeBinaryData(rawStateData.emuState)
       : null;
     const existingB64 =
-      localVal.emuStateBase64 || localVal.stateData?.emuStateBase64 || null;
+      localVal.emuStateBase64 || rawStateData?.emuStateBase64 || null;
 
     if (!emuBytes && !stateBytes && !existingB64) {
       return { ok: false, reason: 'no save state payload' };
@@ -1568,20 +1579,12 @@ async function applyPulledItem(
       (g: any) => g && g.id && !deletedSet.has(g.id)
     );
 
-    if (rKey === 'retro_games') {
-      localStorage.setItem('retro_games', JSON.stringify(merged));
-      await idbPut(
-        'library_games',
-        merged.filter((g: any) => g && g.real && !DEMO_GAME_IDS.has(String(g.id)))
-      ).catch(() => {});
-      updatedLocalKeys.push('retro_games', 'library_games');
-    } else {
-      await idbPut(
-        'library_games',
-        merged.filter((g: any) => g && g.real && !DEMO_GAME_IDS.has(String(g.id)))
-      ).catch(() => {});
-      updatedLocalKeys.push('library_games');
-    }
+    localStorage.setItem('retro_games', JSON.stringify(merged));
+    await idbPut(
+      'library_games',
+      merged.filter((g: any) => g && g.real && !DEMO_GAME_IDS.has(String(g.id)))
+    ).catch(() => {});
+    updatedLocalKeys.push('retro_games', 'library_games');
     return;
   }
 
