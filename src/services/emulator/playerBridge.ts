@@ -29,7 +29,8 @@ export function buildPlayerHtml(core: string, romUrl: string, title?: string): s
     'window.EJS_retroarchOpts=[' +
     '  {name:"video_font_enable",default:false,isString:false},' +
     '  {name:"notification_show_fast_forward",default:false,isString:false},' +
-    '  {name:"fastforward_frameskip",default:true,isString:false}' +
+    '  {name:"fastforward_frameskip",default:true,isString:false},' +
+    '  {name:"fastforward_ratio",default:0.0,isString:false}' +
     '];' +
     'var _realGM=undefined;' +
     'Object.defineProperty(window,"EJS_GameManager",{' +
@@ -41,9 +42,11 @@ export function buildPlayerHtml(core: string, romUrl: string, title?: string): s
     '      var _origCfg=_realGM.prototype.getRetroArchCfg;' +
     '      _realGM.prototype.getRetroArchCfg=function(){' +
     '        var cfg=_origCfg.call(this);' +
+    '        cfg=cfg.replace(/fastforward_ratio\\s*=\\s*[^\\n]+/g,"fastforward_ratio = 0.0");' +
     '        cfg+="video_font_enable = false\\n";' +
     '        cfg+="notification_show_fast_forward = false\\n";' +
     '        cfg+="fastforward_frameskip = true\\n";' +
+    '        cfg+="fastforward_ratio = 0.0\\n";' +
     '        return cfg;' +
     '      };' +
     '    }' +
@@ -131,17 +134,30 @@ export function buildPlayerHtml(core: string, romUrl: string, title?: string): s
     '    if(!emu)return;' +
     '    var gm=emu.gameManager;' +
     '    var r=typeof ratio==="number"&&ratio>=1?ratio:2;' +
-    '    emu.isFastForward=!!active;' +
-    '    if(gm&&gm.functions){' +
-    '      if(typeof gm.setFastForwardRatio==="function")gm.setFastForwardRatio(r);' +
-    '      if(typeof gm.toggleFastForward==="function")gm.toggleFastForward(active?1:0);' +
-    '    }else if(typeof emu.handleSpecialOptions==="function"){' +
-    '      if(active){' +
+    '    if(active){' +
+    '      if(typeof emu.handleSpecialOptions==="function"){' +
     '        emu.handleSpecialOptions("ff-ratio",String(r));' +
-    '        emu.handleSpecialOptions("fastForward","enabled");' +
-    '      }else{' +
+    '        if(!emu.isFastForward)emu.handleSpecialOptions("fastForward","enabled");' +
+    '      }' +
+    '      if(gm){' +
+    '        if(typeof gm.toggleFastForward==="function")gm.toggleFastForward(0);' +
+    '        if(typeof gm.setFastForwardRatio==="function")gm.setFastForwardRatio(r);' +
+    '        setTimeout(function(){' +
+    '          try{' +
+    '            if(typeof gm.toggleFastForward==="function")gm.toggleFastForward(1);' +
+    '            if(emu)emu.isFastForward=true;' +
+    '          }catch(e){}' +
+    '        },15);' +
+    '      }' +
+    '    }else{' +
+    '      if(typeof emu.handleSpecialOptions==="function"){' +
     '        emu.handleSpecialOptions("fastForward","disabled");' +
     '      }' +
+    '      if(gm){' +
+    '        if(typeof gm.setFastForwardRatio==="function")gm.setFastForwardRatio(1);' +
+    '        if(typeof gm.toggleFastForward==="function")gm.toggleFastForward(0);' +
+    '      }' +
+    '      emu.isFastForward=false;' +
     '    }' +
     '  }catch(e){}' +
     '};' +
