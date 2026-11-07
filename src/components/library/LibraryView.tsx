@@ -2,7 +2,6 @@ import React from 'react';
 import {
   Gamepad2,
   HardDrive,
-  FolderPlus,
   Plus,
   Search,
   Settings,

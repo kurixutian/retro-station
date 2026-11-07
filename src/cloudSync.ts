@@ -4,7 +4,7 @@
 // Works 100% offline on the go; automatically syncs when online
 // ============================================================================
 
-import { idbGet, idbPut, idbDelete, idbGetAllKeys } from './services/storage/idb';
+import { idbGet, idbPut, idbDelete, idbGetAllKeys, idbDeleteGameData } from './services/storage/idb';
 
 export type CloudSyncStatus =
   | 'unlinked'
@@ -626,15 +626,7 @@ export async function syncNow(): Promise<{
                 localStorage.setItem('retro_games', JSON.stringify(pruned));
                 await idbPut('library_games', pruned.filter((g: any) => g.real && g.id !== 'pokemon_gold')).catch(() => {});
                 for (const delId of remoteDeletedList) {
-                  await idbDelete(delId).catch(() => {});
-                  await idbDelete(`rom:${delId}`).catch(() => {});
-                  await idbDelete(`srm:${delId}`).catch(() => {});
-                  await idbDelete(`rtc:${delId}`).catch(() => {});
-                  await idbDelete(`autosave:${delId}`).catch(() => {});
-                  await idbDelete(`cover:${delId}`).catch(() => {});
-                  for (let s = 1; s <= 4; s++) {
-                    await idbDelete(`state:${delId}:${s}`).catch(() => {});
-                  }
+                  await idbDeleteGameData(delId);
                 }
                 updatedLocalKeys.push('retro_games');
                 updatedLocalKeys.push('library_games');

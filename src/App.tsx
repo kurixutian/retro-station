@@ -1,12 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Sparkles } from 'lucide-react';
 
 import { Game, SaveSlot, PadLayout, PadGroupId } from './types';
 import { CORE_MAP } from './constants/cores';
 import { THEMES } from './constants/themes';
 import {
-  DEFAULT_PAD_LAYOUT,
-  DEFAULT_LANDSCAPE_PAD_LAYOUT,
   loadPadLayout,
   savePadLayout,
   getActiveSlot,
@@ -15,7 +12,7 @@ import {
   EMU_INPUT_MAP,
   PAD_KEYS,
 } from './constants/controls';
-import { idbOpen, idbPut, idbGet, idbDelete } from './services/storage/idb';
+import { idbOpen, idbPut, idbGet, idbDelete, idbDeleteGameData } from './services/storage/idb';
 import { soundFX } from './services/audio/synth';
 import { haptics } from './services/haptics';
 import { createEmptySlotsForGame, downloadBinaryFile } from './services/storage/saveSlots';
@@ -44,6 +41,54 @@ import { MissingRomModal } from './components/modals/MissingRomModal';
 
 const INITIAL_GAMES: Game[] = [];
 
+function sanitizeGameList(rawList: any[]): Game[] {
+  if (!Array.isArray(rawList)) return [];
+  const deletedSet = new Set(getDeletedGameIds());
+  const filtered = rawList.filter((g) => g && g.id && !deletedSet.has(g.id));
+  const deduped = mergeAndDeduplicateGames(filtered, [], false);
+  return deduped.map((g) => ({
+    ...g,
+    subtitle: (g.subtitle || g.system || '').replace(/\s*•\s*Auto-Detected Core/i, '')
+  }));
+}
+
+interface SlotUpdateRecord {
+  gId: string;
+  slotN: number;
+  key: string;
+  val: any;
+}
+
+function applySlotUpdates(
+  prev: Record<string, SaveSlot[]>,
+  updates: SlotUpdateRecord[]
+): Record<string, SaveSlot[]> {
+  const next = { ...prev };
+  for (const { gId, slotN, key, val } of updates) {
+    const list = next[gId] || createEmptySlotsForGame(gId);
+    next[gId] = list.map((s) =>
+      s.slot === slotN
+        ? {
+            slot: slotN,
+            empty: false,
+            label: val.label || `Slot #${slotN}`,
+            timestamp: val.timestamp || '',
+            score: 0,
+            frame: 0,
+            screenshot: val.screenshot || null,
+            stateData: {
+              version: 'EJS_STATE',
+              gameId: gId,
+              timestamp: val.timestamp,
+              lazyIdbKey: key,
+            }
+          }
+        : s
+    );
+  }
+  return next;
+}
+
 const STUB_GAME: Game = {
   id: 'none',
   title: '',
@@ -64,13 +109,7 @@ export default function App() {
     try {
       const saved = JSON.parse(localStorage.getItem('retro_games') || 'null');
       if (Array.isArray(saved)) {
-        const deletedSet = new Set(getDeletedGameIds());
-        const filtered = saved.filter((g) => g && g.id && !deletedSet.has(g.id));
-        const deduped = mergeAndDeduplicateGames(filtered, [], false);
-        return deduped.map((g) => ({
-          ...g,
-          subtitle: (g.subtitle || g.system || '').replace(/\s*•\s*Auto-Detected Core/i, '')
-        }));
+        return sanitizeGameList(saved);
       }
     } catch (e) {}
     return INITIAL_GAMES;
@@ -138,13 +177,7 @@ export default function App() {
     if (games.length === 0) {
       idbGet('library_games').then((saved) => {
         if (Array.isArray(saved) && saved.length > 0) {
-          const deletedSet = new Set(getDeletedGameIds());
-          const filtered = saved.filter((g) => g && g.id && !deletedSet.has(g.id));
-          const deduped = mergeAndDeduplicateGames(filtered, [], false);
-          setGames(deduped.map((g: any) => ({
-            ...g,
-            subtitle: (g.subtitle || g.system || '').replace(/\s*•\s*Auto-Detected Core/i, '')
-          })));
+          setGames(sanitizeGameList(saved));
         }
       }).catch(() => {});
     }
@@ -161,16 +194,11 @@ export default function App() {
         try {
           const applyGameList = (list: any[]) => {
             if (!Array.isArray(list)) return;
-            const deletedSet = new Set(getDeletedGameIds());
-            const filtered = list.filter((g: any) => g && g.id && !deletedSet.has(g.id));
-            const deduped = mergeAndDeduplicateGames(filtered, [], false);
-            setGames(deduped.map((g: any) => ({
-              ...g,
-              subtitle: (g.subtitle || g.system || '').replace(/\s*•\s*Auto-Detected Core/i, '')
-            })));
+            const sanitized = sanitizeGameList(list);
+            setGames(sanitized);
             setSavesByGameId((prev) => {
               const next = { ...prev };
-              deduped.forEach((g: any) => {
+              sanitized.forEach((g) => {
                 if (!next[g.id]) next[g.id] = createEmptySlotsForGame(g.id);
               });
               return next;
@@ -207,32 +235,7 @@ export default function App() {
             }
           }
           if (updates.length > 0) {
-            setSavesByGameId((prev) => {
-              const next = { ...prev };
-              for (const { gId, slotN, key, val } of updates) {
-                const list = next[gId] || createEmptySlotsForGame(gId);
-                next[gId] = list.map((s) =>
-                  s.slot === slotN
-                    ? {
-                        slot: slotN,
-                        empty: false,
-                        label: val.label || `Slot #${slotN}`,
-                        timestamp: val.timestamp || '',
-                        score: 0,
-                        frame: 0,
-                        screenshot: val.screenshot || null,
-                        stateData: {
-                          version: 'EJS_STATE',
-                          gameId: gId,
-                          timestamp: val.timestamp,
-                          lazyIdbKey: key,
-                        }
-                      }
-                    : s
-                );
-              }
-              return next;
-            });
+            setSavesByGameId((prev) => applySlotUpdates(prev, updates));
           }
         })();
       }
@@ -304,32 +307,7 @@ export default function App() {
           } else {
             // Cursor complete: single batched state update
             if (pendingSlots.length > 0) {
-              setSavesByGameId((prev) => {
-                const next = { ...prev };
-                for (const { gId, slotN, key, val } of pendingSlots) {
-                  const list = next[gId] || createEmptySlotsForGame(gId);
-                  next[gId] = list.map((s) =>
-                    s.slot === slotN
-                      ? {
-                          slot: slotN,
-                          empty: false,
-                          label: val.label || `Slot #${slotN}`,
-                          timestamp: val.timestamp || '',
-                          score: 0,
-                          frame: 0,
-                          screenshot: val.screenshot || null,
-                          stateData: {
-                            version: 'EJS_STATE',
-                            gameId: gId,
-                            timestamp: val.timestamp,
-                            lazyIdbKey: key,
-                          }
-                        }
-                      : s
-                  );
-                }
-                return next;
-              });
+              setSavesByGameId((prev) => applySlotUpdates(prev, pendingSlots));
             }
           }
         };
@@ -458,9 +436,6 @@ export default function App() {
     try { return (emuFrameRef.current?.contentWindow as any)?.EJS_emulator || null; } catch (e) { return null; }
   };
 
-  const pressStartTimesRef = useRef<Record<string, number>>({});
-  const releaseTimersRef = useRef<Record<string, any>>({});
-
   const sendKey = useCallback((name: string, down: boolean) => {
     if (down) hasUserInteractedRef.current = true;
     const win = emuFrameRef.current?.contentWindow as any;
@@ -504,19 +479,7 @@ export default function App() {
     }
   }, []);
 
-  useEffect(() => {
-    if (!romUrl) return;
-    return () => {
-      try { URL.revokeObjectURL(romUrl); } catch (e) {}
-    };
-  }, [romUrl]);
-
   const setButtonDown = useCallback((name: string) => {
-    if (releaseTimersRef.current[name]) {
-      clearTimeout(releaseTimersRef.current[name]);
-      releaseTimersRef.current[name] = null;
-    }
-    pressStartTimesRef.current[name] = performance.now();
     keysRef.current[name] = true;
     sendKey(name, true);
     if (['up', 'down', 'left', 'right'].includes(name)) {
@@ -527,10 +490,6 @@ export default function App() {
   }, [sendKey]);
 
   const setButtonUp = useCallback((name: string) => {
-    if (releaseTimersRef.current[name]) {
-      clearTimeout(releaseTimersRef.current[name]);
-      releaseTimersRef.current[name] = null;
-    }
     keysRef.current[name] = false;
     sendKey(name, false);
   }, [sendKey]);
@@ -688,17 +647,7 @@ export default function App() {
     recordDeletedGame(gameId);
 
     // 2. Clean up all IndexedDB keys for this game
-    try {
-      await idbDelete(gameId);
-      await idbDelete(`rom:${gameId}`);
-      await idbDelete(`srm:${gameId}`);
-      await idbDelete(`rtc:${gameId}`);
-      await idbDelete(`autosave:${gameId}`);
-      await idbDelete(`cover:${gameId}`);
-      for (let s = 1; s <= 4; s++) {
-        await idbDelete(`state:${gameId}:${s}`);
-      }
-    } catch (e) {}
+    await idbDeleteGameData(gameId);
 
     // 3. Update state and localStorage
     setGames((prev) => {
@@ -1357,8 +1306,6 @@ export default function App() {
     const timer = setInterval(syncMeasuredFps, 500);
     return () => clearInterval(timer);
   }, [activeGame.real, currentView, isPaused, topBarVisible]);
-
-
 
   useEffect(() => {
     try {

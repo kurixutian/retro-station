@@ -49,6 +49,24 @@ export const idbDelete = async (key: string): Promise<boolean> => {
   });
 };
 
+export const idbDeleteGameData = async (gameId: string): Promise<void> => {
+  const keys = [
+    gameId,
+    `rom:${gameId}`,
+    `srm:${gameId}`,
+    `rtc:${gameId}`,
+    `autosave:${gameId}`,
+    `cover:${gameId}`,
+    `state:${gameId}:1`,
+    `state:${gameId}:2`,
+    `state:${gameId}:3`,
+    `state:${gameId}:4`,
+  ];
+  for (const k of keys) {
+    await idbDelete(k).catch(() => {});
+  }
+};
+
 export const idbGetAllKeys = async (): Promise<string[]> => {
   const db = (await idbOpen()) as IDBDatabase;
   return new Promise((res, rej) => {
