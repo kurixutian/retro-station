@@ -40,8 +40,6 @@ import { CloudSyncModal } from './components/modals/CloudSyncModal';
 import { ControlsModal } from './components/modals/ControlsModal';
 import { MissingRomModal } from './components/modals/MissingRomModal';
 import { isZipFile, isZipBuffer, extractRomsFromZip } from './services/romArchive';
-import { Capacitor } from '@capacitor/core';
-import { App as CapacitorApp } from '@capacitor/app';
 
 const INITIAL_GAMES: Game[] = [];
 
@@ -215,60 +213,6 @@ export default function App() {
     }
   }, []);
 
-  // Native Android hardware Back button handler (Capacitor)
-  useEffect(() => {
-    if (!Capacitor.isNativePlatform()) return;
-
-    const backListenerPromise = CapacitorApp.addListener('backButton', () => {
-      if (inGameSaveModalMode) {
-        setInGameSaveModalMode(null);
-        return;
-      }
-      if (inGameMenuOpen) {
-        setInGameMenuOpen(false);
-        return;
-      }
-      if (currentView === 'ingame') {
-        setInGameMenuOpen(true);
-        return;
-      }
-      if (globalSettingsOpen) {
-        setGlobalSettingsOpen(false);
-        return;
-      }
-      if (cloudModalOpen) {
-        setCloudModalOpen(false);
-        return;
-      }
-      if (controlsModalOpen) {
-        setControlsModalOpen(false);
-        return;
-      }
-      if (detailGame) {
-        setDetailGame(null);
-        return;
-      }
-      if (missingRomData) {
-        setMissingRomData(null);
-        return;
-      }
-      CapacitorApp.exitApp();
-    });
-
-    return () => {
-      backListenerPromise.then((handle) => handle.remove()).catch(() => {});
-    };
-  }, [
-    inGameSaveModalMode,
-    inGameMenuOpen,
-    currentView,
-    globalSettingsOpen,
-    cloudModalOpen,
-    controlsModalOpen,
-    detailGame,
-    missingRomData,
-  ]);
-
   // Restore library from IndexedDB if localStorage was empty
   useEffect(() => {
     if (games.length === 0) {
@@ -396,6 +340,7 @@ export default function App() {
       crtCurve: true,
       gbGrid: false,
       amoled: false,
+      edgeToEdge: false,
       colorCorrection: true,
       colorProfile: 'vivid',
     };
@@ -733,6 +678,8 @@ export default function App() {
       try { localStorage.setItem('retro_shaders', JSON.stringify(next)); } catch (e) {}
       if (key === 'amoled') {
         showToast(next.amoled ? 'AMOLED Battery Saver Activated (Pure Black)' : 'AMOLED Mode Disabled');
+      } else if (key === 'edgeToEdge') {
+        showToast(next.edgeToEdge ? 'Edge-to-Edge Bezel-less Screen: Enabled' : 'Edge-to-Edge Screen: Disabled (Standard Bezel)');
       } else if (key === 'colorCorrection') {
         showToast(next.colorCorrection ? 'RetroArch Colors: Vivid Saturation & Contrast' : 'RetroArch Colors: Disabled (Raw RGB)');
       }

@@ -2,6 +2,7 @@
 // EMULATORJS IFRAME PLAYER HTML BUILDER
 // ============================================================================
 export function buildPlayerHtml(core: string, romUrl: string, title?: string): string {
+  const isGba = core === 'gba' || core === 'mgba';
   const close = '<' + '/script>';
   return '<!doctype html><html><head><meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">' +
@@ -25,12 +26,14 @@ export function buildPlayerHtml(core: string, romUrl: string, title?: string): s
     'window.EJS_startOnLoaded=true;' +
     'window.EJS_fixedSaveInterval=10000;' +
     'window.EJS_VirtualGamepadSettings=[];' +
+    'window.EJS_coreOpts=' + (isGba ? '{"mgba_frameskip":"auto","mgba_frameskip_threshold":"33"}' : '{}') + ';' +
     'window.EJS_defaultOptions={"virtual-gamepad":"disabled","settings.virtual-gamepad":"disabled","ff-ratio":"2"};' +
     'window.EJS_retroarchOpts=[' +
     '  {name:"video_font_enable",default:false,isString:false},' +
     '  {name:"notification_show_fast_forward",default:false,isString:false},' +
     '  {name:"fastforward_frameskip",default:true,isString:false},' +
     '  {name:"fastforward_ratio",default:0.0,isString:false}' +
+    (isGba ? ',  {name:"mgba_frameskip",default:"auto",isString:true}' : '') +
     '];' +
     'var _realGM=undefined;' +
     'Object.defineProperty(window,"EJS_GameManager",{' +
@@ -47,6 +50,7 @@ export function buildPlayerHtml(core: string, romUrl: string, title?: string): s
     '        cfg+="notification_show_fast_forward = false\\n";' +
     '        cfg+="fastforward_frameskip = true\\n";' +
     '        cfg+="fastforward_ratio = 0.0\\n";' +
+    (isGba ? '        cfg+="mgba_frameskip = \\"auto\\"\\n";cfg+="mgba_frameskip_threshold = \\"33\\"\\n";' : '') +
     '        return cfg;' +
     '      };' +
     '    }' +

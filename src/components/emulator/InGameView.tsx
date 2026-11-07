@@ -1368,13 +1368,19 @@ export const InGameView: React.FC<InGameViewProps> = ({
         {/* 2. GAME VIEWPORT CONTAINER (Stable DOM element across orientations) */}
         <div
           key="game-screen-area"
-          className={`${isLandscape ? 'flex-1 min-w-0 h-full' : 'flex-none w-full'} p-2 flex flex-col items-center justify-center relative ${
-            shaders.amoled ? 'bg-black' : theme.bezelBg
+          className={`${isLandscape ? 'flex-1 min-w-0 h-full' : 'flex-none w-full'} ${
+            shaders.edgeToEdge ? 'p-0' : 'p-2'
+          } flex flex-col items-center justify-center relative ${
+            shaders.edgeToEdge || shaders.amoled ? 'bg-black' : theme.bezelBg
           }`}
           style={{
             order: 0,
-            paddingTop: isLandscape ? '6px' : 'max(env(safe-area-inset-top, 0px), 24px)',
-            paddingBottom: isLandscape ? 'max(env(safe-area-inset-bottom, 0px), 6px)' : undefined,
+            paddingTop: shaders.edgeToEdge
+              ? (isLandscape ? '0px' : 'env(safe-area-inset-top, 0px)')
+              : (isLandscape ? '6px' : 'max(env(safe-area-inset-top, 0px), 24px)'),
+            paddingBottom: shaders.edgeToEdge
+              ? (isLandscape ? '0px' : undefined)
+              : (isLandscape ? 'max(env(safe-area-inset-bottom, 0px), 6px)' : undefined),
           }}
         >
           {/* Permanent Minimal Hardware Bezel Status Indicator (FPS LED + Mute Indicator) */}
@@ -1402,18 +1408,20 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 setSelectedPad('screen');
               }
             }}
-            className={`relative bg-black overflow-hidden border-2 ${
+            className={`relative bg-black overflow-hidden ${
               isPoweringOff ? 'crt-power-off' : ''
             } ${
               customizing && selectedPad === 'screen'
-                ? 'border-emerald-400 ring-2 ring-emerald-400/50 cursor-pointer'
+                ? 'border-2 border-emerald-400 ring-2 ring-emerald-400/50 cursor-pointer'
                 : customizing
-                ? 'border-white/30 cursor-pointer'
+                ? 'border-2 border-white/30 cursor-pointer'
+                : shaders.edgeToEdge
+                ? 'border-0 shadow-none'
                 : shaders.amoled
-                ? 'border-zinc-900 shadow-none'
-                : 'border-zinc-800 shadow-inner'
+                ? 'border-2 border-zinc-900 shadow-none'
+                : 'border-2 border-zinc-800 shadow-inner'
             } ${
-              shaders.crtCurve ? 'rounded-2xl scale-[0.99]' : 'rounded-lg'
+              shaders.edgeToEdge ? 'rounded-none' : shaders.crtCurve ? 'rounded-2xl scale-[0.99]' : 'rounded-lg'
             }`}
             style={{
               aspectRatio: String(coreRatio(activeGame.core, isLandscape)),
@@ -1423,11 +1431,13 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 : `calc(48lvh * ${screenScale})`,
               width: isLandscape
                 ? `min(100%, calc(${(coreRatio(activeGame.core, isLandscape) * 92).toFixed(2)}lvh * ${screenScale}))`
+                : shaders.edgeToEdge
+                ? `calc(100% * ${screenScale})`
                 : `min(100%, calc(${(50 * coreRatio(activeGame.core, isLandscape)).toFixed(2)}lvh * ${screenScale}))`,
               height: isLandscape
                 ? `calc((100lvh - ${Math.round(22 * transportScale + 10)}px) * ${screenScale})`
                 : `calc(48lvh * ${screenScale})`,
-              boxShadow: !shaders.amoled && shaders.rgbBloom
+              boxShadow: !shaders.edgeToEdge && !shaders.amoled && shaders.rgbBloom
                 ? `0 0 28px ${theme.hex}33, inset 0 0 18px rgba(0,0,0,0.75)`
                 : 'none',
               filter: 'none',
