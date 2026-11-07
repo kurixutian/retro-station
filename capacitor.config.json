@@ -1,0 +1,12 @@
+{
+  "appId": "com.retrostation.app",
+  "appName": "Retro Station",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "backgroundColor": "#09090b",
+    "allowMixedContent": true
+  }
+}

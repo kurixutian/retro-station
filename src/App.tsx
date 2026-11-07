@@ -39,6 +39,9 @@ import { SaveSlotsModal } from './components/modals/SaveSlotsModal';
 import { CloudSyncModal } from './components/modals/CloudSyncModal';
 import { ControlsModal } from './components/modals/ControlsModal';
 import { MissingRomModal } from './components/modals/MissingRomModal';
+import { isZipFile, isZipBuffer, extractRomsFromZip } from './services/romArchive';
+import { Capacitor } from '@capacitor/core';
+import { App as CapacitorApp } from '@capacitor/app';
 
 const INITIAL_GAMES: Game[] = [];
 
@@ -210,6 +213,60 @@ export default function App() {
       syncNow().catch((err) => console.warn('[CloudSync] Startup sync warning:', err));
     }
   }, []);
+
+  // Native Android hardware Back button handler (Capacitor)
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    const backListenerPromise = CapacitorApp.addListener('backButton', () => {
+      if (inGameSaveModalMode) {
+        setInGameSaveModalMode(null);
+        return;
+      }
+      if (inGameMenuOpen) {
+        setInGameMenuOpen(false);
+        return;
+      }
+      if (currentView === 'ingame') {
+        setInGameMenuOpen(true);
+        return;
+      }
+      if (globalSettingsOpen) {
+        setGlobalSettingsOpen(false);
+        return;
+      }
+      if (cloudModalOpen) {
+        setCloudModalOpen(false);
+        return;
+      }
+      if (controlsModalOpen) {
+        setControlsModalOpen(false);
+        return;
+      }
+      if (detailGame) {
+        setDetailGame(null);
+        return;
+      }
+      if (missingRomData) {
+        setMissingRomData(null);
+        return;
+      }
+      CapacitorApp.exitApp();
+    });
+
+    return () => {
+      backListenerPromise.then((handle) => handle.remove()).catch(() => {});
+    };
+  }, [
+    inGameSaveModalMode,
+    inGameMenuOpen,
+    currentView,
+    globalSettingsOpen,
+    cloudModalOpen,
+    controlsModalOpen,
+    detailGame,
+    missingRomData,
+  ]);
 
   // Restore library from IndexedDB if localStorage was empty
   useEffect(() => {
@@ -712,7 +769,28 @@ export default function App() {
     if (!missingRomData) return;
     const { game, optionalStateData } = missingRomData;
     try {
-      await idbPut(game.id, file);
+      let romFile = file;
+      let isZip = isZipFile(file);
+      if (!isZip) {
+        const header = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+        if (isZipBuffer(header)) isZip = true;
+      }
+
+      if (isZip) {
+        showToast('Extracting ROM from zip...');
+        const extracted = await extractRomsFromZip(file);
+        if (!extracted.length) {
+          showToast('No supported ROM found in zip file');
+          return;
+        }
+        const match =
+          extracted.find((r) => r.name.toLowerCase() === game.fileName?.toLowerCase()) ||
+          extracted.find((r) => r.name.toLowerCase().includes(game.title.toLowerCase())) ||
+          extracted[0];
+        romFile = match;
+      }
+
+      await idbPut(game.id, romFile);
       setMissingRomData(null);
       showToast(`Linked ROM for ${game.title}! Launching...`);
       launchGame(game, optionalStateData);
@@ -760,27 +838,15 @@ export default function App() {
     showToast('ROM deleted from library');
   }, [showToast]);
 
-  const handleRomUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const importRomFiles = async (files: File[]) => {
+    if (!files.length) return;
 
-    const parts = file.name.split('.');
-    const ext = parts.length > 1 ? parts.pop()!.toLowerCase() : 'gbc';
-    const detected = CORE_MAP[ext] || {
-      core: 'gambatte',
-      system: `Custom ROM (${ext.toUpperCase()})`,
-      shortSystem: ext.toUpperCase().slice(0, 4),
-      badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-    };
-
-    const buffer = await file.slice(0, 4096).arrayBuffer();
-    const bytes = new Uint8Array(buffer);
-    let hash = 0x811c9dc5;
-    for (let i = 0; i < bytes.length; i++) {
-      hash ^= bytes[i];
-      hash = Math.imul(hash, 0x01000193) >>> 0;
-    }
-    const crcHex = '0x' + hash.toString(16).toUpperCase().padStart(8, '0');
+    const gradients = [
+      'from-emerald-600 via-teal-800 to-slate-950',
+      'from-indigo-600 via-purple-800 to-slate-950',
+      'from-amber-500 via-orange-700 to-red-950',
+      'from-cyan-500 via-blue-700 to-indigo-950'
+    ];
 
     const coreToEngine: Record<string, string> = {
       gambatte: 'pokegold',
@@ -789,74 +855,148 @@ export default function App() {
       genesis_plus_gx: 'starblade',
       mgba: 'neondrift',
     };
-    const engineType = coreToEngine[detected.core] || 'pokegold';
 
-    const gradients = [
-      'from-emerald-600 via-teal-800 to-slate-950',
-      'from-indigo-600 via-purple-800 to-slate-950',
-      'from-amber-500 via-orange-700 to-red-950',
-      'from-cyan-500 via-blue-700 to-indigo-950'
-    ];
-    const coverGradient = gradients[games.length % gradients.length];
+    const newGamesToAdd: { game: Game; file: File; detected: any }[] = [];
 
-    const cleanTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ');
-    const existingGame = games.find(
-      (g: any) =>
-        (g.crc32 && String(g.crc32).toLowerCase() === String(crcHex).toLowerCase()) ||
-        (g.fileName && g.fileName.toLowerCase() === file.name.toLowerCase()) ||
-        (g.title && g.title.toLowerCase() === cleanTitle.toLowerCase() && g.core === detected.core)
-    );
-    const deterministicId = existingGame?.id || (crcHex && crcHex !== '00000000' ? `rom_${String(crcHex).toLowerCase()}` : `rom_${Date.now()}`);
+    for (let index = 0; index < files.length; index++) {
+      const file = files[index];
+      const parts = file.name.split('.');
+      const ext = parts.length > 1 ? parts.pop()!.toLowerCase() : 'gbc';
+      const detected = CORE_MAP[ext] || {
+        core: 'gambatte',
+        system: `Custom ROM (${ext.toUpperCase()})`,
+        shortSystem: ext.toUpperCase().slice(0, 4),
+        badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+      };
 
-    const newGame: Game = {
-      id: deterministicId,
-      title: cleanTitle,
-      fileName: file.name,
-      core: detected.core,
-      system: detected.system,
-      shortSystem: detected.shortSystem,
-      engineType,
-      coverGradient: existingGame?.coverGradient || coverGradient,
-      real: true,
-      fileSize: file.size,
-      crc32: crcHex,
-    };
+      const buffer = await file.slice(0, 4096).arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      let hash = 0x811c9dc5;
+      for (let i = 0; i < bytes.length; i++) {
+        hash ^= bytes[i];
+        hash = Math.imul(hash, 0x01000193) >>> 0;
+      }
+      const crcHex = '0x' + hash.toString(16).toUpperCase().padStart(8, '0');
+      const engineType = coreToEngine[detected.core] || 'pokegold';
+      const coverGradient = gradients[(games.length + index) % gradients.length];
+      const cleanTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ');
 
-    // If this game was previously deleted, clear its tombstone so it can be added fresh!
-    unrecordDeletedGame(newGame.id);
+      const existingGame = games.find(
+        (g: any) =>
+          (g.crc32 && String(g.crc32).toLowerCase() === String(crcHex).toLowerCase()) ||
+          (g.fileName && g.fileName.toLowerCase() === file.name.toLowerCase()) ||
+          (g.title && g.title.toLowerCase() === cleanTitle.toLowerCase() && g.core === detected.core)
+      );
 
-    try {
-      await idbPut(newGame.id, file);
-      markLocalSaveModified('library_games');
-      markLocalSaveModified('retro_games');
-    } catch (err) {
-      showToast('Could not store ROM for offline use');
+      const deterministicId =
+        existingGame?.id ||
+        (crcHex && crcHex !== '00000000' ? `rom_${String(crcHex).toLowerCase()}` : `rom_${Date.now()}_${index}`);
+
+      const newGame: Game = {
+        id: deterministicId,
+        title: cleanTitle,
+        fileName: file.name,
+        core: detected.core,
+        system: detected.system,
+        shortSystem: detected.shortSystem,
+        engineType,
+        coverGradient: existingGame?.coverGradient || coverGradient,
+        real: true,
+        fileSize: file.size,
+        crc32: crcHex,
+      };
+
+      unrecordDeletedGame(newGame.id);
+
+      try {
+        await idbPut(newGame.id, file);
+      } catch (err) {
+        showToast('Could not store ROM for offline use');
+      }
+
+      newGamesToAdd.push({ game: newGame, file, detected });
     }
 
+    if (!newGamesToAdd.length) return;
+
+    markLocalSaveModified('library_games');
+    markLocalSaveModified('retro_games');
+
+    const addedIds = new Set(newGamesToAdd.map((n) => n.game.id));
+    const addedFileNames = new Set(newGamesToAdd.map((n) => n.game.fileName.toLowerCase()));
+
     setGames((prev) => {
-      const nextGames = [
-        newGame,
-        ...prev.filter(
-          (g) =>
-            g.id !== newGame.id &&
-            g.fileName?.toLowerCase() !== file.name.toLowerCase() &&
-            !(g.title?.toLowerCase() === cleanTitle.toLowerCase() && g.core === detected.core)
-        ),
-      ];
+      const remaining = prev.filter(
+        (g) =>
+          !addedIds.has(g.id) &&
+          !addedFileNames.has(String(g.fileName || '').toLowerCase()) &&
+          !newGamesToAdd.some(
+            (n) =>
+              n.game.title.toLowerCase() === String(g.title || '').toLowerCase() &&
+              n.game.core === g.core
+          )
+      );
+      const nextGames = [...newGamesToAdd.map((n) => n.game), ...remaining];
       const userImportedOnly = nextGames.filter((g) => g.real && g.id !== 'pokemon_gold');
       localStorage.setItem('retro_games', JSON.stringify(nextGames));
       idbPut('library_games', userImportedOnly).catch(() => {});
       return nextGames;
     });
 
-    setSavesByGameId((prev) => ({
-      ...prev,
-      [newGame.id]: prev[newGame.id] || createEmptySlotsForGame(newGame.id)
-    }));
-    setDetailGame(newGame);
+    setSavesByGameId((prev) => {
+      const next = { ...prev };
+      for (const item of newGamesToAdd) {
+        if (!next[item.game.id]) {
+          next[item.game.id] = createEmptySlotsForGame(item.game.id);
+        }
+      }
+      return next;
+    });
+
+    const firstItem = newGamesToAdd[0];
+    setDetailGame(firstItem.game);
     soundFX.save();
-    showToast(`Auto-Detected ${detected.shortSystem} ROM (${detected.core}): ${newGame.title}`);
+
+    if (newGamesToAdd.length === 1) {
+      showToast(`Auto-Detected ${firstItem.detected.shortSystem} ROM (${firstItem.detected.core}): ${firstItem.game.title}`);
+    } else {
+      showToast(`Imported ${newGamesToAdd.length} ROMs into library`);
+    }
+  };
+
+  const handleRomUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = Array.from(e.target.files || []);
+    if (!selectedFiles.length) return;
     e.target.value = '';
+
+    const romsToImport: File[] = [];
+
+    for (const file of selectedFiles) {
+      let isZip = isZipFile(file);
+      if (!isZip) {
+        const header = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+        if (isZipBuffer(header)) isZip = true;
+      }
+
+      if (isZip) {
+        try {
+          const extracted = await extractRomsFromZip(file);
+          if (extracted.length === 0) {
+            showToast(`No supported ROM found in ${file.name}`);
+          } else {
+            romsToImport.push(...extracted);
+          }
+        } catch (err) {
+          showToast(`Failed to unzip ${file.name}: invalid or corrupt archive`);
+        }
+      } else {
+        romsToImport.push(file);
+      }
+    }
+
+    if (romsToImport.length > 0) {
+      await importRomFiles(romsToImport);
+    }
   };
 
   const launchGame = useCallback((game: Game, optionalStateData: any = null) => {
@@ -1559,9 +1699,10 @@ export default function App() {
       <input
         ref={romInputRef}
         type="file"
-        accept=".gb,.gbc,.gba,.nes,.sfc,.smc,.md,.gen,.smd,.bin,.zip"
+        accept=".gb,.gbc,.gba,.nes,.sfc,.smc,.fig,.swc,.md,.gen,.smd,.bin,.gg,.sms,.sg,.zip,application/zip"
         onChange={handleRomUpload}
         className="hidden"
+        multiple
       />
 
       {/* Floating Toast Notification */}

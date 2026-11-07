@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
-import { Sliders, X, Tv, Palette, Check, Vibrate, Cloud, ChevronRight, Sparkles, Gamepad2, Download, Upload, HardDrive, Coffee } from 'lucide-react';
+import { Sliders, X, Tv, Palette, Check, Vibrate, Cloud, ChevronRight, Sparkles, Gamepad2, Download, Upload, HardDrive, Coffee, Smartphone } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
 import { THEMES } from '../../constants/themes';
 import { COLOR_PROFILES } from '../../constants/shaders';
 import { Theme } from '../../types';
@@ -40,6 +41,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [backupBusy, setBackupBusy] = useState(false);
   const [backupMsg, setBackupMsg] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const isNative = Capacitor.isNativePlatform();
 
   const handleExportBackup = async () => {
     setBackupBusy(true);
@@ -513,6 +515,60 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
             </div>
           )}
+
+          {/* Android APK Edition Card */}
+          <div className="p-4 rounded-2xl border border-zinc-800 bg-zinc-900/60 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Smartphone className="w-4 h-4 text-emerald-400" />
+                <span className="text-xs font-bold text-white">
+                  {isNative ? 'Native Android Edition' : 'Android App (APK)'}
+                </span>
+              </div>
+              <span
+                className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${
+                  isNative
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                    : 'bg-zinc-800 text-zinc-400 border-zinc-700'
+                }`}
+              >
+                {isNative ? 'Game Turbo Active' : 'PWA / Web'}
+              </span>
+            </div>
+
+            {isNative ? (
+              <p className="text-[11px] text-zinc-400 leading-snug">
+                Running with OS Game category optimization, sticky immersive fullscreen, and persistent offline saves.
+              </p>
+            ) : (
+              <>
+                <p className="text-[11px] text-zinc-400 leading-snug">
+                  Install the standalone Android app for OS-level Game Turbo priority, sticky immersive fullscreen, and 100% persistent offline saves.
+                </p>
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <a
+                    href="https://github.com/kurixutian/retro-station/releases"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 py-2 px-3 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold flex items-center justify-center gap-1.5 transition active:scale-95"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download Android APK</span>
+                  </a>
+                  <a
+                    href="https://github.com/kurixutian/retro-station/actions/workflows/build-apk.yml"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="py-2 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 text-[11px] font-bold flex items-center justify-center gap-1.5 transition active:scale-95"
+                    title="View Automated APK Builds"
+                  >
+                    <span>CI Builds</span>
+                    <ChevronRight className="w-3 h-3 text-zinc-500" />
+                  </a>
+                </div>
+              </>
+            )}
+          </div>
 
           {/* Support / Buy Me a Coffee Footer Banner */}
           <a
