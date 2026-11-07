@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
-import { Sliders, X, Tv, Palette, Check, Vibrate, Cloud, ChevronRight, Sparkles, Gamepad2 } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Sliders, X, Tv, Palette, Check, Vibrate, Cloud, ChevronRight, Sparkles, Gamepad2, Download, Upload, HardDrive } from 'lucide-react';
 import { THEMES } from '../../constants/themes';
 import { COLOR_PROFILES } from '../../constants/shaders';
 import { Theme } from '../../types';
 import { haptics } from '../../services/haptics';
 import { getSyncCode } from '../../cloudSync';
+import { createBackupFile, downloadBackup, importBackupFile } from '../../services/backup';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -34,6 +35,42 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onOpenCloudSync,
 }) => {
   const [activeTab, setActiveTab] = useState<'display' | 'controls' | 'themes' | 'vault'>('display');
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [backupMsg, setBackupMsg] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleExportBackup = async () => {
+    setBackupBusy(true);
+    try {
+      const backup = await createBackupFile();
+      downloadBackup(backup);
+      setBackupMsg(`Backup exported (${Object.keys(backup.items).length} saves). Keep the file somewhere safe.`);
+    } catch (e) {
+      setBackupMsg('Backup export failed — try again.');
+    } finally {
+      setBackupBusy(false);
+    }
+  };
+
+  const handleImportBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setBackupBusy(true);
+    try {
+      const text = await file.text();
+      const res = await importBackupFile(text);
+      setBackupMsg(
+        res.ok
+          ? `Restored ${res.appliedItems} saves and ${res.appliedListItemCount} games from backup. Relink ROM files to play.`
+          : `Import failed: ${res.error}`
+      );
+    } catch (err) {
+      setBackupMsg('Import failed: could not read that file.');
+    } finally {
+      setBackupBusy(false);
+    }
+  };
 
   if (!isOpen) return null;
   const syncCode = getSyncCode();
@@ -384,6 +421,54 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <p>
                   Works 100% offline first — whenever you are off the grid, saves write instantly to device storage and queue for sync when internet reconnects.
                 </p>
+              </div>
+
+              {/* MANUAL BACKUP (Safety Net) — independent of cloud vault */}
+              <div className="p-4 rounded-2xl border border-zinc-800 bg-zinc-900/50 space-y-3">
+                <div className="flex items-center gap-2 text-white font-extrabold text-xs">
+                  <HardDrive className="w-4 h-4 text-amber-400" />
+                  <span>Manual Backup File</span>
+                  <span className="px-2 py-0.5 rounded-md text-[9px] font-black tracking-wider uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                    Safety Net
+                  </span>
+                </div>
+                {backupMsg && (
+                  <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/25 text-[10px] text-amber-300 font-bold break-words">
+                    {backupMsg}
+                  </div>
+                )}
+                <p className="text-[11px] text-zinc-400 leading-snug">
+                  Export all your games, save states, cartridge SRAM, and covers as a single JSON file you keep
+                  yourself — no internet needed. Restore it on any device. ROM files are not included (link them
+                  again after importing).
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button
+                    onClick={handleExportBackup}
+                    disabled={backupBusy}
+                    className={`py-2.5 px-3 rounded-xl font-bold text-[11px] flex items-center justify-center gap-2 transition active:scale-95 ${
+                      backupBusy ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed' : 'bg-amber-500 text-zinc-950 hover:bg-amber-400'
+                    }`}
+                  >
+                    {backupBusy ? <Download className="w-3.5 h-3.5 animate-pulse" /> : <Download className="w-3.5 h-3.5" />}
+                    <span>{backupBusy ? 'Building backup...' : 'Export Backup'}</span>
+                  </button>
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={backupBusy}
+                    className="py-2.5 px-3 rounded-xl font-bold text-[11px] flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700 transition active:scale-95 disabled:opacity-40"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Import Backup</span>
+                  </button>
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="application/json,.json"
+                  className="hidden"
+                  onChange={handleImportBackup}
+                />
               </div>
             </div>
           )}

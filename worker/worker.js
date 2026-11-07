@@ -1,265 +1,100 @@
-/**
- * RetroStation Cloud Save Vault - Cloudflare Worker
- *
- * Free, Zero-Cost Cloud Save Edge Vault
- * Egress Fees: $0.00 forever
- * Supports either Cloudflare KV or Cloudflare R2 object storage.
- */
+// ============================================================================
+// RetroStation Cloud Save Vault v2 - Cloudflare Worker (router only)
+//
+// This file is a thin CORS-validating router. All vault logic (indexing,
+// serializing writes, server timestamps, legacy migration) lives in
+// VaultDO (vault-do.js): one Durable Object instance per sync code.
+//
+// Routes (forwarded to the DO):
+//   GET    /api/sync/:code                  -> vault index (keys + server timestamps)
+//   GET    /api/sync/:code/item/:key        -> raw item body
+//   PUT    /api/sync/:code/item/:key        -> raw item body
+//   DELETE /api/sync/:code/item/:key        -> tombstone single item
+//   POST   /api/sync/:code/delete-games     -> tombstone all keys for game ids
+//   DELETE /api/sync/:code                  -> purge vault (X-Confirm-Delete)
+// ============================================================================
+
+import { VaultDO } from './vault-do.js';
+export { VaultDO };
+
+const VAULT_ORIGIN = 'https://vault.internal';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Confirm-Delete',
+  'Access-Control-Max-Age': '86400',
+};
+
+function jsonResp(status, body, extra = {}) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json', ...corsHeaders, ...extra },
+  });
+}
+
+// RETRO-XXXX-XXXX (or any 3-64 char code for custom/self-hosted codes)
+function validCode(code) {
+  return /^[A-Za-z0-9_-]{3,64}$/.test(code);
+}
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    // 1. CORS Preflight Support for all clients & domains
     if (request.method === 'OPTIONS') {
-      return new Response(null, {
-        status: 204,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-          'Access-Control-Max-Age': '86400',
-        },
-      });
+      return new Response(null, { status: 204, headers: corsHeaders });
     }
 
-    const corsHeaders = {
-      'Access-Control-Allow-Origin': '*',
-      'Cross-Origin-Resource-Policy': 'cross-origin',
-      'Content-Type': 'application/json',
-    };
-
-    // Health Check / Root route
+    // ------------------------- Health / info -------------------------
     if (url.pathname === '/' || url.pathname === '/health') {
-      return new Response(
-        JSON.stringify({
-          status: 'ok',
-          service: 'retro-station-vault',
-          version: '1.0.0',
-          storage: env.RETRO_BUCKET ? 'R2' : env.RETRO_VAULT ? 'KV' : 'unconfigured',
-        }),
-        { headers: corsHeaders }
-      );
+      return jsonResp(200, {
+        status: env.RETRO_BUCKET ? 'ok' : 'misconfigured',
+        service: 'retro-station-vault',
+        version: '2.0.0',
+        storage: env.RETRO_BUCKET ? 'R2' : 'NOT-CONFIGURED (R2 binding missing)',
+      });
     }
 
-    // Match Route: /api/sync/:code
-    const match = url.pathname.match(/^\/api\/sync\/([^/]+)$/);
+    // ------------------------- /api/sync/:code -------------------------
+    const match = url.pathname.match(/^\/api\/sync\/([^/]+)(\/.*)?$/);
     if (!match) {
-      return new Response(JSON.stringify({ error: 'Endpoint not found' }), {
-        status: 404,
-        headers: corsHeaders,
-      });
+      return jsonResp(404, { error: 'Endpoint not found' });
     }
 
     const rawCode = decodeURIComponent(match[1]).trim().toUpperCase();
-    if (!rawCode || rawCode.length < 3 || rawCode.length > 64) {
-      return new Response(JSON.stringify({ error: 'Invalid sync code format' }), {
-        status: 400,
-        headers: corsHeaders,
-      });
+    if (!validCode(rawCode)) {
+      return jsonResp(400, { error: 'Invalid sync code format' });
     }
 
-    const storageKey = `vault:${rawCode}`;
-    // In-memory fallback if KV/R2 binding is not configured yet
-    const mem = globalThis.__retro_mem_store || (globalThis.__retro_mem_store = new Map());
+    if (!env.VAULT) {
+      // Be loud: the DO binding is how data actually persists.
+      return jsonResp(503, { error: 'Vault Durable Object binding missing (run npx wrangler deploy with migrations)' });
+    }
 
-    // Storage Adapter (works seamlessly with R2 Bucket, KV Namespace, or memory fallback)
-    const storage = {
-      async get() {
-        if (env.RETRO_BUCKET) {
-          const obj = await env.RETRO_BUCKET.get(storageKey);
-          if (!obj) return null;
-          return await obj.json();
-        }
-        if (env.RETRO_VAULT) {
-          const raw = await env.RETRO_VAULT.get(storageKey, 'json');
-          return raw;
-        }
-        return mem.get(storageKey) || null;
-      },
-      async put(data) {
-        const payload = JSON.stringify(data);
-        if (env.RETRO_BUCKET) {
-          await env.RETRO_BUCKET.put(storageKey, payload, {
-            httpMetadata: { contentType: 'application/json' },
-          });
-          return;
-        }
-        if (env.RETRO_VAULT) {
-          await env.RETRO_VAULT.put(storageKey, payload);
-          return;
-        }
-        mem.set(storageKey, data);
-      },
-      async delete() {
-        if (env.RETRO_BUCKET) await env.RETRO_BUCKET.delete(storageKey);
-        if (env.RETRO_VAULT) await env.RETRO_VAULT.delete(storageKey);
-        mem.delete(storageKey);
-      },
-    };
+    const id = env.VAULT.idFromName(rawCode);
+    const stub = env.VAULT.get(id);
+    const rest = match[2] || '';
+    // First path segment after the host is the vault code itself
+    const doUrl = `${VAULT_ORIGIN}/${encodeURIComponent(rawCode)}${rest}`;
+    const fwd = new Request(doUrl, {
+      method: request.method,
+      headers: request.headers,
+      body: ['GET', 'HEAD'].includes(request.method) ? undefined : request.body,
+    });
 
     try {
-      // GET: Retrieve all saves for this sync code
-      if (request.method === 'GET') {
-        const vault = await storage.get();
-        if (!vault) {
-          return new Response(
-            JSON.stringify({ exists: false, items: {}, lastModified: 0 }),
-            { headers: corsHeaders }
-          );
-        }
-        if (vault.deleted_games && Array.isArray(vault.deleted_games) && vault.deleted_games.length > 0) {
-          vault.items = vault.items || {};
-          vault.items.retro_deleted_games = {
-            key: 'retro_deleted_games',
-            data: vault.deleted_games,
-            updatedAt: vault.lastModified || Date.now(),
-            isBinary: false,
-          };
-        }
-        return new Response(
-          JSON.stringify({ exists: true, ...vault }),
-          { headers: corsHeaders }
-        );
-      }
-
-      // POST / PUT: Merge incoming save batch
-      if (request.method === 'POST' || request.method === 'PUT') {
-        const contentLength = parseInt(request.headers.get('content-length') || '0', 10);
-        if (contentLength > 5 * 1024 * 1024) {
-          return new Response(JSON.stringify({ error: 'Payload too large (>5MB)' }), {
-            status: 413,
-            headers: corsHeaders,
-          });
-        }
-
-        let body;
-        try {
-          body = await request.json();
-        } catch (e) {
-          return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
-            status: 400,
-            headers: corsHeaders,
-          });
-        }
-
-        const incomingItems = body.items || {};
-        const clientDeviceId = body.clientDeviceId || 'unknown';
-
-        let vault = await storage.get();
-        if (!vault || !vault.items) {
-          vault = { version: 1, items: {}, lastModified: Date.now() };
-        }
-
-        // 1. Process tombstones (deleted games tracking)
-        const deletedSet = new Set(Array.isArray(vault.deleted_games) ? vault.deleted_games : []);
-        if (incomingItems.retro_deleted_games && Array.isArray(incomingItems.retro_deleted_games.data)) {
-          incomingItems.retro_deleted_games.data.forEach((id) => id && deletedSet.add(id));
-        }
-        if (incomingItems.deleted_games && Array.isArray(incomingItems.deleted_games.data)) {
-          incomingItems.deleted_games.data.forEach((id) => id && deletedSet.add(id));
-        }
-
-        if (deletedSet.size > 0) {
-          vault.deleted_games = Array.from(deletedSet);
-          // Purge all items related to deleted games from vault
-          for (const delId of deletedSet) {
-            for (const vKey of Object.keys(vault.items)) {
-              if (
-                vKey === delId ||
-                vKey === `rom:${delId}` ||
-                vKey.startsWith(`state:${delId}:`) ||
-                vKey === `srm:${delId}` ||
-                vKey === `rtc:${delId}` ||
-                vKey === `autosave:${delId}` ||
-                vKey === `cover:${delId}`
-              ) {
-                delete vault.items[vKey];
-              }
-            }
-          }
-        }
-
-        // Clean up oversized legacy raw ROM binaries or ephemeral autosaves from the vault to ensure instant sub-second sync
-        for (const vKey of Object.keys(vault.items)) {
-          if (vKey.startsWith('rom_') || vKey.startsWith('rom:') || vKey.startsWith('autosave:')) {
-            delete vault.items[vKey];
-          }
-        }
-
-        // Timestamp-based atomic merge (newer revision wins per save item)
-        for (const [key, item] of Object.entries(incomingItems)) {
-          // Never store raw ROM binaries or ephemeral autosaves in vault to keep sync fast
-          if (key.startsWith('rom_') || key.startsWith('rom:') || key.startsWith('autosave:')) {
-            continue;
-          }
-          if (
-            (typeof item?.data === 'string' && item.data.length > 1024 * 1024) ||
-            (typeof item?.data === 'object' && JSON.stringify(item.data).length > 1024 * 1024)
-          ) {
-            continue;
-          }
-
-          const existing = vault.items[key];
-
-          // Merge games list respecting tombstones
-          if (key === 'retro_games' || key === 'library_games') {
-            const incomingList = Array.isArray(item.data) ? item.data : [];
-            const existingList = existing && Array.isArray(existing.data) ? existing.data : [];
-
-            // Additive merge by ID, respecting tombstones
-            const map = new Map();
-            existingList.forEach((g) => g && g.id && !deletedSet.has(g.id) && map.set(g.id, g));
-            incomingList.forEach((g) => g && g.id && !deletedSet.has(g.id) && map.set(g.id, g));
-            item.data = Array.from(map.values());
-          }
-
-          if (!existing || (item.updatedAt || 0) >= (existing.updatedAt || 0)) {
-            vault.items[key] = item;
-          }
-        }
-
-        vault.lastModified = Date.now();
-        vault.lastUpdatedBy = clientDeviceId;
-
-        await storage.put(vault);
-
-        return new Response(
-          JSON.stringify({
-            success: true,
-            lastModified: vault.lastModified,
-            itemCount: Object.keys(vault.items).length,
-          }),
-          { headers: corsHeaders }
-        );
-      }
-
-      // DELETE: Delete saved vault for this code (requires explicit confirmation)
-      if (request.method === 'DELETE') {
-        const confirmHeader = request.headers.get('X-Confirm-Delete');
-        if (confirmHeader !== 'true' && confirmHeader !== rawCode) {
-          return new Response(
-            JSON.stringify({ error: 'Missing X-Confirm-Delete confirmation header' }),
-            { status: 403, headers: corsHeaders }
-          );
-        }
-        await storage.delete();
-        return new Response(
-          JSON.stringify({ success: true, message: 'Vault purged' }),
-          { headers: corsHeaders }
-        );
-      }
-
-      return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-        status: 405,
-        headers: corsHeaders,
+      const res = await stub.fetch(fwd);
+      return new Response(res.body, {
+        status: res.status,
+        headers: {
+          ...Object.fromEntries(res.headers),
+          ...corsHeaders,
+          'Content-Type': res.headers.get('Content-Type') || 'application/json',
+        },
       });
     } catch (err) {
-      console.error('Worker storage error:', err);
-      return new Response(
-        JSON.stringify({ error: err.message || 'Vault storage error' }),
-        { status: 500, headers: corsHeaders }
-      );
+      return jsonResp(500, { error: err.message || 'Vault error' });
     }
   },
 };

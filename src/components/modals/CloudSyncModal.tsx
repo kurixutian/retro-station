@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Cloud,
   X,
@@ -13,6 +13,8 @@ import {
   ArrowRight,
   ChevronDown,
   ChevronUp,
+  AlertTriangle,
+  FileWarning,
 } from 'lucide-react';
 import { Theme } from '../../types';
 import {
@@ -21,11 +23,15 @@ import {
   clearSyncCode,
   generateSyncCode,
   setSyncEndpoint,
-  DEFAULT_SYNC_ENDPOINT,
+  getCustomEndpoint,
   getSyncStatus,
   subscribeSyncStatus,
+  getSyncReport,
+  getVaultHealth,
+  getSyncEndpoint,
   syncNow,
   CloudSyncStatus,
+  SyncReport,
 } from '../../cloudSync';
 
 interface CloudSyncModalProps {
@@ -50,20 +56,26 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   const [copied, setCopied] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const [report, setReport] = useState<SyncReport>(getSyncReport());
+  const [healthProblem, setHealthProblem] = useState<string | null>(null);
+  const [endpointInput, setEndpointInput] = useState<string>(getCustomEndpoint() || '');
 
-  const getCustomEndpoint = () => {
+  const runVaultHealthCheck = useCallback(async () => {
     try {
-      const custom = localStorage.getItem('retro_sync_endpoint')?.trim().replace(/\/+$/, '');
-      if (custom && custom !== DEFAULT_SYNC_ENDPOINT.replace(/\/+$/, '')) {
-        return custom;
+      const health = await getVaultHealth(getSyncEndpoint());
+      if (!health.ok) {
+        setHealthProblem(
+          health.storage === 'unreachable'
+            ? 'Vault server unreachable right now'
+            : `Vault server reports a misconfiguration: ${health.storage}`
+        );
+      } else {
+        setHealthProblem(null);
       }
-      return '';
     } catch (e) {
-      return '';
+      setHealthProblem('Vault server unreachable right now');
     }
-  };
-
-  const [endpointInput, setEndpointInput] = useState(getCustomEndpoint);
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -72,7 +84,9 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     setSyncStatus(current.status);
     setStatusDetails(current.details);
     setLastSyncTime(current.lastSyncTime);
-    setEndpointInput(getCustomEndpoint());
+    setEndpointInput(getCustomEndpoint() || '');
+    setReport(getSyncReport());
+    runVaultHealthCheck();
 
     const unsub = subscribeSyncStatus((status, details) => {
       setSyncStatus(status);
@@ -80,14 +94,17 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
       const updated = getSyncStatus();
       setLastSyncTime(updated.lastSyncTime);
       setLocalSyncCode(updated.syncCode);
+      if (status === 'idle' || status === 'error') {
+        setReport(getSyncReport());
+      }
     });
 
     return () => unsub();
-  }, [isOpen]);
+  }, [isOpen, runVaultHealthCheck]);
 
   if (!isOpen) return null;
 
-  const handleCopyCode = async () => {
+  const copyCode = async () => {
     if (!syncCode) return;
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -108,6 +125,16 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     }
   };
 
+  const afterSync = (res: { success: boolean; pulledCount: number; pushedCount: number; error?: string }) => {
+    setReport(getSyncReport());
+    runVaultHealthCheck();
+    if (res.success) {
+      showToast(`Vault synced! ${res.pushedCount} uploaded, ${res.pulledCount} downloaded`);
+    } else {
+      showToast(`Sync issue: ${res.error || 'will retry automatically'}`);
+    }
+  };
+
   const handleGenerateCode = async () => {
     const newCode = generateSyncCode();
     setSyncCode(newCode);
@@ -116,11 +143,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     setIsSyncing(true);
     const res = await syncNow(true);
     setIsSyncing(false);
-    if (res.success) {
-      showToast('Cloud Vault created & initial saves backed up!');
-    } else {
-      showToast(`Code linked locally. (${res.error || 'Saved locally'})`);
-    }
+    afterSync(res);
   };
 
   const handleConnectCode = async (e: React.FormEvent) => {
@@ -130,6 +153,8 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
       showToast('Please enter a valid Sync Code');
       return;
     }
+    // Fresh device: start from a clean local meta so vault contents strictly
+    // mirror the other device instead of racing with unknown local state.
     try {
       localStorage.removeItem('retro_sync_meta');
     } catch (err) {}
@@ -141,12 +166,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     setIsSyncing(true);
     const res = await syncNow(true);
     setIsSyncing(false);
-
-    if (res.success) {
-      showToast(`Restored ${res.pulledCount} items from vault!`);
-    } else {
-      showToast(`Linked! (${res.error || 'Will sync when online'})`);
-    }
+    afterSync(res);
   };
 
   const handleManualSync = async () => {
@@ -154,11 +174,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     setIsSyncing(true);
     const res = await syncNow(true);
     setIsSyncing(false);
-    if (res.success) {
-      showToast(`Vault Synced! (${res.pushedCount} uploaded, ${res.pulledCount} downloaded)`);
-    } else {
-      showToast(`Sync failed: ${res.error || 'Offline'}`);
-    }
+    afterSync(res);
   };
 
   const handleDisconnect = () => {
@@ -171,23 +187,26 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
 
   const handleSaveEndpoint = async () => {
     const clean = endpointInput.trim();
+    if (!clean) {
+      handleResetEndpoint();
+      return;
+    }
     setSyncEndpoint(clean);
     showToast('Vault endpoint saved. Testing connection...');
     setIsSyncing(true);
     const res = await syncNow(true);
     setIsSyncing(false);
-    if (res.success) {
-      showToast('Vault connected and synced!');
-    } else {
-      showToast(`Warning: ${res.error || 'Could not reach server'}`);
-    }
+    afterSync(res);
   };
 
   const handleResetEndpoint = () => {
-    setSyncEndpoint('');
+    setSyncEndpoint(null);
     setEndpointInput('');
     showToast('Reset vault endpoint to default');
+    runVaultHealthCheck();
   };
+
+  const attemptedEndpoint = getSyncEndpoint();
 
   return (
     <div
@@ -240,6 +259,10 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                 Your saves, states, and cartridge SRAM are saved locally to your device immediately.
                 When connected to Wi-Fi or mobile data, your progress syncs automatically.
               </p>
+              <p className="text-zinc-500 leading-snug">
+                <span className="text-emerald-400 font-bold">Synced:</span> save states, cartridge SRAM/RTC, cover art, library&nbsp;•&nbsp;
+                <span className="text-amber-400 font-bold">Not synced:</span> ROM files — link them again on each new device.
+              </p>
             </div>
           </div>
 
@@ -279,7 +302,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                     {syncCode}
                   </div>
                   <button
-                    onClick={handleCopyCode}
+                    onClick={copyCode}
                     className="p-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 transition active:scale-95 shrink-0 flex items-center justify-center"
                     title="Copy Sync Code"
                   >
@@ -295,11 +318,12 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                 {syncStatus === 'error' && (
                   <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-[11px] text-rose-300 leading-snug space-y-1">
                     <div className="font-extrabold flex items-center gap-1.5 text-rose-200">
+                      <AlertTriangle className="w-3.5 h-3.5" />
                       <span>Sync Notice:</span>
                     </div>
                     <p>{statusDetails || 'Could not connect to cloud vault.'}</p>
                     <p className="text-zinc-400 text-[10px] pt-1">
-                      Please check your internet connection or tap &quot;Sync Now&quot; to retry.
+                      Retrying automatically. You can also tap &quot;Sync Now&quot; to retry now.
                     </p>
                   </div>
                 )}
@@ -315,6 +339,51 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                   </div>
                 )}
               </div>
+
+              {/* Last Sync Report */}
+              {(report.pushed > 0 ||
+                report.pulled > 0 ||
+                report.skipped.length > 0 ||
+                report.at > 0) && (
+                <div className="p-3.5 rounded-2xl bg-zinc-900/60 border border-zinc-800 space-y-2">
+                  <div className="flex items-center justify-between text-[10px] font-black tracking-wider uppercase text-zinc-500">
+                    <span>Last Sync Report</span>
+                    <span className="text-zinc-600 normal-case font-medium">
+                      {new Date(report.at).toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </span>
+                  </div>
+                  <div className="flex gap-3 text-[11px] font-bold">
+                    <span className="text-emerald-400">↓ {report.pulled} pulled</span>
+                    <span className="text-sky-400">↑ {report.pushed} pushed</span>
+                    {report.skipped.length > 0 && (
+                      <span className="text-amber-400">⚠ {report.skipped.length} skipped</span>
+                    )}
+                  </div>
+                  {report.skipped.map((s, i) => (
+                    <div
+                      key={`skip-${i}`}
+                      className="flex items-start gap-2 text-[10px] text-amber-300/90 bg-amber-500/5 border border-amber-500/20 rounded-lg px-2 py-1.5"
+                    >
+                      <FileWarning className="w-3 h-3 mt-0.5 shrink-0" />
+                      <span className="font-mono break-all">{s.key}</span>
+                      <span className="text-zinc-400 shrink-0">— {s.reason}</span>
+                    </div>
+                  ))}
+                  {report.errors.map((er, i) => (
+                    <div
+                      key={`err-${i}`}
+                      className="flex items-start gap-2 text-[10px] text-rose-300/90 bg-rose-500/5 border border-rose-500/20 rounded-lg px-2 py-1.5"
+                    >
+                      <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
+                      {er.key && <span className="font-mono break-all">{er.key}</span>}
+                      <span className="text-zinc-300 break-words">{er.message}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {/* Action Buttons: Sync Now & Disconnect */}
               <div className="flex gap-2.5">
@@ -433,8 +502,14 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
             {showAdvanced && (
               <div className="mt-3 p-3.5 rounded-xl bg-black/40 border border-zinc-800/80 space-y-2.5">
                 <p className="text-[11px] text-zinc-400 leading-snug">
-                  By default, RetroStation uses the community Cloudflare Worker vault. If you deployed your own private Cloudflare Worker, paste your worker URL below:
+                  By default, RetroStation uses the community Cloudflare Worker vault. If you deployed
+                  your own private worker, paste your worker URL below:
                 </p>
+                {attemptedEndpoint !== getSyncEndpoint() && (
+                  <p className="text-[11px] text-amber-400 font-bold break-all">
+                    Current endpoint: {attemptedEndpoint}
+                  </p>
+                )}
                 <div className="flex gap-2">
                   <input
                     type="text"
@@ -450,6 +525,18 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                     Save
                   </button>
                 </div>
+                {healthProblem && (
+                  <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[10px] text-amber-300 leading-snug flex items-start gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="break-words">{healthProblem}</p>
+                      <p className="text-zinc-400 mt-0.5">
+                        Touching &quot;Reset to default URL&quot; below returns you to the working community vault.
+                        Your stored endpoint is never wiped automatically by a failed sync.
+                      </p>
+                    </div>
+                  </div>
+                )}
                 <div className="flex justify-end">
                   <button
                     onClick={handleResetEndpoint}

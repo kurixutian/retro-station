@@ -30,6 +30,7 @@ import {
   getDeletedGameIds,
   setGameplayActive,
 } from './cloudSync';
+import { onBackupApplied } from './services/backup';
 
 import { LibraryView } from './components/library/LibraryView';
 import { InGameView } from './components/emulator/InGameView';
@@ -184,42 +185,46 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const unsub = onDataUpdated((keys) => {
+    const refreshGameList = () => {
+      try {
+        const applyGameList = (list: any[]) => {
+          if (!Array.isArray(list)) return;
+          const sanitized = sanitizeGameList(list);
+          setGames(sanitized);
+          setSavesByGameId((prev) => {
+            const next = { ...prev };
+            sanitized.forEach((g) => {
+              if (!next[g.id]) next[g.id] = createEmptySlotsForGame(g.id);
+            });
+            return next;
+          });
+        };
+
+        let saved: any[] | null = null;
+        try {
+          saved = JSON.parse(localStorage.getItem('retro_games') || 'null');
+        } catch (e) {}
+
+        if (Array.isArray(saved) && saved.length > 0) {
+          applyGameList(saved);
+        } else {
+          idbGet('library_games').then((idbList) => {
+            if (Array.isArray(idbList)) {
+              applyGameList(idbList);
+            }
+          }).catch(() => {});
+        }
+      } catch (e) {}
+    };
+
+    const unsubSync = onDataUpdated((keys) => {
       if (
         keys.includes('retro_games') ||
         keys.includes('library_games') ||
         keys.includes('retro_deleted_games') ||
         keys.includes('deleted_games')
       ) {
-        try {
-          const applyGameList = (list: any[]) => {
-            if (!Array.isArray(list)) return;
-            const sanitized = sanitizeGameList(list);
-            setGames(sanitized);
-            setSavesByGameId((prev) => {
-              const next = { ...prev };
-              sanitized.forEach((g) => {
-                if (!next[g.id]) next[g.id] = createEmptySlotsForGame(g.id);
-              });
-              return next;
-            });
-          };
-
-          let saved: any[] | null = null;
-          try {
-            saved = JSON.parse(localStorage.getItem('retro_games') || 'null');
-          } catch (e) {}
-
-          if (Array.isArray(saved) && saved.length > 0) {
-            applyGameList(saved);
-          } else {
-            idbGet('library_games').then((idbList) => {
-              if (Array.isArray(idbList)) {
-                applyGameList(idbList);
-              }
-            }).catch(() => {});
-          }
-        } catch (e) {}
+        refreshGameList();
       }
       const stateKeys = keys.filter((k) => k.startsWith('state:'));
       if (stateKeys.length > 0) {
@@ -240,7 +245,15 @@ export default function App() {
         })();
       }
     });
-    return () => unsub();
+
+    const unsubBackup = onBackupApplied(() => {
+      refreshGameList();
+    });
+
+    return () => {
+      unsubSync();
+      unsubBackup();
+    };
   }, []);
 
   // Theme & Combinable Shader Pipeline State (Auto-saved to localStorage)
