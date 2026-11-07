@@ -1504,13 +1504,11 @@ export const InGameView: React.FC<InGameViewProps> = ({
                   ? `calc((100lvh - ${Math.round(22 * transportScale + 10)}px) * ${screenScale})`
                   : `calc(48lvh * ${screenScale})`,
                 width: isLandscape
-                  ? `min(100%, calc(${(screenRatio * 92).toFixed(2)}lvh * ${screenScale}))`
+                  ? `min(100%, calc((100lvh - ${Math.round(22 * transportScale + 10)}px) * ${screenRatio} * ${screenScale}))`
                   : shaders.edgeToEdge
                   ? `calc(100% * ${screenScale})`
                   : `min(100%, calc(48lvh * ${screenRatio} * ${screenScale}))`,
-                height: isLandscape
-                  ? `calc((100lvh - ${Math.round(22 * transportScale + 10)}px) * ${screenScale})`
-                  : 'auto',
+                height: 'auto',
                 boxShadow: !shaders.edgeToEdge && !shaders.amoled && shaders.rgbBloom
                   ? `0 0 28px ${theme.hex}33, inset 0 0 18px rgba(0,0,0,0.75)`
                   : 'none',
@@ -1734,7 +1732,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
           <>
             {/* Left Flank (order: -1 -> placed visually on the LEFT) */}
             <div
-              className={`flex-none w-[160px] sm:w-[180px] md:w-[200px] h-full flex flex-col justify-between items-center py-3 px-2 select-none touch-none z-10 ${
+              className={`flex-none ${isGba ? 'w-[96px] sm:w-[110px] md:w-[124px]' : 'w-[112px] sm:w-[130px] md:w-[150px]'} h-full flex flex-col justify-between items-center py-3 px-2 select-none touch-none z-10 ${
                 shaders.amoled ? 'bg-black border-r border-zinc-900' : `${theme.deckBg} border-r border-white/5`
               }`}
               style={{
@@ -1784,7 +1782,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
 
             {/* Right Flank (order: 1 -> placed visually on the RIGHT) */}
             <div
-              className={`flex-none w-[160px] sm:w-[180px] md:w-[200px] h-full flex flex-col justify-between items-center py-3 px-2 select-none touch-none z-10 ${
+              className={`flex-none ${isGba ? 'w-[96px] sm:w-[110px] md:w-[124px]' : 'w-[112px] sm:w-[130px] md:w-[150px]'} h-full flex flex-col justify-between items-center py-3 px-2 select-none touch-none z-10 ${
                 shaders.amoled ? 'bg-black border-l border-zinc-900' : `${theme.deckBg} border-l border-white/5`
               }`}
               style={{
