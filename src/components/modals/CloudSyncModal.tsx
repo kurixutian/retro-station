@@ -114,7 +114,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     setLocalSyncCode(newCode);
     showToast(`Generated: ${newCode}`);
     setIsSyncing(true);
-    const res = await syncNow();
+    const res = await syncNow(true);
     setIsSyncing(false);
     if (res.success) {
       showToast('Cloud Vault created & initial saves backed up!');
@@ -139,7 +139,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     showToast(`Connected to vault ${clean}. Restoring progress...`);
 
     setIsSyncing(true);
-    const res = await syncNow();
+    const res = await syncNow(true);
     setIsSyncing(false);
 
     if (res.success) {
@@ -152,7 +152,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   const handleManualSync = async () => {
     if (isSyncing) return;
     setIsSyncing(true);
-    const res = await syncNow();
+    const res = await syncNow(true);
     setIsSyncing(false);
     if (res.success) {
       showToast(`Vault Synced! (${res.pushedCount} uploaded, ${res.pulledCount} downloaded)`);
@@ -174,7 +174,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     setSyncEndpoint(clean);
     showToast('Vault endpoint saved. Testing connection...');
     setIsSyncing(true);
-    const res = await syncNow();
+    const res = await syncNow(true);
     setIsSyncing(false);
     if (res.success) {
       showToast('Vault connected and synced!');

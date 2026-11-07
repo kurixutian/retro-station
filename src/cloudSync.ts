@@ -408,6 +408,15 @@ export function base64ToUint8(str: string): Uint8Array {
   return bytes;
 }
 
+export function areByteArraysEqual(a: Uint8Array | null, b: Uint8Array | null): boolean {
+  if (!a || !b) return a === b;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
 // Local Sync Metadata Cache
 function getLocalMetaMap(): Record<string, { updatedAt: number; pendingUpload?: boolean }> {
   try {
@@ -485,9 +494,35 @@ if (typeof window !== 'undefined') {
 }
 
 // Full 2-Way Sync Operation
-let isSyncRunning = false;
+let activeSyncPromise: Promise<{
+  success: boolean;
+  error?: string;
+  pulledCount: number;
+  pushedCount: number;
+}> | null = null;
 
-export async function syncNow(): Promise<{
+export async function syncNow(forceCheck = false): Promise<{
+  success: boolean;
+  error?: string;
+  pulledCount: number;
+  pushedCount: number;
+}> {
+  if (activeSyncPromise) {
+    if (forceCheck) {
+      await activeSyncPromise.catch(() => {});
+      return executeSync(true);
+    }
+    return activeSyncPromise;
+  }
+  activeSyncPromise = executeSync(forceCheck);
+  try {
+    return await activeSyncPromise;
+  } finally {
+    activeSyncPromise = null;
+  }
+}
+
+async function executeSync(forceCheck = false): Promise<{
   success: boolean;
   error?: string;
   pulledCount: number;
@@ -504,17 +539,13 @@ export async function syncNow(): Promise<{
     return { success: false, error: 'Device is offline', pulledCount: 0, pushedCount: 0 };
   }
 
-  if (isSyncRunning) {
-    return { success: true, pulledCount: 0, pushedCount: 0 };
-  }
-
-  isSyncRunning = true;
   setStatus('syncing', 'Syncing saves...');
 
   try {
     const endpoint = getSyncEndpoint();
     const metaMap = getLocalMetaMap();
     const updatedLocalKeys: string[] = [];
+    const downloadedInThisRun = new Set<string>();
     let pulledCount = 0;
     let pushedCount = 0;
 
@@ -542,15 +573,13 @@ export async function syncNow(): Promise<{
       if (endpoint !== DEFAULT_SYNC_ENDPOINT) {
         console.warn(`[CloudSync] Custom endpoint ${endpoint} failed. Resetting to default worker.`);
         localStorage.removeItem(SYNC_ENDPOINT_KEY);
-        isSyncRunning = false;
-        return syncNow();
+        return syncNow(forceCheck);
       }
       const isPlaceholder = (endpoint as string) === 'https://retro-vault.workers.dev';
       const errorMsg = isPlaceholder
         ? 'Vault worker not deployed yet. Deploy your free worker or paste your URL below.'
         : `Could not reach sync vault (${networkErr.message || 'network error'})`;
       setStatus('error', errorMsg);
-      isSyncRunning = false;
       return { success: false, error: errorMsg, pulledCount: 0, pushedCount: 0 };
     }
 
@@ -563,42 +592,65 @@ export async function syncNow(): Promise<{
       if (isSyncableKey(k)) allLocalSyncableKeys.add(k);
     });
 
-    // Add retro_games from localStorage if present
     try {
       const localGames = localStorage.getItem('retro_games');
       if (localGames) allLocalSyncableKeys.add('retro_games');
     } catch (e) {}
 
-    // Add retro_deleted_games if any tombstones exist
     if (getDeletedGameIds().length > 0) {
       allLocalSyncableKeys.add(DELETED_GAMES_KEY);
     }
 
-    // Add any keys that only exist remotely
     Object.keys(remoteItems).forEach((remoteKey) => {
       if (isSyncableKey(remoteKey)) {
         allLocalSyncableKeys.add(remoteKey);
       }
     });
 
-    // 3. Reconcile / Download newer items from remote
+    // 3. Reconcile / Download items from remote
     for (const [rKey, rItem] of Object.entries(remoteItems)) {
       if (!isSyncableKey(rKey)) continue;
 
       const localMeta = metaMap[rKey];
       const localUpdatedAt = localMeta?.updatedAt || 0;
       const remoteUpdatedAt = rItem.updatedAt || 0;
+      const localPending = Boolean(metaMap[rKey]?.pendingUpload);
 
       const isGamesKey = rKey === 'retro_games' || rKey === 'library_games';
       const isDeletedKey = rKey === DELETED_GAMES_KEY || rKey === 'deleted_games';
-      // Only pull when local pending changes are not waiting to push — if the user
-      // modified this key locally, their change wins and gets uploaded below.
-      // Otherwise compare only remote timestamps against each other (never local clocks).
-      const localPending = metaMap[rKey]?.pendingUpload;
-      const shouldDownload =
-        isGamesKey || isDeletedKey || (!localPending && (remoteUpdatedAt > localUpdatedAt || !localMeta));
 
-      // If remote has newer data (or local never had it, or game library / tombstone sync)
+      let shouldDownload = false;
+
+      if (isDeletedKey || isGamesKey) {
+        shouldDownload = true;
+      } else {
+        const localVal = await idbGet(rKey).catch(() => null);
+        if (localVal === undefined || localVal === null) {
+          shouldDownload = true;
+        } else {
+          let isDifferent = false;
+          if (rItem.isBinary || rKey.startsWith('srm:') || rKey.startsWith('rtc:')) {
+            const localBytes = normalizeBinaryData(localVal);
+            const remoteBytes = typeof rItem.data === 'string' ? base64ToUint8(rItem.data) : normalizeBinaryData(rItem.data);
+            isDifferent = !areByteArraysEqual(localBytes, remoteBytes);
+          } else if (isStateLikeKey(rKey)) {
+            const localTs = localVal?.timestamp;
+            const remoteTs = rItem.data?.timestamp;
+            isDifferent = localTs !== remoteTs || (!localVal?.emuState && Boolean(rItem.data?.emuStateBase64));
+          } else {
+            isDifferent = JSON.stringify(localVal) !== JSON.stringify(rItem.data);
+          }
+
+          if (isDifferent) {
+            if (localPending) {
+              shouldDownload = false;
+            } else if (remoteUpdatedAt > localUpdatedAt || !localMeta || forceCheck) {
+              shouldDownload = true;
+            }
+          }
+        }
+      }
+
       if (shouldDownload) {
         try {
           if (isDeletedKey) {
@@ -616,7 +668,6 @@ export async function syncNow(): Promise<{
                 localStorage.setItem(DELETED_GAMES_KEY, JSON.stringify(Array.from(localDeletedSet)));
               }
 
-              // Purge remotely deleted games from local library and storage
               let localGamesList: any[] = [];
               try {
                 localGamesList = JSON.parse(localStorage.getItem('retro_games') || '[]');
@@ -630,6 +681,8 @@ export async function syncNow(): Promise<{
                 }
                 updatedLocalKeys.push('retro_games');
                 updatedLocalKeys.push('library_games');
+                downloadedInThisRun.add('retro_games');
+                downloadedInThisRun.add('library_games');
                 pulledCount++;
               }
             }
@@ -651,26 +704,24 @@ export async function syncNow(): Promise<{
               const filteredLocal = localGamesList.filter((g: any) => g && g.id && !deletedSet.has(g.id));
               const filteredRemote = remoteGamesList.filter((g: any) => g && g.id && !deletedSet.has(g.id));
 
-              // Overwrite existing games by ID, fileName, title+core, or CRC instead of duplicating
               const merged = mergeAndDeduplicateGames(filteredLocal, filteredRemote, true).filter(
                 (g: any) => g && g.id && !deletedSet.has(g.id)
               );
 
-              // Check if any new game was added or changed
               const changed = JSON.stringify(merged) !== JSON.stringify(localGamesList);
-              if (changed || !localMeta) {
+              if (changed || !localMeta || forceCheck) {
                 localStorage.setItem('retro_games', JSON.stringify(merged));
                 await idbPut('library_games', merged.filter((g: any) => g.real && g.id !== 'pokemon_gold')).catch(() => {});
                 updatedLocalKeys.push('retro_games');
                 updatedLocalKeys.push('library_games');
+                downloadedInThisRun.add('retro_games');
+                downloadedInThisRun.add('library_games');
                 pulledCount++;
               }
             }
           } else if (isStateLikeKey(rKey)) {
-            // Save slot JSON
             let valToSave = rItem.data;
             if (valToSave && typeof valToSave === 'object') {
-              // Unpack base64 emuState back if present
               if (valToSave.emuStateBase64) {
                 valToSave.emuState = base64ToUint8(valToSave.emuStateBase64);
               }
@@ -679,7 +730,6 @@ export async function syncNow(): Promise<{
               }
               await idbPut(rKey, valToSave);
 
-              // Invalidate any stale local autosave for this game so it doesn't mask the state
               const parts = rKey.split(':');
               const gId = parts.length > 2 ? parts.slice(1, parts.length - 1).join(':') : parts[1];
               if (gId) {
@@ -687,20 +737,22 @@ export async function syncNow(): Promise<{
               }
             }
             updatedLocalKeys.push(rKey);
+            downloadedInThisRun.add(rKey);
             pulledCount++;
           } else if (rItem.isBinary && typeof rItem.data === 'string') {
             const rawBytes = base64ToUint8(rItem.data);
             await idbPut(rKey, rawBytes);
-            // When newer battery save progress arrives, wipe stale local autosave
             if (rKey.startsWith('srm:')) {
               const gId = rKey.replace('srm:', '');
               await idbDelete(`autosave:${gId}`).catch(() => {});
             }
             updatedLocalKeys.push(rKey);
+            downloadedInThisRun.add(rKey);
             pulledCount++;
           } else {
             await idbPut(rKey, rItem.data);
             updatedLocalKeys.push(rKey);
+            downloadedInThisRun.add(rKey);
             pulledCount++;
           }
 
@@ -717,7 +769,6 @@ export async function syncNow(): Promise<{
     // 4. Gather local items to push to remote
     const itemsToUpload: Record<string, SyncVaultItem> = {};
 
-    // Automatically compact any bloated legacy autosave:* entries in remote vault
     for (const [rKey, rItem] of Object.entries(remoteItems)) {
       if (rKey.startsWith('autosave:') && rItem && rItem.data !== null) {
         itemsToUpload[rKey] = {
@@ -730,22 +781,53 @@ export async function syncNow(): Promise<{
     }
 
     for (const key of Array.from(allLocalSyncableKeys)) {
+      if (downloadedInThisRun.has(key)) continue;
+
       const localMeta = metaMap[key];
       const remoteItem = remoteItems[key];
       const localUpdatedAt = localMeta?.updatedAt || 0;
       const remoteUpdatedAt = remoteItem?.updatedAt || 0;
 
-      // Force push if remote has invalid/corrupted data for games or states
       const remoteCorrupt =
         remoteItem &&
         ((key === 'retro_games' && (!Array.isArray(remoteItem.data) || remoteItem.isBinary)) ||
          (isStateLikeKey(key) && (typeof remoteItem.data !== 'object' || remoteItem.isBinary)));
 
-      const needsPush =
-        localMeta?.pendingUpload ||
+      let needsPush =
+        Boolean(localMeta?.pendingUpload) ||
         !remoteItem ||
         remoteCorrupt ||
         localUpdatedAt > remoteUpdatedAt;
+
+      if (!needsPush && (key === 'retro_games' || key === 'library_games')) {
+        const remoteGames = Array.isArray(remoteItem?.data) ? remoteItem.data : [];
+        let localGames: any[] = [];
+        try { localGames = JSON.parse(localStorage.getItem('retro_games') || '[]'); } catch(e) {}
+        if (localGames.length > 0) {
+          const remoteIds = new Set(remoteGames.map((g: any) => g.id));
+          const hasUnsyncedGame = localGames.some((g: any) => g && g.id && !remoteIds.has(g.id));
+          if (hasUnsyncedGame) {
+            needsPush = true;
+          }
+        }
+      }
+
+      if (!needsPush && forceCheck) {
+        const localVal = await idbGet(key).catch(() => null);
+        if (localVal) {
+          if (remoteItem.isBinary || key.startsWith('srm:') || key.startsWith('rtc:')) {
+            const localBytes = normalizeBinaryData(localVal);
+            const remoteBytes = typeof remoteItem.data === 'string' ? base64ToUint8(remoteItem.data) : normalizeBinaryData(remoteItem.data);
+            if (!areByteArraysEqual(localBytes, remoteBytes)) {
+              needsPush = true;
+            }
+          } else if (isStateLikeKey(key)) {
+            if (localVal.timestamp !== remoteItem.data?.timestamp) {
+              needsPush = true;
+            }
+          }
+        }
+      }
 
       if (needsPush) {
         try {
@@ -794,7 +876,7 @@ export async function syncNow(): Promise<{
               if (serializable.emuState) {
                 const b = normalizeBinaryData(serializable.emuState);
                 if (b) {
-                  if (b.length > 768 * 1024) stateTooLarge = true;
+                  if (b.length > 3.5 * 1024 * 1024) stateTooLarge = true;
                   else {
                     serializable.emuStateBase64 = uint8ToBase64(b);
                     delete serializable.emuState;
@@ -804,7 +886,7 @@ export async function syncNow(): Promise<{
               if (!stateTooLarge && serializable.stateData?.emuState) {
                 const b2 = normalizeBinaryData(serializable.stateData.emuState);
                 if (b2) {
-                  if (b2.length > 768 * 1024) stateTooLarge = true;
+                  if (b2.length > 3.5 * 1024 * 1024) stateTooLarge = true;
                   else {
                     serializable.stateData = { ...serializable.stateData, emuStateBase64: uint8ToBase64(b2) };
                     delete serializable.stateData.emuState;
@@ -812,18 +894,20 @@ export async function syncNow(): Promise<{
                 }
               }
               if (stateTooLarge) {
-                console.warn(`[CloudSync] Skipping oversized save state ${key} (>768KB) to protect edge limits`);
+                console.warn(`[CloudSync] Skipping oversized save state ${key} (>3.5MB) to protect edge limits`);
                 continue;
+              }
+              if (typeof serializable.screenshot === 'string' && serializable.screenshot.length > 80 * 1024) {
+                serializable.screenshot = null;
               }
               itemsToUpload[key] = {
                 key,
                 data: serializable,
-                updatedAt: localUpdatedAt || Date.now(),
+                updatedAt: Date.now(),
                 isBinary: false,
               };
             }
           } else {
-            // srm:*, rtc:*, cover:*
             const raw = await idbGet(key);
             if (raw) {
               let bytes: Uint8Array | null = null;
@@ -834,14 +918,14 @@ export async function syncNow(): Promise<{
                 bytes = normalizeBinaryData(raw);
               }
               if (bytes && bytes.length > 0) {
-                if (bytes.length > 1024 * 1024) {
-                  console.warn(`[CloudSync] Skipping oversized binary item ${key} (>1MB)`);
+                if (bytes.length > 2 * 1024 * 1024) {
+                  console.warn(`[CloudSync] Skipping oversized binary item ${key} (>2MB)`);
                   continue;
                 }
                 itemsToUpload[key] = {
                   key,
                   data: uint8ToBase64(bytes),
-                  updatedAt: localUpdatedAt || Date.now(),
+                  updatedAt: Date.now(),
                   isBinary: true,
                 };
               } else if (typeof raw === 'string' && key.startsWith('cover:')) {
@@ -849,7 +933,7 @@ export async function syncNow(): Promise<{
                   itemsToUpload[key] = {
                     key,
                     data: raw,
-                    updatedAt: localUpdatedAt || Date.now(),
+                    updatedAt: Date.now(),
                     isBinary: false,
                   };
                 }
@@ -862,7 +946,7 @@ export async function syncNow(): Promise<{
       }
     }
 
-    // 5. Send POST batch to remote in safe, consolidated chunks (<= 1MB)
+    // 5. Send POST batch to remote in safe chunks
     const uploadEntries = Object.entries(itemsToUpload);
     if (uploadEntries.length > 0) {
       const MAX_BATCH_BYTES = 1024 * 1024;
@@ -907,7 +991,6 @@ export async function syncNow(): Promise<{
           throw new Error(`Vault server upload error: HTTP ${pushRes.status}`);
         }
 
-        // Mark items in this batch as synced
         for (const [upKey, upItem] of Object.entries(batch)) {
           metaMap[upKey] = {
             updatedAt: upItem.updatedAt,
@@ -918,10 +1001,8 @@ export async function syncNow(): Promise<{
       }
     }
 
-    // Save updated metadata map
     saveLocalMetaMap(metaMap);
 
-    // Record last sync time
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     try {
       localStorage.setItem(LAST_SYNC_TIME_KEY, timeStr);
@@ -929,17 +1010,14 @@ export async function syncNow(): Promise<{
 
     setStatus('idle', `Synced (${timeStr})`);
 
-    // Notify UI of local updates
     if (updatedLocalKeys.length > 0) {
       notifyDataUpdated(updatedLocalKeys);
     }
 
-    isSyncRunning = false;
     return { success: true, pulledCount, pushedCount };
   } catch (err: any) {
     console.error('[CloudSync] syncNow error:', err);
     setStatus('error', err?.message || 'Sync failed');
-    isSyncRunning = false;
     return { success: false, error: err?.message, pulledCount: 0, pushedCount: 0 };
   }
 }
