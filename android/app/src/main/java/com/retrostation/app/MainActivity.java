@@ -15,11 +15,37 @@ public class MainActivity extends BridgeActivity {
         // Keep screen awake while app is open
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
-        // Enable sticky immersive mode (hide status bar & navigation gesture bar)
+        // Enforce immersive fullscreen and permanently hide status bar
+        hideStatusBar();
+
+        // Enable multi-window / popup support for Google OAuth sign-in
+        try {
+            if (getBridge() != null && getBridge().getWebView() != null) {
+                getBridge().getWebView().getSettings().setSupportMultipleWindows(true);
+                getBridge().getWebView().getSettings().setJavaScriptCanOpenWindowsAutomatically(true);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        hideStatusBar();
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) {
+            hideStatusBar();
+        }
+    }
+
+    private void hideStatusBar() {
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         WindowInsetsControllerCompat controller =
             new WindowInsetsControllerCompat(getWindow(), getWindow().getDecorView());
-        controller.hide(WindowInsetsCompat.Type.systemBars());
+        controller.hide(WindowInsetsCompat.Type.statusBars());
         controller.setSystemBarsBehavior(
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         );
