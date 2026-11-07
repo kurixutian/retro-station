@@ -88,6 +88,25 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       .filter((g): g is Game => Boolean(g));
   }, [recentGameIds, games]);
 
+  // ── Keyboard Shortcut (/ or Ctrl+K) to Open Search ─────────────────────
+  const searchInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  React.useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+      if ((e.key === '/' && !isInput) || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k')) {
+        e.preventDefault();
+        setShowSearch(true);
+        setTimeout(() => searchInputRef.current?.focus(), 20);
+      } else if (e.key === 'Escape' && showSearch) {
+        setShowSearch(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showSearch, setShowSearch]);
+
   // ── Blurred Background of Randomized Installed ROMs (GPU-capped 4 tiles) ──
   const bgGames = React.useMemo(() => {
     if (games.length === 0) return [];
@@ -97,9 +116,9 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 
   return (
     <div className="relative pb-16 min-h-[100vh] min-h-[100lvh]">
-      {/* Ambient Randomized ROM Backdrop (GPU-friendly blur-xl, unmounted in-game) */}
+      {/* Ambient Randomized ROM Backdrop (Low-noise 10% opacity, unmounted in-game) */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0 select-none">
-        <div className="grid grid-cols-2 w-full h-full opacity-20 blur-xl scale-105">
+        <div className="grid grid-cols-2 w-full h-full opacity-10 blur-xl scale-105">
           {bgGames.map((g, idx) => {
             const imgSrc = g.customCover || g.cover;
             return (
@@ -209,19 +228,21 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
         {/* Collapsible Search Bar */}
         {showSearch && (
           <div className="mt-2.5 max-w-6xl mx-auto relative">
-            <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
+            <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
+              ref={searchInputRef}
               type="text"
               autoFocus
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search loaded ROMs or systems..."
+              placeholder="Search loaded ROMs or systems... (Press / or Esc)"
               className="w-full bg-zinc-900/90 border border-zinc-800 rounded-xl pl-8 pr-8 py-2 text-xs text-zinc-100 outline-none"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-200"
+                aria-label="Clear search"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -232,45 +253,75 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 
       {/* Main Content Container */}
       <main className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 pt-5 space-y-7">
-        {/* Hero Spotlight Banner */}
+        {/* Slot-1 Active Cartridge Deck Bay */}
         {featuredGame && (
-          <div className="relative rounded-3xl overflow-hidden border border-zinc-800/90 shadow-2xl h-56 sm:h-64 flex items-end p-5 sm:p-8 hardware-panel">
-            {/* Full Cover Image Background */}
-            <div className="absolute inset-0">
-              <GameCoverImage game={featuredGame} imgClassName="w-full h-full object-cover opacity-65 hero-art-pan" />
-              <div className="absolute inset-0 bg-gradient-to-t from-zinc-950/90 via-zinc-950/50 to-transparent" />
+          <div className="relative rounded-3xl overflow-hidden border border-zinc-800/90 shadow-2xl p-4 sm:p-6 hardware-panel bg-zinc-950/90">
+            {/* Molded Cartridge Slot Top Grip Rib */}
+            <div className="h-3 w-full rounded-t-xl bg-black/60 border-b border-white/5 mb-4 flex items-center justify-between px-3">
+              <div className="w-24 h-full cartridge-grip opacity-50" />
+              <div className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 hardware-led" />
+                <span className="text-[9px] font-mono font-bold uppercase tracking-widest text-zinc-400">
+                  SLOT-1 DECK BAY
+                </span>
+              </div>
             </div>
 
-            <div className="relative z-10 w-full flex items-end justify-between gap-4">
-              <div className="space-y-1.5 max-w-xl">
-                <div className="flex items-center gap-2">
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-400 text-zinc-950">
-                    Featured Cartridge
-                  </span>
-                  {games.length > 1 && (
-                    <button
-                      onClick={handleShuffleFeatured}
-                      className="p-1 rounded-full bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-white/10 transition active:scale-95"
-                      title="Randomize Featured Cartridge"
-                      aria-label="Randomize featured cartridge"
-                    >
-                      <Shuffle className="w-3 h-3" />
-                    </button>
-                  )}
+            <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-6">
+              {/* Physical Cartridge Unit Preview + Details */}
+              <div className="flex items-center gap-4 min-w-0 flex-1">
+                <div
+                  onClick={() => onSelectGame(featuredGame)}
+                  className="relative w-20 h-24 sm:w-24 sm:h-28 rounded-2xl overflow-hidden shrink-0 bg-zinc-900 border-2 border-zinc-700/80 p-1 flex flex-col cursor-pointer cartridge-card"
+                >
+                  <div className="h-2.5 w-full bg-black/60 rounded-t-lg mb-1 flex items-center justify-center">
+                    <div className="w-10 h-full cartridge-grip opacity-50" />
+                  </div>
+                  <div className="flex-1 rounded-lg overflow-hidden bg-black relative">
+                    <GameCoverImage game={featuredGame} imgClassName="w-full h-full object-cover" />
+                  </div>
                 </div>
 
-                <h1 className="text-xl sm:text-3xl font-black tracking-tight text-white drop-shadow">
-                  {formatGameTitle(featuredGame.title)}
-                </h1>
+                <div className="space-y-2 min-w-0 flex-1">
+                  <h1 className="text-lg sm:text-2xl font-black tracking-tight text-white truncate">
+                    {formatGameTitle(featuredGame.title)}
+                  </h1>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-black uppercase tracking-wider bg-zinc-900 text-amber-300 border border-amber-400/30">
+                      {featuredGame.system || featuredGame.shortSystem}
+                    </span>
+                    {games.length > 1 && (
+                      <button
+                        onClick={handleShuffleFeatured}
+                        className="flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-zinc-800 text-[10px] font-bold transition active:scale-95"
+                        title="Cycle Next Cartridge in Deck"
+                        aria-label="Cycle next cartridge in deck"
+                      >
+                        <Shuffle className="w-3 h-3 text-emerald-400" />
+                        <span>Swap Cart</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
 
-              <button
-                onClick={() => onLaunchGame(featuredGame)}
-                className="w-12 h-12 rounded-full bg-white hover:bg-zinc-200 text-zinc-950 flex items-center justify-center shadow-2xl tactile-btn transition shrink-0"
-                title={`Play ${formatGameTitle(featuredGame.title)}`}
-              >
-                <Play className="w-5 h-5 fill-current ml-0.5" />
-              </button>
+              {/* Tactile Deck Controls */}
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0">
+                <button
+                  onClick={() => onSelectGame(featuredGame)}
+                  className="px-3.5 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-800 text-xs font-bold tactile-btn transition"
+                >
+                  Save Slots
+                </button>
+                <button
+                  onClick={() => onLaunchGame(featuredGame)}
+                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-black text-xs shadow-xl tactile-btn transition ${theme.accentBg}`}
+                  title={`Play ${formatGameTitle(featuredGame.title)}`}
+                >
+                  <Play className="w-4 h-4 fill-current" />
+                  <span>Insert & Play</span>
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -346,82 +397,85 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
           </section>
         )}
 
-        {/* Filter Bar: System Pills */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-          {['ALL', ...new Set(games.map((g) => g.shortSystem))].filter(Boolean).map((sys) => (
-            <button
-              key={sys}
-              onClick={() => setSystemFilter(sys)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold tactile-btn transition ${
-                systemFilter === sys
-                  ? theme.accentBg
-                  : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200 border border-zinc-800'
-              }`}
-            >
-              {sys}
-            </button>
-          ))}
-        </div>
-
-        {/* GAME LIBRARY */}
+        {/* CARTRIDGE BINDER & SYSTEM DIVIDER TABS */}
         <section className="space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <HardDrive className={`w-4 h-4 ${theme.accentText}`} />
               <h2 className="text-sm sm:text-base font-extrabold tracking-tight">
-                Cartridge Library
+                Cartridge Binder
               </h2>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-zinc-900 border border-zinc-800 text-zinc-400">
                 {filteredGames.length} {filteredGames.length === 1 ? 'ROM' : 'ROMs'}
               </span>
             </div>
+
+            {/* Binder System Divider Tabs */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
+              {['ALL', ...new Set(games.map((g) => g.shortSystem))].filter(Boolean).map((sys) => (
+                <button
+                  key={sys}
+                  onClick={() => setSystemFilter(sys)}
+                  className={`px-3 py-1 rounded-xl text-xs font-bold tactile-btn transition ${
+                    systemFilter === sys
+                      ? theme.accentBg
+                      : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200 border border-zinc-800'
+                  }`}
+                >
+                  {sys}
+                </button>
+              ))}
+            </div>
           </div>
 
-          {filteredGames.length === 0 && games.length === 0 ? (
-            <div className="py-16 flex flex-col items-center justify-center text-center space-y-4">
-              <div className="w-16 h-16 rounded-3xl bg-zinc-900 border border-zinc-800 flex items-center justify-center">
-                <Gamepad2 className="w-8 h-8 text-zinc-500" />
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-base font-bold text-zinc-200">No ROMs in Library</h3>
-                <p className="text-xs text-zinc-500 max-w-xs">
-                  Load your own .gb, .gbc, .gba, .nes, .sfc, or .md ROM files to start playing.
-                </p>
-              </div>
-              <button
-                onClick={onTriggerAddRom}
-                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs tactile-btn shadow-lg transition ${theme.accentBg}`}
-              >
-                <Plus className="w-4 h-4 stroke-[2.5]" />
-                <span>Load ROM</span>
-              </button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
-              {filteredGames.map((game) => (
-                <GameCard
-                  key={game.id}
-                  game={game}
-                  theme={theme}
-                  onSelect={onSelectGame}
-                />
-              ))}
-
-              {/* Quick "Add ROM" Card */}
-              <button
-                onClick={onTriggerAddRom}
-                className="rounded-2xl border-2 border-dashed border-zinc-800 hover:border-emerald-500/60 bg-zinc-900/40 hover:bg-zinc-900/80 p-4 flex flex-col items-center justify-center gap-2 min-h-[200px] transition group tactile-btn"
-              >
-                <div className="w-11 h-11 rounded-2xl bg-zinc-800 group-hover:bg-emerald-500/20 flex items-center justify-center transition">
-                  <Plus className="w-6 h-6 text-zinc-400 group-hover:text-emerald-400" />
+          <div className="rounded-3xl border border-zinc-800/90 p-3.5 sm:p-5 binder-page">
+            {filteredGames.length === 0 && games.length === 0 ? (
+              <div className="py-16 flex flex-col items-center justify-center text-center space-y-4">
+                <div className="w-16 h-16 rounded-3xl bg-zinc-900 border border-zinc-800 flex items-center justify-center">
+                  <Gamepad2 className="w-8 h-8 text-zinc-400" />
                 </div>
-                <span className="text-xs font-bold text-zinc-200">Load Downloaded ROM</span>
-                <span className="text-[10px] text-zinc-500 text-center leading-tight">
-                  Auto-detects .gb, .gbc, .gba, .nes, .sfc, .md
-                </span>
-              </button>
-            </div>
-          )}
+                <div className="space-y-1">
+                  <h3 className="text-base font-bold text-zinc-200">No ROMs in Binder</h3>
+                  <p className="text-xs text-zinc-400 max-w-xs">
+                    Load your own .gb, .gbc, .gba, .nes, .sfc, or .md ROM files to start playing.
+                  </p>
+                </div>
+                <button
+                  onClick={onTriggerAddRom}
+                  className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs tactile-btn shadow-lg transition ${theme.accentBg}`}
+                >
+                  <Plus className="w-4 h-4 stroke-[2.5]" />
+                  <span>Load ROM</span>
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
+                {filteredGames.map((game) => (
+                  <div key={game.id} className="p-1.5 rounded-2xl bg-black/40 border border-zinc-800/70 binder-slot">
+                    <GameCard
+                      game={game}
+                      theme={theme}
+                      onSelect={onSelectGame}
+                    />
+                  </div>
+                ))}
+
+                {/* Empty Binder Slot: Quick "Add ROM" Bay */}
+                <button
+                  onClick={onTriggerAddRom}
+                  className="rounded-2xl border-2 border-dashed border-zinc-800 hover:border-emerald-500/60 bg-black/40 hover:bg-zinc-900/80 p-4 flex flex-col items-center justify-center gap-2 min-h-[210px] transition group tactile-btn binder-slot"
+                >
+                  <div className="w-11 h-11 rounded-2xl bg-zinc-900 group-hover:bg-emerald-500/20 border border-zinc-800 flex items-center justify-center transition">
+                    <Plus className="w-6 h-6 text-zinc-400 group-hover:text-emerald-400" />
+                  </div>
+                  <span className="text-xs font-bold text-zinc-200">Insert New Cartridge</span>
+                  <span className="text-[10px] text-zinc-400 text-center leading-tight">
+                    .gb, .gbc, .gba, .nes, .sfc, .md
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
         </section>
       </main>
     </div>

@@ -169,6 +169,23 @@ export const InGameView: React.FC<InGameViewProps> = ({
   });
 
   const touchStartYRef = React.useRef<number | null>(null);
+  const [isPoweringOff, setIsPoweringOff] = React.useState(false);
+  const [showCartridgeTools, setShowCartridgeTools] = React.useState(false);
+  const [saveFormat, setSaveFormat] = React.useState<'sav' | 'srm'>('sav');
+
+  const triggerExitWithCeremony = React.useCallback(() => {
+    setInGameMenuOpen(false);
+    setIsPoweringOff(true);
+    showToast('Progress auto-saved • Safe to resume anytime');
+    setTimeout(() => {
+      if (onReturnHome) {
+        onReturnHome();
+      } else {
+        flushLiveProgress();
+        setCurrentView('home');
+      }
+    }, 260);
+  }, [onReturnHome, flushLiveProgress, setCurrentView, setInGameMenuOpen, showToast]);
 
   const latestSaveSlot = React.useMemo(() => {
     const slots = (savesByGameId && activeGame?.id ? savesByGameId[activeGame.id] : []) || [];
@@ -1067,18 +1084,10 @@ export const InGameView: React.FC<InGameViewProps> = ({
           onClick={() => revealTopBar()}
         >
           <button
-            onClick={() => {
-              if (onReturnHome) {
-                onReturnHome();
-              } else {
-                flushLiveProgress();
-                setInGameMenuOpen(false);
-                setCurrentView('home');
-              }
-            }}
+            onClick={triggerExitWithCeremony}
             className="p-2 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-zinc-200 border border-white/10 text-xs font-bold transition active:scale-95 tactile-btn"
             aria-label="Library"
-            title="Return to Library & Sync"
+            title="Save & Return to Cartridge Binder"
           >
             <Home className="w-3.5 h-3.5 text-emerald-400" />
           </button>
@@ -1156,6 +1165,15 @@ export const InGameView: React.FC<InGameViewProps> = ({
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
+
+              {/* Primary CTA: Resume Playing */}
+              <button
+                onClick={() => setInGameMenuOpen(false)}
+                className="w-full py-2.5 px-4 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg tactile-btn transition active:scale-[0.98]"
+              >
+                <Play className="w-3.5 h-3.5 fill-current" />
+                <span>Resume Playing</span>
+              </button>
 
               {/* Tier 1: Primary State Actions */}
               <div className="grid grid-cols-2 gap-2">
@@ -1240,62 +1258,108 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 </button>
               </div>
 
-              {/* Tier 3: Session & Cartridge Tools */}
+              {/* Tier 3: Collapsible Cartridge Tools & Session Exit */}
               <div className="pt-2 border-t border-zinc-800/80 space-y-2">
-                <div className="flex items-center justify-between text-[10px] text-zinc-400 px-0.5">
-                  <span className="font-bold uppercase tracking-wider text-amber-300/90">
-                    Cartridge Save (.sav / .srm)
-                  </span>
-                  <span className="text-emerald-400 font-mono text-[9px]">Offline Ready</span>
-                </div>
-                <div className="grid grid-cols-2 gap-1.5">
-                  <button
-                    onClick={() => exportBatterySave(activeGame, 'sav')}
-                    className="flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-[11px] font-bold transition active:scale-95"
-                    title="Download .sav for physical cartridge flashers (GB Operator / FlashGBX)"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Export .SAV</span>
-                  </button>
-                  <button
-                    onClick={() => exportBatterySave(activeGame, 'srm')}
-                    className="flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 text-[11px] font-semibold transition active:scale-95"
-                    title="Download .srm for RetroArch"
-                  >
+                <button
+                  type="button"
+                  onClick={() => setShowCartridgeTools((v) => !v)}
+                  aria-expanded={showCartridgeTools}
+                  className="w-full flex items-center justify-between px-2 py-1.5 rounded-xl bg-zinc-900/60 hover:bg-zinc-900 border border-zinc-800/80 text-[11px] font-bold text-zinc-300 transition"
+                >
+                  <span className="flex items-center gap-1.5">
                     <Download className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Export .SRM</span>
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-1.5 pt-1">
-                  {onOpenControls && (
-                    <button
-                      onClick={() => {
-                        setInGameMenuOpen(false);
-                        onOpenControls();
-                      }}
-                      className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 text-[11px] font-semibold transition active:scale-95"
-                    >
-                      <Gamepad2 className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Controls Guide</span>
-                    </button>
+                    <span>Cartridge Tools & Battery Export</span>
+                  </span>
+                  {showCartridgeTools ? (
+                    <ChevronUp className="w-3.5 h-3.5 text-zinc-400" />
+                  ) : (
+                    <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
                   )}
+                </button>
 
-                  {launchGame && (
-                    <button
-                      onClick={() => {
-                        setInGameMenuOpen(false);
-                        launchGame(activeGame);
-                        showToast(`Rebooted ${activeGame.title}`);
-                      }}
-                      className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-zinc-900/90 hover:bg-rose-950/30 border border-zinc-800 hover:border-rose-500/30 text-zinc-400 hover:text-rose-300 text-[11px] font-semibold transition active:scale-95"
-                      title="Reload cartridge and restart emulator core"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Reboot</span>
-                    </button>
-                  )}
-                </div>
+                {showCartridgeTools && (
+                  <div className="space-y-2 pt-1">
+                    {/* Unified Battery Save Export with Format Switcher */}
+                    <div className="flex items-center justify-between gap-1.5 rounded-xl bg-zinc-900 border border-amber-500/30 p-1">
+                      <button
+                        onClick={() => exportBatterySave(activeGame, saveFormat)}
+                        className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 text-[11px] font-bold transition active:scale-95"
+                        title={
+                          saveFormat === 'sav'
+                            ? 'Download .sav for physical cartridge flashers (GB Operator / FlashGBX)'
+                            : 'Download .srm for RetroArch'
+                        }
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Download Battery ({saveFormat.toUpperCase()})</span>
+                      </button>
+                      <div className="flex items-center gap-0.5 bg-zinc-950 p-0.5 rounded-lg border border-zinc-800" role="group" aria-label="Save format">
+                        <button
+                          type="button"
+                          onClick={() => setSaveFormat('sav')}
+                          className={`px-2 py-1 rounded-md text-[10px] font-mono font-bold transition ${
+                            saveFormat === 'sav'
+                              ? 'bg-amber-400 text-zinc-950'
+                              : 'text-zinc-400 hover:text-zinc-200'
+                          }`}
+                          title="Flasher format (.sav)"
+                        >
+                          .SAV
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSaveFormat('srm')}
+                          className={`px-2 py-1 rounded-md text-[10px] font-mono font-bold transition ${
+                            saveFormat === 'srm'
+                              ? 'bg-amber-400 text-zinc-950'
+                              : 'text-zinc-400 hover:text-zinc-200'
+                          }`}
+                          title="RetroArch format (.srm)"
+                        >
+                          .SRM
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      {onOpenControls && (
+                        <button
+                          onClick={() => {
+                            setInGameMenuOpen(false);
+                            onOpenControls();
+                          }}
+                          className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 text-[11px] font-semibold transition active:scale-95"
+                        >
+                          <Gamepad2 className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Controls Guide</span>
+                        </button>
+                      )}
+
+                      {launchGame && (
+                        <button
+                          onClick={() => {
+                            setInGameMenuOpen(false);
+                            launchGame(activeGame);
+                            showToast(`Rebooted ${activeGame.title}`);
+                          }}
+                          className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-zinc-900/90 hover:bg-rose-950/30 border border-zinc-800 hover:border-rose-500/30 text-zinc-400 hover:text-rose-300 text-[11px] font-semibold transition active:scale-95"
+                          title="Reload cartridge and restart emulator core"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Reboot</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  onClick={triggerExitWithCeremony}
+                  className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white text-xs font-bold transition active:scale-95"
+                >
+                  <Home className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Save & Power Off to Shelf</span>
+                </button>
               </div>
             </div>
           </div>
@@ -1313,6 +1377,25 @@ export const InGameView: React.FC<InGameViewProps> = ({
             paddingBottom: isLandscape ? 'max(env(safe-area-inset-bottom, 0px), 6px)' : undefined,
           }}
         >
+          {/* Permanent Minimal Hardware Bezel Status Indicator (FPS LED + Mute Indicator) */}
+          {!topBarVisible && (
+            <div
+              onClick={() => revealTopBar()}
+              className="absolute top-1.5 right-2.5 z-30 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-black/65 border border-white/10 cursor-pointer select-none opacity-75 hover:opacity-100 transition-opacity"
+              title="Tap to reveal top status bar"
+            >
+              <span
+                className={`w-1.5 h-1.5 rounded-full hardware-led ${
+                  (fps || 60) >= 55 ? 'bg-emerald-400 text-emerald-400' : 'bg-amber-400 text-amber-400'
+                }`}
+              />
+              <span className="text-[9px] font-mono font-bold text-zinc-300">
+                {fps || 60}
+              </span>
+              {isMuted && <VolumeX className="w-2.5 h-2.5 text-rose-400" />}
+            </div>
+          )}
+
           <div
             onClick={() => {
               if (customizing) {
@@ -1320,6 +1403,8 @@ export const InGameView: React.FC<InGameViewProps> = ({
               }
             }}
             className={`relative bg-black overflow-hidden border-2 ${
+              isPoweringOff ? 'crt-power-off' : ''
+            } ${
               customizing && selectedPad === 'screen'
                 ? 'border-emerald-400 ring-2 ring-emerald-400/50 cursor-pointer'
                 : customizing

@@ -37,6 +37,7 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
   const [confirmDeleteRom, setConfirmDeleteRom] = useState(false);
   const [confirmOverwriteSlot, setConfirmOverwriteSlot] = useState<number | null>(null);
   const [confirmDeleteSlot, setConfirmDeleteSlot] = useState<number | null>(null);
+  const [saveFormat, setSaveFormat] = useState<'sav' | 'srm'>('sav');
 
   if (!isOpen || !targetGame) return null;
 
@@ -51,8 +52,12 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
         paddingLeft: 'max(env(safe-area-inset-left, 0px) + 12px, 16px)',
         paddingRight: 'max(env(safe-area-inset-right, 0px) + 12px, 16px)'
       }}
+      onClick={onClose}
     >
-      <div className="w-full max-w-2xl max-h-[88vh] flex flex-col rounded-3xl bg-zinc-950 border border-zinc-800 shadow-2xl overflow-hidden my-auto hardware-panel">
+      <div
+        className="w-full max-w-2xl max-h-[88vh] flex flex-col rounded-3xl bg-zinc-950 border border-zinc-800 shadow-2xl overflow-hidden my-auto hardware-panel"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Dialog Header Banner */}
         <div className={`relative p-5 bg-gradient-to-r ${targetGame.coverGradient || 'from-zinc-800 to-zinc-950'} flex-none border-b border-black/40`}>
           <div className="absolute inset-0">
@@ -79,38 +84,63 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
           </div>
 
           {/* Primary Play & Actions Bar */}
-          <div className="relative z-10 mt-4 flex flex-wrap items-center gap-2.5">
+          <div className="relative z-10 mt-4 flex flex-wrap items-center gap-2">
             {currentView === 'home' && (
               <button
                 onClick={() => launchGame(targetGame)}
-                className="p-2.5 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-zinc-950 font-black shadow-lg tactile-btn transition"
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-zinc-950 text-xs font-black shadow-lg tactile-btn transition"
                 title={`Play ${formatGameTitle(targetGame.title)}`}
               >
-                <Play className="w-5 h-5 fill-current ml-0.5" />
+                <Play className="w-4 h-4 fill-current" />
+                <span>Play Cartridge</span>
               </button>
             )}
 
-            <button
-              onClick={() => exportBatterySave(targetGame, 'sav')}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-amber-300 border border-amber-500/30 text-xs font-bold tactile-btn transition"
-              title="Download .sav for physical cartridge flasher (GB Operator / FlashGBX)"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Export .SAV</span>
-            </button>
-
-            <button
-              onClick={() => exportBatterySave(targetGame, 'srm')}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-zinc-200 border border-zinc-700 text-xs font-bold tactile-btn transition"
-              title="Download .srm for RetroArch"
-            >
-              <Download className="w-3.5 h-3.5 text-amber-400" />
-              <span>Export .SRM</span>
-            </button>
+            <div className="flex items-center rounded-xl bg-zinc-900/95 border border-amber-500/30 p-0.5 shadow-sm">
+              <button
+                onClick={() => exportBatterySave(targetGame, saveFormat)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-amber-500/15 text-amber-300 text-xs font-bold transition active:scale-95"
+                title={
+                  saveFormat === 'sav'
+                    ? 'Download raw battery RAM (.sav) for cartridge flashers (GB Operator / FlashGBX)'
+                    : 'Download libretro battery RAM (.srm) for RetroArch'
+                }
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download Battery Save</span>
+              </button>
+              <div className="h-4 w-px bg-zinc-800 mx-0.5" />
+              <div className="flex items-center gap-0.5 pr-0.5" role="group" aria-label="Battery save format">
+                <button
+                  type="button"
+                  onClick={() => setSaveFormat('sav')}
+                  className={`px-2 py-1 rounded-md text-[10px] font-mono font-bold transition ${
+                    saveFormat === 'sav'
+                      ? 'bg-amber-400 text-zinc-950'
+                      : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
+                  title="Physical Flasher format (.sav)"
+                >
+                  .SAV
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSaveFormat('srm')}
+                  className={`px-2 py-1 rounded-md text-[10px] font-mono font-bold transition ${
+                    saveFormat === 'srm'
+                      ? 'bg-amber-400 text-zinc-950'
+                      : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
+                  title="RetroArch format (.srm)"
+                >
+                  .SRM
+                </button>
+              </div>
+            </div>
 
             <button
               onClick={() => setConfirmDeleteRom(true)}
-              className="p-2.5 rounded-xl bg-zinc-900/90 hover:bg-rose-900/30 text-zinc-400 hover:text-rose-400 border border-zinc-800 hover:border-rose-500/40 tactile-btn transition"
+              className="p-2 rounded-xl bg-zinc-900/90 hover:bg-rose-900/30 text-zinc-400 hover:text-rose-400 border border-zinc-800 hover:border-rose-500/40 tactile-btn transition ml-auto"
               title="Delete ROM"
               aria-label="Delete ROM"
             >
