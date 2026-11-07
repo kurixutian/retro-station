@@ -1,6 +1,7 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Gamepad2 } from 'lucide-react';
 import { getBoxartUrls, formatGameTitle } from '../../constants/cores';
+import { resolveBoxartUrl } from '../../services/boxartResolver';
 import { idbGet, idbPut, idbDelete } from '../../services/storage/idb';
 
 interface GameCoverImageProps {
@@ -19,11 +20,15 @@ export const GameCoverImage: React.FC<GameCoverImageProps> = ({
   const [srcIndex, setSrcIndex] = useState(0);
   const [failedAll, setFailedAll] = useState(false);
   const [cachedUrl, setCachedUrl] = useState<string | null>(null);
+  const [resolvedSrc, setResolvedSrc] = useState<string | null>(null);
+  const attemptedResolveRef = useRef<string | null>(null);
 
   // Reset indices whenever the displayed game changes
   useEffect(() => {
     setSrcIndex(0);
     setFailedAll(false);
+    setResolvedSrc(null);
+    attemptedResolveRef.current = null;
   }, [game?.id]);
 
   useEffect(() => {
@@ -55,7 +60,31 @@ export const GameCoverImage: React.FC<GameCoverImageProps> = ({
     return list;
   }, [game, cachedUrl]);
 
-  const currentUrl = cachedUrl || urls[srcIndex];
+  // Last resort when every URL guess 404s: resolve against the real Libretro
+  // thumbnail listing (cached per system). Runs once per game per session.
+  const attemptBoxartResolve = () => {
+    const gid = game?.id;
+    if (!gid) {
+      setFailedAll(true);
+      return;
+    }
+    if (attemptedResolveRef.current === gid) {
+      setFailedAll(true);
+      return;
+    }
+    attemptedResolveRef.current = gid;
+    resolveBoxartUrl(game)
+      .then((url) => {
+        if (attemptedResolveRef.current !== gid) return;
+        if (url) setResolvedSrc(url);
+        else setFailedAll(true);
+      })
+      .catch(() => {
+        if (attemptedResolveRef.current === gid) setFailedAll(true);
+      });
+  };
+
+  const currentUrl = cachedUrl || resolvedSrc || urls[srcIndex];
 
   if (!currentUrl || failedAll) {
     return (
@@ -86,6 +115,8 @@ export const GameCoverImage: React.FC<GameCoverImageProps> = ({
         alt={formatGameTitle(game?.title || '')}
         onLoad={() => {
           if (currentUrl && game?.id && currentUrl !== cachedUrl) {
+            // Persist whatever works (resolver hit or fresh guess URL) so
+            // reloads don't re-resolve and cloud sync can propagate it.
             idbPut(`cover:${game.id}`, currentUrl).catch(() => {});
           }
         }}
@@ -97,10 +128,16 @@ export const GameCoverImage: React.FC<GameCoverImageProps> = ({
             }
             return;
           }
+          if (resolvedSrc) {
+            // The listing-verified URL also failed (stale cache) — give up
+            setResolvedSrc(null);
+            setFailedAll(true);
+            return;
+          }
           if (srcIndex + 1 < urls.length) {
             setSrcIndex((i) => i + 1);
           } else {
-            setFailedAll(true);
+            attemptBoxartResolve();
           }
         }}
         className={`w-full h-full object-cover ${

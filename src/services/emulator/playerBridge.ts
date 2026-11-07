@@ -17,28 +17,6 @@ export function buildPlayerHtml(core: string, romUrl: string, title?: string): s
     'width:0!important;height:0!important;overflow:hidden!important}' +
     '</style></head><body>' +
     '<div id="game"></div><script>' +
-    '(function(){' +
-    '  window._skipGlDraw=false;' +
-    '  var _ogc=HTMLCanvasElement.prototype.getContext;' +
-    '  HTMLCanvasElement.prototype.getContext=function(t,a){' +
-    '    if(t==="webgl"||t==="experimental-webgl"||t==="webgl2"){' +
-    '      a=Object.assign({},a||{},{preserveDrawingBuffer:true,antialias:false,depth:false,stencil:false,powerPreference:"high-performance"});' +
-    '    }' +
-    '    var ctx=_ogc.call(this,t,a);' +
-    '    if(ctx&&(t==="webgl"||t==="experimental-webgl"||t==="webgl2")&&!ctx._rsPatched){' +
-    '      ctx._rsPatched=true;' +
-    '      var _drawArrays=ctx.drawArrays;' +
-    '      var _drawElements=ctx.drawElements;' +
-    '      var _texSubImage2D=ctx.texSubImage2D;' +
-    '      var _clear=ctx.clear;' +
-    '      ctx.drawArrays=function(){if(!window._skipGlDraw)return _drawArrays.apply(this,arguments);};' +
-    '      ctx.drawElements=function(){if(!window._skipGlDraw)return _drawElements.apply(this,arguments);};' +
-    '      ctx.texSubImage2D=function(){if(!window._skipGlDraw)return _texSubImage2D.apply(this,arguments);};' +
-    '      ctx.clear=function(){if(!window._skipGlDraw)return _clear.apply(this,arguments);};' +
-    '    }' +
-    '    return ctx;' +
-    '  };' +
-    '})();' +
     'window.EJS_player="#game";' +
     'window.EJS_core=' + JSON.stringify(core) + ';' +
     'window.EJS_gameUrl=' + JSON.stringify(romUrl) + ';' +
@@ -48,50 +26,13 @@ export function buildPlayerHtml(core: string, romUrl: string, title?: string): s
     'window.EJS_fixedSaveInterval=10000;' +
     'window.EJS_VirtualGamepadSettings=[];' +
     'window.EJS_defaultOptions={"virtual-gamepad":"disabled","settings.virtual-gamepad":"disabled","ff-ratio":"2"};' +
-    'var _ffActive=false;' +
-    'var _ffRatio=2;' +
-    'var _ffTimer=null;' +
-    'var _emulatedFrame=0;' +
-    'var _lastGlRender=0;' +
-    'var _physDown={};' +
-    'var _coreDown={};' +
-    'var _pressFrame={};' +
-    'var _pressTime={};' +
-    'var _minFrameTarget={};' +
-    'var _releaseTimers={};' +
-    'var _origSetTimeout=window.setTimeout.bind(window);' +
-    'var _sliceStart=performance.now();' +
-    'var _ffBurstCount=0;' +
-    'window.setTimeout=function(fn,delay){' +
-    '  if(_ffActive&&(delay===undefined||delay<=1)&&typeof fn==="function"&&!fn._rsBypass){' +
-    '    var now=performance.now();' +
-    '    if(now-_sliceStart>20){_sliceStart=now;_ffBurstCount=0;}' +
-    '    _ffBurstCount++;' +
-    '    if(_ffBurstCount>=_ffRatio||(now-_sliceStart)>=7.5){' +
-    '      _ffBurstCount=0;' +
-    '      return _origSetTimeout(function(){' +
-    '        _sliceStart=performance.now();' +
-    '        fn();' +
-    '      },4);' +
-    '    }' +
-    '  }' +
-    '  return _origSetTimeout.apply(window,arguments);' +
-    '};' +
-    'var _getFrameCount=function(){' +
-    '  try{' +
-    '    var gm=window.EJS_emulator&&window.EJS_emulator.gameManager;' +
-    '    if(gm&&typeof gm.getFrameNum==="function"){' +
-    '      var fn=gm.getFrameNum();' +
-    '      if(typeof fn==="number"&&fn>_emulatedFrame)_emulatedFrame=fn;' +
-    '    }' +
-    '  }catch(e){}' +
-    '  return _emulatedFrame;' +
-    '};' +
+    'var _simPressTimes={};' +
+    'var _simReleaseTimers={};' +
     'var _dispatchKb=function(kName,down){' +
     '  var keyMap={' +
     '    up:["ArrowUp",38],down:["ArrowDown",40],left:["ArrowLeft",37],right:["ArrowRight",39],' +
-    '    actionb:["x",88],b:["x",88],actiona:["z",90],a:["z",90],' +
-    '    actiony:["s",83],y:["s",83],actionx:["a",65],x:["a",65],' +
+    '    actiona:["x",88],a:["x",88],actionb:["z",90],b:["z",90],' +
+    '    actionx:["s",83],x:["s",83],actiony:["a",65],y:["a",65],' +
     '    start:["Enter",13],select:["v",86],' +
     '    btnl:["q",81],l:["q",81],btnr:["e",69],r:["e",69]' +
     '  };' +
@@ -108,179 +49,58 @@ export function buildPlayerHtml(core: string, romUrl: string, title?: string): s
     '    }catch(e){}' +
     '  }' +
     '};' +
-    'var _idxToKey={0:"b",1:"y",2:"select",3:"start",4:"up",5:"down",6:"left",7:"right",8:"a",9:"x",10:"l",11:"r"};' +
-    'var _keyToIdx={actionb:0,b:0,actiony:1,y:1,select:2,start:3,up:4,down:5,left:6,right:7,actiona:8,a:8,actionx:9,x:9,btnl:10,l:10,btnr:11,r:11};' +
-    'var _writeCoreInput=function(idx,val){' +
-    '  var numVal=val?1:0;' +
-    '  try{' +
-    '    var emu=window.EJS_emulator;' +
-    '    var gm=emu&&emu.gameManager;' +
-    '    var mod=(gm&&gm.Module)||(emu&&emu.Module)||window._ejsMod;' +
-    '    if(mod&&typeof mod._simulate_input==="function"){' +
-    '      mod._simulate_input(0,idx,numVal);' +
-    '      return;' +
-    '    }' +
-    '    if(gm&&typeof gm.simulateInput==="function"){' +
-    '      gm.simulateInput(0,idx,numVal);' +
-    '      return;' +
-    '    }' +
-    '  }catch(e){}' +
-    '  var kName=_idxToKey[idx];' +
-    '  if(kName)_dispatchKb(kName,!!val);' +
-    '};' +
-    'window._onPreFrame=function(){' +
-    '  if(_ffActive&&_ffRatio>1){' +
-    '    var now=performance.now();' +
-    '    var shouldDraw=((_emulatedFrame%_ffRatio)===0)||(now-_lastGlRender>=15);' +
-    '    window._skipGlDraw=!shouldDraw;' +
-    '    if(shouldDraw)_lastGlRender=now;' +
-    '  }else{' +
-    '    window._skipGlDraw=false;' +
-    '  }' +
-    '  for(var i=0;i<12;i++){' +
-    '    if(_coreDown[i])_writeCoreInput(i,1);' +
-    '  }' +
-    '  return true;' +
-    '};' +
-    'window._onPostFrame=function(){' +
-    '  _emulatedFrame++;' +
-    '  window._skipGlDraw=false;' +
-    '  for(var i=0;i<12;i++){' +
-    '    if(!_physDown[i]&&_coreDown[i]){' +
-    '      if(_emulatedFrame>=(_minFrameTarget[i]||0)){' +
-    '        _coreDown[i]=false;' +
-    '        delete _minFrameTarget[i];' +
-    '        if(_releaseTimers[i]){clearTimeout(_releaseTimers[i]);delete _releaseTimers[i];}' +
-    '        _writeCoreInput(i,0);' +
-    '      }' +
-    '    }' +
-    '  }' +
-    '};' +
-    'var _realEjsRuntime=null;' +
-    'Object.defineProperty(window,"EJS_Runtime",{' +
-    '  configurable:true,enumerable:true,' +
-    '  get:function(){return _realEjsRuntime;},' +
-    '  set:function(fn){' +
-    '    if(typeof fn!=="function"){_realEjsRuntime=fn;return;}' +
-    '    _realEjsRuntime=function(mod){' +
-    '      if(mod&&typeof mod==="object"){' +
-    '        window._ejsMod=mod;' +
-    '        var oPre=mod.preMainLoop;' +
-    '        var oPost=mod.postMainLoop;' +
-    '        mod.preMainLoop=function(){' +
-    '          if(typeof oPre==="function"&&oPre()===false)return false;' +
-    '          return window._onPreFrame();' +
-    '        };' +
-    '        mod.postMainLoop=function(){' +
-    '          if(typeof oPost==="function")oPost();' +
-    '          window._onPostFrame();' +
-    '        };' +
-    '      }' +
-    '      return fn.apply(this,arguments);' +
-    '    };' +
-    '  }' +
-    '});' +
-    'window.setButtonBit=function(idx,down){' +
-    '  if(idx===undefined||idx===null)return;' +
-    '  window._markInteracted&&window._markInteracted();' +
-    '  if(_releaseTimers[idx]){clearTimeout(_releaseTimers[idx]);delete _releaseTimers[idx];}' +
-    '  var curFrame=_getFrameCount();' +
-    '  var now=performance.now();' +
-    '  if(down){' +
-    '    if(_coreDown[idx]&&!_physDown[idx]){' +
-    '      _writeCoreInput(idx,0);' +
-    '    }' +
-    '    _physDown[idx]=true;' +
-    '    _coreDown[idx]=true;' +
-    '    _pressFrame[idx]=curFrame;' +
-    '    _pressTime[idx]=now;' +
-    '    var minFrames=_ffActive?Math.max(2,Math.min(4,_ffRatio)):2;' +
-    '    _minFrameTarget[idx]=curFrame+minFrames;' +
-    '    _writeCoreInput(idx,1);' +
-    '  }else{' +
-    '    _physDown[idx]=false;' +
-    '    if(!_coreDown[idx])return;' +
-    '    var targetFrame=_minFrameTarget[idx]||0;' +
-    '    var elapsed=now-(_pressTime[idx]||0);' +
-    '    if(curFrame>=targetFrame||elapsed>=42){' +
-    '      _coreDown[idx]=false;' +
-    '      delete _minFrameTarget[idx];' +
-    '      _writeCoreInput(idx,0);' +
-    '    }else{' +
-    '      var cb=function(){' +
-    '        delete _releaseTimers[idx];' +
-    '        if(!_physDown[idx]&&_coreDown[idx]){' +
-    '          _coreDown[idx]=false;' +
-    '          delete _minFrameTarget[idx];' +
-    '          _writeCoreInput(idx,0);' +
-    '        }' +
-    '      };' +
-    '      cb._rsBypass=true;' +
-    '      _releaseTimers[idx]=_origSetTimeout(cb,Math.max(16,42-elapsed));' +
-    '    }' +
-    '  }' +
-    '};' +
+    'var _btnIndexMap={actionb:0,b:0,actiony:1,y:1,select:2,start:3,up:4,down:5,left:6,right:7,actiona:8,a:8,actionx:9,x:9,btnl:10,l:10,btnr:11,r:11};' +
     'window.simulateButton=function(name,down){' +
     '  var key=String(name).toLowerCase();' +
-    '  var idx=_keyToIdx[key];' +
-    '  if(idx!==undefined){' +
-    '    window.setButtonBit(idx,down);' +
+    '  var idx=_btnIndexMap[key];' +
+    '  window._markInteracted&&window._markInteracted();' +
+    '  var sendDirect=function(val){' +
+    '    if(idx!==undefined&&window.EJS_emulator&&window.EJS_emulator.gameManager){' +
+    '      try{window.EJS_emulator.gameManager.simulateInput(0,idx,val?1:0);}catch(e){}' +
+    '    }' +
+    '    _dispatchKb(key,val);' +
+    '  };' +
+    '  if(down){' +
+    '    if(_simReleaseTimers[key]){clearTimeout(_simReleaseTimers[key]);delete _simReleaseTimers[key];}' +
+    '    _simPressTimes[key]=performance.now();' +
+    '    sendDirect(true);' +
     '  }else{' +
-    '    _dispatchKb(key,down);' +
+    '    var elapsed=performance.now()-(_simPressTimes[key]||0);' +
+    '    var minHold=50;' +
+    '    if(elapsed<minHold){' +
+    '      if(_simReleaseTimers[key])clearTimeout(_simReleaseTimers[key]);' +
+    '      _simReleaseTimers[key]=setTimeout(function(){' +
+    '        delete _simReleaseTimers[key];' +
+    '        sendDirect(false);' +
+    '      },minHold-elapsed);' +
+    '    }else{' +
+    '      sendDirect(false);' +
+    '    }' +
     '  }' +
     '};' +
-    'var _applyFf=function(){' +
-    '  try{' +
-    '    var emu=window.EJS_emulator;' +
-    '    if(!emu||!emu.gameManager)return;' +
-    '    var gm=emu.gameManager;' +
-    '    var r=typeof _ffRatio==="number"&&_ffRatio>=1?_ffRatio:2;' +
-    '    if(!_ffActive){' +
-    '      emu.isFastForward=false;' +
-    '      if(typeof emu.handleSpecialOptions==="function"){' +
-    '        emu.handleSpecialOptions("fastForward","disabled");' +
-    '      }' +
-    '      if(typeof gm.setFastForwardRatio==="function")gm.setFastForwardRatio(1);' +
-    '      if(typeof gm.toggleFastForward==="function")gm.toggleFastForward(0);' +
-    '    }else{' +
-    '      var wasOn=!!emu.isFastForward;' +
-    '      emu.isFastForward=true;' +
-    '      if(typeof emu.handleSpecialOptions==="function"){' +
-    '        if(wasOn){' +
-    '          emu.handleSpecialOptions("ff-ratio",String(r));' +
-    '        }else{' +
-    '          emu.handleSpecialOptions("ff-ratio",String(r));' +
-    '          emu.handleSpecialOptions("fastForward","enabled");' +
-    '        }' +
-    '      }else{' +
-    '        if(typeof gm.toggleFastForward==="function")gm.toggleFastForward(0);' +
-    '        if(typeof gm.setFastForwardRatio==="function")gm.setFastForwardRatio(r);' +
-    '        setTimeout(function(){' +
-    '          try{if(gm&&typeof gm.toggleFastForward==="function")gm.toggleFastForward(1);}catch(e){}' +
-    '        },15);' +
-    '      }' +
-    '    }' +
-    '  }catch(e){}' +
+    'window.setButtonBit=function(idx,down){' +
+    '  var revMap={0:"actionb",1:"actiony",2:"select",3:"start",4:"up",5:"down",6:"left",7:"right",8:"actiona",9:"actionx",10:"btnl",11:"btnr"};' +
+    '  var name=revMap[idx];' +
+    '  if(name)window.simulateButton(name,down);' +
     '};' +
     'window.setFastForward=function(active,ratio){' +
-    '  _ffActive=!!active;' +
-    '  if(typeof ratio==="number"&&ratio>=1)_ffRatio=ratio;' +
-    '  _applyFf();' +
-    '  if(!window.EJS_emulator||!window.EJS_emulator.gameManager){' +
-    '    if(_ffTimer)clearInterval(_ffTimer);' +
-    '    var attempts=0;' +
-    '    _ffTimer=setInterval(function(){' +
-    '      attempts++;' +
-    '      if(window.EJS_emulator&&window.EJS_emulator.gameManager){' +
-    '        clearInterval(_ffTimer);' +
-    '        _ffTimer=null;' +
-    '        _applyFf();' +
-    '      }else if(attempts>40){' +
-    '        clearInterval(_ffTimer);' +
-    '        _ffTimer=null;' +
+    '  try{' +
+    '    var emu=window.EJS_emulator;' +
+    '    if(!emu)return;' +
+    '    var gm=emu.gameManager;' +
+    '    var r=typeof ratio==="number"&&ratio>=1?ratio:2;' +
+    '    if(typeof emu.handleSpecialOptions==="function"){' +
+    '      if(active){' +
+    '        emu.handleSpecialOptions("ff-ratio",String(r));' +
+    '        emu.handleSpecialOptions("fastForward","enabled");' +
+    '      }else{' +
+    '        emu.handleSpecialOptions("fastForward","disabled");' +
     '      }' +
-    '    },250);' +
-    '  }' +
+    '    }else if(gm){' +
+    '      if(typeof gm.setFastForwardRatio==="function")gm.setFastForwardRatio(active?r:1);' +
+    '      if(typeof gm.toggleFastForward==="function")gm.toggleFastForward(active?1:0);' +
+    '    }' +
+    '  }catch(e){}' +
     '};' +
     'window._toU8=function(b){' +
     '  if(!b)return null;' +
@@ -342,10 +162,6 @@ export function buildPlayerHtml(core: string, romUrl: string, title?: string): s
     '    };' +
     '    applyWasmMemory();' +
     '    if(fs&&typeof fs.syncfs==="function"){try{fs.syncfs(false,function(){});}catch(e){}}' +
-    '    if(typeof gm.restart==="function"){try{gm.restart();}catch(e){}}' +
-    '    else if(mod&&typeof mod._retro_reset==="function"){try{mod._retro_reset();}catch(e){}}' +
-    '    setTimeout(applyWasmMemory,120);' +
-    '    setTimeout(applyWasmMemory,400);' +
     '    return true;' +
     '  }catch(e){console.error("loadSrmData err",e);return false;}' +
     '};' +

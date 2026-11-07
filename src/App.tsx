@@ -514,7 +514,27 @@ export default function App() {
       const win = emuFrameRef.current?.contentWindow as any;
       try { win?.setAudioMuted?.(isMuted); } catch (err) {}
 
-      if (pendingSrmRef.current || pendingRtcRef.current) {
+      if (pendingStateRef.current) {
+        const st = pendingStateRef.current;
+        pendingStateRef.current = null;
+        pendingSrmRef.current = null;
+        pendingRtcRef.current = null;
+        const stateToLoad = normalizeBinaryData(st);
+        if (stateToLoad) {
+          setTimeout(() => {
+            try {
+              const w = emuFrameRef.current?.contentWindow as any;
+              if (w?.loadStateData) {
+                w.loadStateData(stateToLoad);
+              } else if (w?.EJS_emulator?.gameManager?.loadState) {
+                w.EJS_emulator.gameManager.loadState(stateToLoad);
+              }
+            } catch (err) {
+              console.error('Failed to load pending state:', err);
+            }
+          }, 300);
+        }
+      } else if (pendingSrmRef.current || pendingRtcRef.current) {
         const srm = normalizeBinaryData(pendingSrmRef.current);
         const rtc = normalizeBinaryData(pendingRtcRef.current);
         pendingSrmRef.current = null;
@@ -523,31 +543,6 @@ export default function App() {
           win?.loadSrmData?.(srm, rtc);
         } catch (err) {
           console.error('Failed to load pending SRM/RTC:', err);
-        }
-      }
-
-      const st = pendingStateRef.current;
-      if (st) {
-        pendingStateRef.current = null;
-        const stateToLoad = normalizeBinaryData(st);
-        if (stateToLoad) {
-          const attemptLoad = (delay: number) => {
-            setTimeout(() => {
-              try {
-                const w = emuFrameRef.current?.contentWindow as any;
-                if (!w) return;
-                if (w.loadStateData) {
-                  w.loadStateData(stateToLoad);
-                } else if (w.EJS_emulator?.gameManager?.loadState) {
-                  w.EJS_emulator.gameManager.loadState(stateToLoad);
-                }
-              } catch (err) {
-                console.error('Failed to load pending state:', err);
-              }
-            }, delay);
-          };
-          attemptLoad(400);
-          attemptLoad(1000);
         }
       }
     };

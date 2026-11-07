@@ -78,18 +78,11 @@ export function toTitleCase(str: string): string {
   return str.replace(/\b[a-z]/g, (c) => c.toUpperCase());
 }
 
-export function getBoxartUrls(game: any): string[] {
-  if (!game) return [];
-  const urls: string[] = [];
-
-  // 1. User custom boxart override (Base64 data URI, custom cover, or custom URL)
-  if (game.customCover) urls.push(game.customCover);
-  if (game.customBoxart) urls.push(game.customBoxart);
-  if (game.cover && !urls.includes(game.cover)) urls.push(game.cover);
-  if (game.coverUrl && !urls.includes(game.coverUrl)) urls.push(game.coverUrl);
-
+/** Map a game object to its Libretro thumbnails system folder (e.g. "Nintendo - Game Boy Color") */
+export function getLibretroSystem(game: any): string | null {
+  if (!game) return null;
   const ext = game.ext || (game.fileName ? game.fileName.split('.').pop()?.toLowerCase() : '');
-  const libSystem =
+  return (
     (ext && LIBRETRO_SYSTEM_MAP[ext]) ||
     (game.shortSystem === 'GBC'
       ? 'Nintendo - Game Boy Color'
@@ -113,8 +106,22 @@ export function getBoxartUrls(game: any): string[] {
       ? 'Sega - Mega Drive - Genesis'
       : game.core === 'gambatte'
       ? (game.shortSystem === 'GB' ? 'Nintendo - Game Boy' : 'Nintendo - Game Boy Color')
-      : null);
+      : null) ||
+    null
+  );
+}
 
+export function getBoxartUrls(game: any): string[] {
+  if (!game) return [];
+  const urls: string[] = [];
+
+  // 1. User custom boxart override (Base64 data URI, custom cover, or custom URL)
+  if (game.customCover) urls.push(game.customCover);
+  if (game.customBoxart) urls.push(game.customBoxart);
+  if (game.cover && !urls.includes(game.cover)) urls.push(game.cover);
+  if (game.coverUrl && !urls.includes(game.coverUrl)) urls.push(game.coverUrl);
+
+  const libSystem = getLibretroSystem(game);
   if (!libSystem) return urls;
 
   const candidateTitles = new Set<string>();
