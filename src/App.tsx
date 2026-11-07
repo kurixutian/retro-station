@@ -1579,6 +1579,7 @@ export default function App() {
           onOpenControls={() => setControlsModalOpen(true)}
           toggleShader={toggleShader}
           setColorProfile={setColorProfile}
+          savesByGameId={savesByGameId}
         />
       )}
 
@@ -1614,6 +1615,7 @@ export default function App() {
         hapticsEnabled={hapticsEnabled}
         setHapticsEnabled={setHapticsEnabled}
         onOpenCloudSync={() => setCloudModalOpen(true)}
+        onOpenControls={() => setControlsModalOpen(true)}
       />
 
       {/* MODAL 3: CLOUD SAVE VAULT (SYNC CODE) */}

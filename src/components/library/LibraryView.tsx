@@ -142,12 +142,26 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             </div>
           </div>
 
-          {/* Right Action Buttons: + Load ROM, Cloud Vault, Controls, Settings */}
+          {/* Right Action Buttons: Search, + Load ROM, Cloud Vault, Controls, Settings */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <button
+              onClick={() => setShowSearch((s) => !s)}
+              className={`p-2 sm:p-2.5 rounded-xl border tactile-btn transition flex items-center justify-center ${
+                showSearch
+                  ? 'bg-zinc-800 border-zinc-700 text-white shadow'
+                  : 'bg-zinc-900/90 hover:bg-zinc-800 border-zinc-800 text-zinc-300'
+              }`}
+              title="Search games"
+              aria-label="Toggle Search"
+            >
+              <Search className="w-4 h-4 text-sky-400" />
+            </button>
+
             <button
               onClick={onTriggerAddRom}
               className={`p-2 sm:p-2.5 rounded-xl font-bold shadow-lg tactile-btn transition ${theme.accentBg}`}
               title="Load ROM"
+              aria-label="Load ROM"
             >
               <Plus className="w-4 h-4 stroke-[2.5]" />
             </button>
@@ -162,6 +176,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                   : 'bg-zinc-900/90 hover:bg-zinc-800 border-zinc-800 text-zinc-300'
               }`}
               title="Cloud Save Vault"
+              aria-label="Cloud Save Vault"
             >
               <Cloud className="w-4 h-4" />
               {cloudStatus === 'idle' && (
@@ -184,6 +199,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
               onClick={onOpenSettings}
               className="p-2 sm:p-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 tactile-btn transition"
               title="Configuration"
+              aria-label="Configuration Settings"
             >
               <Settings className="w-4 h-4 text-emerald-400" />
             </button>

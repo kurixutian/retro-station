@@ -27,7 +27,7 @@ import {
   Check,
   Tv,
 } from 'lucide-react';
-import { Game, Theme, PadLayout, PadGroupId } from '../../types';
+import { Game, Theme, PadLayout, PadGroupId, SaveSlot } from '../../types';
 import { coreRatio, formatGameTitle, EJS_CORES } from '../../constants/cores';
 import {
   DEFAULT_PAD_LAYOUT,
@@ -94,6 +94,7 @@ interface InGameViewProps {
   onOpenControls?: () => void;
   toggleShader?: (key: string) => void;
   setColorProfile?: (profile: string) => void;
+  savesByGameId?: Record<string, SaveSlot[]>;
 }
 
 export const InGameView: React.FC<InGameViewProps> = ({
@@ -147,6 +148,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
   onOpenControls,
   toggleShader,
   setColorProfile,
+  savesByGameId,
 }) => {
   const dpadContainerRef = React.useRef<HTMLDivElement | null>(null);
   const dpadRectRef = React.useRef<DOMRect | null>(null);
@@ -165,6 +167,13 @@ export const InGameView: React.FC<InGameViewProps> = ({
     left: false,
     right: false,
   });
+
+  const touchStartYRef = React.useRef<number | null>(null);
+
+  const latestSaveSlot = React.useMemo(() => {
+    const slots = (savesByGameId && activeGame?.id ? savesByGameId[activeGame.id] : []) || [];
+    return slots.find((s) => !s.empty && s.timestamp) || slots.find((s) => !s.empty) || null;
+  }, [savesByGameId, activeGame?.id]);
 
   // ── Fullscreen / Landscape mode ──────────────────────────────────────────
   const [isFullscreen, setIsFullscreen] = React.useState(false);
@@ -1018,10 +1027,25 @@ export const InGameView: React.FC<InGameViewProps> = ({
             : undefined
         }
       >
-        {/* Tap zone at top: reveals the auto-hiding top bar */}
+        {/* Tap & Swipe zone at top: reveals the auto-hiding top bar */}
         <button
           aria-label="Show top bar"
           onClick={() => revealTopBar()}
+          onTouchStart={(e) => {
+            touchStartYRef.current = e.touches[0].clientY;
+          }}
+          onTouchMove={(e) => {
+            if (touchStartYRef.current !== null) {
+              const deltaY = e.touches[0].clientY - touchStartYRef.current;
+              if (deltaY > 15) {
+                revealTopBar(5000);
+                touchStartYRef.current = null;
+              }
+            }
+          }}
+          onTouchEnd={() => {
+            touchStartYRef.current = null;
+          }}
           className={`absolute top-0 ${isLandscape ? 'left-1/3 right-1/3' : 'left-0 right-0'} z-30 cursor-pointer flex flex-col items-center pt-2`}
           style={{ height: 'max(env(safe-area-inset-top, 0px) + 28px, 44px)' }}
         >
@@ -1144,10 +1168,14 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 >
                   <div className="flex items-center gap-1.5 w-full justify-between">
                     <Save className="w-4 h-4 text-emerald-400" />
-                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold uppercase">SLOTS</span>
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold uppercase">
+                      {latestSaveSlot ? `SLOT ${latestSaveSlot.slot}` : 'SLOTS'}
+                    </span>
                   </div>
                   <span className="text-xs font-bold text-white mt-1">Save State</span>
-                  <span className="text-[10px] text-emerald-400/80">Capture frame</span>
+                  <span className="text-[10px] text-emerald-400/80 truncate max-w-full">
+                    {latestSaveSlot ? `Slot ${latestSaveSlot.slot} • ${latestSaveSlot.timestamp || 'Saved'}` : 'Capture frame • 4 slots'}
+                  </span>
                 </button>
 
                 <button
@@ -1159,10 +1187,14 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 >
                   <div className="flex items-center gap-1.5 w-full justify-between">
                     <FolderOpen className="w-4 h-4 text-cyan-400" />
-                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-bold uppercase">4 SLOTS</span>
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-bold uppercase">
+                      {latestSaveSlot ? 'SAVED' : 'EMPTY'}
+                    </span>
                   </div>
                   <span className="text-xs font-bold text-white mt-1">Load State</span>
-                  <span className="text-[10px] text-cyan-400/80">Restore bookmark</span>
+                  <span className="text-[10px] text-cyan-400/80 truncate max-w-full">
+                    {latestSaveSlot ? `Resume Slot ${latestSaveSlot.slot}` : 'No saved states yet'}
+                  </span>
                 </button>
               </div>
 

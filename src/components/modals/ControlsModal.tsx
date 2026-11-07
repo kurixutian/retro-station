@@ -78,10 +78,14 @@ export const ControlsModal: React.FC<ControlsModalProps> = ({
 
         {/* Tab Picker */}
         <div className="px-5 pt-4 pb-2 flex items-center justify-between gap-3 border-b border-zinc-900 bg-zinc-950/50">
-          <div className="flex items-center gap-1.5 p-1 rounded-xl bg-zinc-900 border border-zinc-800">
+          <div role="tablist" aria-label="Control devices" className="flex items-center gap-1.5 p-1 rounded-xl bg-zinc-900 border border-zinc-800">
             <button
+              role="tab"
+              id="controls-tab-keyboard"
+              aria-selected={activeTab === 'keyboard'}
+              aria-controls="controls-tabpanel-keyboard"
               onClick={() => setActiveTab('keyboard')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
                 activeTab === 'keyboard'
                   ? 'bg-zinc-800 text-white shadow'
                   : 'text-zinc-400 hover:text-zinc-200'
@@ -91,8 +95,12 @@ export const ControlsModal: React.FC<ControlsModalProps> = ({
               <span>Keyboard</span>
             </button>
             <button
+              role="tab"
+              id="controls-tab-gamepad"
+              aria-selected={activeTab === 'gamepad'}
+              aria-controls="controls-tabpanel-gamepad"
               onClick={() => setActiveTab('gamepad')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
                 activeTab === 'gamepad'
                   ? 'bg-zinc-800 text-white shadow'
                   : 'text-zinc-400 hover:text-zinc-200'

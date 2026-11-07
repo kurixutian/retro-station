@@ -305,6 +305,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                     onClick={copyCode}
                     className="p-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 transition active:scale-95 shrink-0 flex items-center justify-center"
                     title="Copy Sync Code"
+                    aria-label="Copy Sync Code"
                   >
                     {copied ? (
                       <Check className="w-5 h-5 text-emerald-400 stroke-[3]" />
@@ -465,6 +466,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                       value={inputCode}
                       onChange={(e) => setInputCode(e.target.value.toUpperCase())}
                       placeholder="e.g. RETRO-7K9P-4X2B"
+                      aria-label="Enter Sync Code"
                       className="w-full bg-black/60 border border-zinc-800 focus:border-sky-500 rounded-xl px-3.5 py-2.5 text-xs font-mono font-bold text-white placeholder-zinc-600 outline-none uppercase tracking-wider"
                     />
                   </div>
@@ -516,6 +518,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                     value={endpointInput}
                     onChange={(e) => setEndpointInput(e.target.value)}
                     placeholder="https://your-worker.your-subdomain.workers.dev"
+                    aria-label="Custom Cloud Vault Server URL"
                     className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-1.5 text-[11px] font-mono text-zinc-200 outline-none focus:border-zinc-700"
                   />
                   <button

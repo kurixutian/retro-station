@@ -189,7 +189,7 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
                         );
                       }
                       return (
-                        <span className="text-[10px] font-mono text-zinc-600">EMPTY</span>
+                        <span className="text-[10px] font-mono font-bold text-zinc-400">EMPTY</span>
                       );
                     })()}
                   </div>

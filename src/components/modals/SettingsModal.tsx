@@ -19,6 +19,7 @@ interface SettingsModalProps {
   hapticsEnabled?: boolean;
   setHapticsEnabled?: (val: boolean) => void;
   onOpenCloudSync?: () => void;
+  onOpenControls?: () => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -33,6 +34,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   hapticsEnabled = true,
   setHapticsEnabled,
   onOpenCloudSync,
+  onOpenControls,
 }) => {
   const [activeTab, setActiveTab] = useState<'display' | 'controls' | 'themes' | 'vault'>('display');
   const [backupBusy, setBackupBusy] = useState(false);
@@ -101,7 +103,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         {/* Segmented Category Navigation */}
-        <div className="flex-none px-4 pt-3 pb-2.5 border-b border-zinc-800/80 bg-zinc-950/90 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+        <div
+          role="tablist"
+          aria-label="Configuration categories"
+          className="flex-none px-4 pt-3 pb-2.5 border-b border-zinc-800/80 bg-zinc-950/90 flex items-center gap-1.5 overflow-x-auto no-scrollbar"
+        >
           {[
             { id: 'display', label: 'Display & CRT', icon: Tv },
             { id: 'controls', label: 'Controls & Haptic', icon: Vibrate },
@@ -113,8 +119,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             return (
               <button
                 key={tab.id}
+                role="tab"
+                id={`settings-tab-${tab.id}`}
+                aria-selected={isActive}
+                aria-controls={`settings-tabpanel-${tab.id}`}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap active:scale-95 ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
                   isActive
                     ? 'bg-zinc-800 text-white shadow-sm border border-zinc-700'
                     : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60 border border-transparent'
@@ -127,14 +137,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           })}
         </div>
 
-        <div className="flex-1 overflow-y-auto modal-scroll p-5 space-y-6">
+        <div
+          role="tabpanel"
+          id={`settings-tabpanel-${activeTab}`}
+          aria-labelledby={`settings-tab-${activeTab}`}
+          className="flex-1 overflow-y-auto modal-scroll p-5 space-y-6"
+        >
           {/* TAB 1: DISPLAY & CRT */}
           {activeTab === 'display' && (
             <div className="space-y-6">
               {/* AMOLED Battery Saver Dedicated Toggle Card */}
-              <div
+              <button
+                type="button"
+                role="switch"
+                aria-checked={Boolean(shaders.amoled)}
                 onClick={() => toggleShader('amoled')}
-                className={`p-4 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 ${
+                className={`w-full text-left p-4 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 tactile-btn focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
                   shaders.amoled
                     ? 'bg-emerald-500/15 border-emerald-500/50 text-white'
                     : 'bg-zinc-900/70 border-zinc-800 text-zinc-300 hover:bg-zinc-900'
@@ -160,7 +178,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 >
                   <div className="w-5 h-5 rounded-full bg-white shadow-md" />
                 </div>
-              </div>
+              </button>
 
               {/* Section: COLOR ACCURACY & CONTRAST (RETROARCH) */}
               <div className="space-y-2.5">
@@ -296,13 +314,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {activeTab === 'controls' && (
             <div className="space-y-6">
               {/* Controls & Haptic Feedback Toggle Card */}
-              <div
+              <button
+                type="button"
+                role="switch"
+                aria-checked={Boolean(hapticsEnabled)}
                 onClick={() => {
                   const next = !hapticsEnabled;
                   setHapticsEnabled?.(next);
                   haptics.setEnabled(next);
                 }}
-                className={`p-4 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 ${
+                className={`w-full text-left p-4 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 tactile-btn focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${
                   hapticsEnabled
                     ? 'bg-sky-500/15 border-sky-500/50 text-white'
                     : 'bg-zinc-900/70 border-zinc-800 text-zinc-300 hover:bg-zinc-900'
@@ -328,7 +349,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 >
                   <div className="w-5 h-5 rounded-full bg-white shadow-md" />
                 </div>
-              </div>
+              </button>
 
               {/* Gamepad & Keyboard Integration Card */}
               <div className="p-4 rounded-2xl border border-zinc-800 bg-zinc-900/50 space-y-2">
@@ -343,6 +364,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   Keyboard Quick Save: <span className="text-amber-300 font-bold">Shift + F1</span> • Quick Load: <span className="text-cyan-300 font-bold">F3</span>
                 </div>
               </div>
+
+              {onOpenControls && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenControls();
+                  }}
+                  className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-zinc-900/80 hover:bg-zinc-900 border border-zinc-800 text-zinc-200 text-xs font-bold transition active:scale-[0.98] tactile-btn focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                      <Gamepad2 className="w-4 h-4" />
+                    </div>
+                    <span>Open Full Keyboard & Gamepad Guide</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-zinc-500" />
+                </button>
+              )}
             </div>
           )}
 
@@ -385,12 +425,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* TAB 4: CLOUD VAULT */}
           {activeTab === 'vault' && (
             <div className="space-y-4">
-              <div
+              <button
+                type="button"
                 onClick={() => {
                   onClose();
                   onOpenCloudSync?.();
                 }}
-                className="p-4 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 bg-zinc-900/70 border-zinc-800 text-zinc-300 hover:bg-zinc-900 hover:border-zinc-700"
+                className="w-full text-left p-4 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 bg-zinc-900/70 border-zinc-800 text-zinc-300 hover:bg-zinc-900 hover:border-zinc-700 tactile-btn focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
               >
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
@@ -411,7 +452,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </p>
                 </div>
                 <ChevronRight className="w-4 h-4 text-zinc-500 shrink-0" />
-              </div>
+              </button>
 
               <div className="p-4 rounded-2xl border border-zinc-800/80 bg-zinc-900/30 space-y-2 text-xs text-zinc-400">
                 <span className="font-bold text-zinc-300 block">About Cloud Vault</span>
