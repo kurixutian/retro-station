@@ -738,6 +738,11 @@ export const InGameView: React.FC<InGameViewProps> = ({
     return buildPlayerHtml(EJS_CORES[activeGame.core] || 'gb', romUrl, activeGame.title);
   }, [activeGame.core, activeGame.real, activeGame.title, romUrl]);
 
+  const isGba = activeGame.core === 'mgba' || activeGame.shortSystem === 'GBA';
+  const isGbc = activeGame.shortSystem === 'GBC';
+  const isGb = activeGame.shortSystem === 'GB' || (activeGame.core === 'gambatte' && !isGbc);
+  const screenRatio = coreRatio(activeGame.core, isLandscape);
+
   const renderGameScreen = () => {
     const gameFilter = getComputedGameFilter(shaders);
 
@@ -785,7 +790,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
             backgroundImage: shaders.amoled
               ? 'linear-gradient(to right, rgba(0, 0, 0, 0.55) 0.5px, transparent 0.5px), linear-gradient(to bottom, rgba(0, 0, 0, 0.55) 0.5px, transparent 0.5px)'
               : 'linear-gradient(to right, rgba(15, 23, 42, 0.18) 0.5px, transparent 0.5px), linear-gradient(to bottom, rgba(15, 23, 42, 0.18) 0.5px, transparent 0.5px)',
-            backgroundSize: '3px 3px'
+            backgroundSize: isGba ? '2px 2px' : '3px 3px'
           }}
         />
       )}
@@ -1396,7 +1401,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 }`}
               />
               <span className="text-[9px] font-mono font-bold text-zinc-300">
-                {fps || 60}
+                {isGba ? 'GBA' : (fps || 60)}
               </span>
               {isMuted && <VolumeX className="w-2.5 h-2.5 text-rose-400" />}
             </div>
@@ -1417,26 +1422,36 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 ? 'border-2 border-white/30 cursor-pointer'
                 : shaders.edgeToEdge
                 ? 'border-0 shadow-none'
+                : isGba
+                ? 'border-2 border-zinc-800 shadow-2xl ring-1 ring-white/5'
                 : shaders.amoled
                 ? 'border-2 border-zinc-900 shadow-none'
                 : 'border-2 border-zinc-800 shadow-inner'
             } ${
-              shaders.edgeToEdge ? 'rounded-none' : shaders.crtCurve ? 'rounded-2xl scale-[0.99]' : 'rounded-lg'
+              shaders.edgeToEdge
+                ? 'rounded-none'
+                : isGba
+                ? 'rounded-xl'
+                : shaders.crtCurve
+                ? 'rounded-2xl scale-[0.99]'
+                : 'rounded-lg'
             }`}
             style={{
-              aspectRatio: String(coreRatio(activeGame.core, isLandscape)),
-              maxWidth: '100%',
+              aspectRatio: String(screenRatio),
+              maxWidth: isLandscape
+                ? '100%'
+                : `min(100%, calc(48lvh * ${screenRatio} * ${screenScale}))`,
               maxHeight: isLandscape
                 ? `calc((100lvh - ${Math.round(22 * transportScale + 10)}px) * ${screenScale})`
                 : `calc(48lvh * ${screenScale})`,
               width: isLandscape
-                ? `min(100%, calc(${(coreRatio(activeGame.core, isLandscape) * 92).toFixed(2)}lvh * ${screenScale}))`
+                ? `min(100%, calc(${(screenRatio * 92).toFixed(2)}lvh * ${screenScale}))`
                 : shaders.edgeToEdge
                 ? `calc(100% * ${screenScale})`
-                : `min(100%, calc(${(50 * coreRatio(activeGame.core, isLandscape)).toFixed(2)}lvh * ${screenScale}))`,
+                : `min(100%, calc(48lvh * ${screenRatio} * ${screenScale}))`,
               height: isLandscape
                 ? `calc((100lvh - ${Math.round(22 * transportScale + 10)}px) * ${screenScale})`
-                : `calc(48lvh * ${screenScale})`,
+                : 'auto',
               boxShadow: !shaders.edgeToEdge && !shaders.amoled && shaders.rgbBloom
                 ? `0 0 28px ${theme.hex}33, inset 0 0 18px rgba(0,0,0,0.75)`
                 : 'none',
@@ -1446,6 +1461,39 @@ export const InGameView: React.FC<InGameViewProps> = ({
           >
             {renderGameScreen()}
           </div>
+
+          {/* Authentic Handheld Screen Lens Badge (Only when not in Edge-to-Edge mode) */}
+          {!shaders.edgeToEdge && !isLandscape && (
+            <div className="w-full flex items-center justify-center pt-2 pb-0.5 select-none pointer-events-none">
+              {isGba ? (
+                <div className="flex items-center gap-1.5 opacity-85 tracking-widest text-[11px] font-sans">
+                  <span className="font-black text-zinc-300">GAME BOY</span>
+                  <span className="italic font-black text-indigo-400 text-xs">ADVANCE</span>
+                </div>
+              ) : isGbc ? (
+                <div className="flex items-center gap-1 opacity-85 font-sans font-black tracking-widest text-[10px] text-zinc-300">
+                  <span>GAME BOY</span>
+                  <span className="font-extrabold tracking-normal inline-flex text-[9px] gap-0.5">
+                    <span className="text-rose-500">C</span>
+                    <span className="text-amber-400">O</span>
+                    <span className="text-emerald-400">L</span>
+                    <span className="text-cyan-400">O</span>
+                    <span className="text-indigo-400">R</span>
+                  </span>
+                </div>
+              ) : isGb ? (
+                <div className="w-full flex items-center justify-between px-3 opacity-75">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                    <span className="text-[8px] font-mono font-bold tracking-wider text-zinc-400">BATTERY</span>
+                  </div>
+                  <span className="text-[8px] font-mono font-bold tracking-widest text-zinc-400">
+                    DOT MATRIX WITH STEREO SOUND
+                  </span>
+                </div>
+              ) : null}
+            </div>
+          )}
 
           {/* Compact Transport Bar in Landscape: Positioned cleanly BELOW screen so it never obscures game content */}
           {isLandscape && (
