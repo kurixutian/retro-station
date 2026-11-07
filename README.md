@@ -5,7 +5,7 @@
 
 A tactile, offline-first mobile & web Libretro handheld emulator frontend with automatic core detection, per-game save state slots, customizable on-screen touch controls, CRT/LCD hardware shaders, and private zero-cost Google Drive cloud sync.
 
-## Live Demo
+## Play Now
 
 **Play in your browser:** [https://kurixutian.github.io/retro-station/](https://kurixutian.github.io/retro-station/)
 
