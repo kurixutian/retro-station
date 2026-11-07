@@ -1,4 +1,4 @@
-const CACHE_NAME = 'retro-station-v7';
+const CACHE_NAME = 'retro-station-v9';
 const PRECACHE_ASSETS = [
   './',
   './index.html',
@@ -68,11 +68,43 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 2a. Cross-origin requests (EmulatorJS CDN cores & thumbnails):
-  // Pass straight to the network so requests aren't cached as opaque or blocked.
+  // 2a. Cross-origin requests (EmulatorJS CDN cores & runtime assets):
+  // Runtime-cache cores on successful load so offline play works on the go
   if (reqUrl.origin !== self.location.origin) {
+    if (reqUrl.hostname.includes('emulatorjs.org')) {
+      event.respondWith(
+        caches.match(event.request, { ignoreVary: true }).then((cached) => {
+          if (cached) return cached;
+          return fetch(event.request)
+            .then((networkRes) => {
+              if (
+                networkRes &&
+                (networkRes.status === 200 || networkRes.type === 'opaque')
+              ) {
+                const clone = networkRes.clone();
+                caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+              }
+              return networkRes;
+            })
+            .catch(() => cached);
+        })
+      );
+      return;
+    }
+
     event.respondWith(
-      fetch(event.request).catch(() => caches.match(event.request, { ignoreVary: true }))
+      fetch(event.request)
+        .then((networkRes) => {
+          if (
+            networkRes &&
+            (networkRes.status === 200 || networkRes.type === 'opaque')
+          ) {
+            const clone = networkRes.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
+          return networkRes;
+        })
+        .catch(() => caches.match(event.request, { ignoreVary: true }))
     );
     return;
   }

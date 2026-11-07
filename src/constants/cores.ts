@@ -161,219 +161,27 @@ export function getBoxartUrls(game: any): string[] {
 
   if (clean) {
     candidateTitles.add(clean);
-
-    const commonRegions = [
-      '(USA, Europe)',
-      '(USA)',
-      '(Europe)',
-      '(World)',
-      '(Japan, USA)',
-      '(Japan)',
-      '(USA, Australia)'
-    ];
-
-    for (const reg of commonRegions) {
-      candidateTitles.add(`${clean} ${reg}`);
-    }
-
-    // Title Case version (e.g. "sonic the hedgehog" -> "Sonic The Hedgehog")
-    const titleCased = toTitleCase(clean);
-    if (titleCased !== clean) {
-      candidateTitles.add(titleCased);
-      for (const reg of commonRegions) {
-        candidateTitles.add(`${titleCased} ${reg}`);
-      }
-    }
-
-    // "The " Inversion (No-Intro standard: "Legend of Zelda, The" instead of "The Legend of Zelda")
-    if (/^the\s+/i.test(clean)) {
-      const inverted = `${clean.replace(/^the\s+/i, '').trim()}, The`;
-      candidateTitles.add(inverted);
-      for (const reg of commonRegions) {
-        candidateTitles.add(`${inverted} ${reg}`);
-      }
-    }
-    if (/^the\s+/i.test(titleCased)) {
-      const invertedTC = `${titleCased.replace(/^the\s+/i, '').trim()}, The`;
-      candidateTitles.add(invertedTC);
-      for (const reg of commonRegions) {
-        candidateTitles.add(`${invertedTC} ${reg}`);
-      }
-    }
-
-    // Hyphenated first word (e.g. "Pokemon Emerald" -> "Pokemon - Emerald")
-    if (clean.includes(' ')) {
-      const parts = clean.split(' ');
-      const hyphenated = `${parts[0]} - ${parts.slice(1).join(' ')}`;
-      candidateTitles.add(hyphenated);
-      for (const reg of commonRegions) {
-        candidateTitles.add(`${hyphenated} ${reg}`);
-      }
-    }
-    if (titleCased.includes(' ')) {
-      const parts = titleCased.split(' ');
-      const hyphenatedTC = `${parts[0]} - ${parts.slice(1).join(' ')}`;
-      candidateTitles.add(hyphenatedTC);
-      for (const reg of commonRegions) {
-        candidateTitles.add(`${hyphenatedTC} ${reg}`);
-      }
-    }
-
-    // Franchise-specific enhancements
-    // 1. Pokémon (Libretro uses "Pokemon - [Name] Version (Region)")
-    if (/pokemon/i.test(clean)) {
-      const editions: Record<string, string> = {
-        emerald: 'Emerald',
-        firered: 'FireRed',
-        leafgreen: 'LeafGreen',
-        ruby: 'Ruby',
-        sapphire: 'Sapphire',
-        gold: 'Gold',
-        silver: 'Silver',
-        crystal: 'Crystal',
-        red: 'Red',
-        blue: 'Blue',
-        yellow: 'Yellow'
-      };
-      for (const [key, ed] of Object.entries(editions)) {
-        if (new RegExp(key, 'i').test(clean)) {
-          candidateTitles.add(`Pokemon - ${ed} Version (USA, Europe)`);
-          candidateTitles.add(`Pokemon - ${ed} Version (USA)`);
-          candidateTitles.add(`Pokemon - ${ed} Version (Europe)`);
-          candidateTitles.add(`Pokemon - ${ed} Version`);
-          if (key === 'yellow') {
-            candidateTitles.add('Pokemon - Yellow Version - Special Pikachu Edition (USA, Europe)');
-            candidateTitles.add('Pokemon - Yellow Version - Special Pikachu Edition (USA)');
-          }
-          if (key === 'gold') {
-            candidateTitles.add('Pokemon - Gold Version (USA, Europe) (SGB Enhanced) (GB Compatible)');
-          }
-          if (key === 'silver') {
-            candidateTitles.add('Pokemon - Silver Version (USA, Europe) (SGB Enhanced) (GB Compatible)');
-          }
-        }
-      }
-    }
-
-    // 2. The Legend of Zelda
-    if (/zelda/i.test(clean)) {
-      if (/minish/i.test(clean)) {
-        candidateTitles.add('Legend of Zelda, The - The Minish Cap (USA)');
-        candidateTitles.add('Legend of Zelda, The - The Minish Cap (USA, Europe)');
-        candidateTitles.add('Legend of Zelda, The - The Minish Cap (Europe) (En,Fr,De,Es,It)');
-      }
-      if (/past/i.test(clean)) {
-        candidateTitles.add('Legend of Zelda, The - A Link to the Past _ Four Swords (USA)');
-        candidateTitles.add('Legend of Zelda, The - A Link to the Past _ Four Swords (Europe) (En,Fr,De,Es,It)');
-        candidateTitles.add('Legend of Zelda, The - A Link to the Past (USA)');
-      }
-      if (/awakening/i.test(clean)) {
-        candidateTitles.add("Legend of Zelda, The - Link's Awakening DX (USA, Europe) (Rev 2) (SGB Enhanced) (GB Compatible)");
-        candidateTitles.add("Legend of Zelda, The - Link's Awakening DX (USA, Europe) (SGB Enhanced) (GB Compatible)");
-        candidateTitles.add("Legend of Zelda, The - Link's Awakening DX (USA, Europe)");
-        candidateTitles.add("Legend of Zelda, The - Link's Awakening (USA, Europe)");
-      }
-      if (/seasons/i.test(clean)) {
-        candidateTitles.add('Legend of Zelda, The - Oracle of Seasons (USA, Europe)');
-      }
-      if (/ages/i.test(clean)) {
-        candidateTitles.add('Legend of Zelda, The - Oracle of Ages (USA, Europe)');
-      }
-    }
-
-    // 3. Super Mario
-    if (/mario/i.test(clean)) {
-      if (/world/i.test(clean)) {
-        candidateTitles.add('Super Mario World (USA)');
-        candidateTitles.add('Super Mario World (USA, Europe)');
-        candidateTitles.add('Super Mario Advance 2 - Super Mario World (USA, Europe)');
-      }
-      if (/advance/i.test(clean)) {
-        candidateTitles.add('Super Mario Advance (USA, Europe)');
-        candidateTitles.add('Super Mario Advance 3 - Yoshi\'s Island (USA, Europe)');
-        candidateTitles.add('Super Mario Advance 4 - Super Mario Bros. 3 (USA, Europe)');
-      }
-      if (/bros/i.test(clean) || /brothers/i.test(clean)) {
-        candidateTitles.add('Super Mario Bros. (World)');
-        candidateTitles.add('Super Mario Bros. (USA, Europe)');
-        candidateTitles.add('Super Mario Bros. 3 (USA)');
-        candidateTitles.add('Super Mario Bros. 2 (USA)');
-      }
-      if (/land/i.test(clean)) {
-        candidateTitles.add('Super Mario Land (World)');
-        candidateTitles.add('Super Mario Land 2 - 6 Golden Coins (USA, Europe)');
-      }
-      if (/kart/i.test(clean)) {
-        candidateTitles.add('Super Mario Kart (USA)');
-        candidateTitles.add('Mario Kart - Super Circuit (USA, Europe)');
-      }
-    }
-
-    // 4. Sonic The Hedgehog
-    if (/sonic/i.test(clean)) {
-      candidateTitles.add('Sonic The Hedgehog (USA, Europe)');
-      candidateTitles.add('Sonic The Hedgehog 2 (World)');
-      candidateTitles.add('Sonic The Hedgehog 3 (USA)');
-      candidateTitles.add('Sonic _ Knuckles (World)');
-      candidateTitles.add('Sonic Advance (USA) (En,Ja)');
-      candidateTitles.add('Sonic Advance 2 (USA) (En,Ja,Fr,De,Es,It)');
-    }
-
-    // 5. Metroid
-    if (/metroid/i.test(clean)) {
-      candidateTitles.add('Metroid Fusion (USA, Europe)');
-      candidateTitles.add('Metroid Fusion (USA)');
-      candidateTitles.add('Metroid - Zero Mission (USA)');
-      candidateTitles.add('Super Metroid (Japan, USA)');
-      candidateTitles.add('Metroid (USA)');
-      candidateTitles.add('Metroid II - Return of Samus (World)');
-    }
-
-    // 6. Castlevania
-    if (/castlevania/i.test(clean)) {
-      candidateTitles.add('Castlevania - Aria of Sorrow (USA)');
-      candidateTitles.add('Castlevania - Aria of Sorrow (Europe) (En,Fr,De)');
-      candidateTitles.add('Castlevania - Circle of the Moon (USA)');
-      candidateTitles.add('Castlevania - Harmony of Dissonance (USA)');
-      candidateTitles.add('Super Castlevania IV (USA)');
-      candidateTitles.add('Castlevania - Bloodlines (USA)');
-    }
+    candidateTitles.add(`${clean} (USA)`);
+    candidateTitles.add(`${clean} (World)`);
   }
 
-  // GitHub repo slugs in libretro-thumbnails use underscores instead of spaces
+  // GitHub repo slug in libretro-thumbnails
   const githubRepo = libSystem.replace(/ /g, '_');
   const encodedLibSystem = encodeURIComponent(libSystem);
-
-  // If Game Boy or Game Boy Color, also try the other repo as secondary fallback
-  const systemRepos: string[] = [githubRepo];
-  if (libSystem === 'Nintendo - Game Boy') {
-    systemRepos.push('Nintendo_-_Game_Boy_Color');
-  } else if (libSystem === 'Nintendo - Game Boy Color') {
-    systemRepos.push('Nintendo_-_Game_Boy');
-  }
-
   const primaryUrls: string[] = [];
-  const cdnFallbackUrls: string[] = [];
 
-  for (const repo of systemRepos) {
-    for (const title of candidateTitles) {
-      const safeTitle = sanitizeLibretroTitle(title);
-      const encodedTitle = encodeURIComponent(safeTitle);
-      // Primary: GitHub raw CDN (direct repo slug with underscores)
-      primaryUrls.push(`https://raw.githubusercontent.com/libretro-thumbnails/${repo}/master/Named_Boxarts/${encodedTitle}.png`);
-      // Secondary: jsDelivr CDN
-      cdnFallbackUrls.push(`https://cdn.jsdelivr.net/gh/libretro-thumbnails/${repo}@master/Named_Boxarts/${encodedTitle}.png`);
-    }
+  for (const title of candidateTitles) {
+    const safeTitle = sanitizeLibretroTitle(title);
+    const encodedTitle = encodeURIComponent(safeTitle);
+    primaryUrls.push(`https://raw.githubusercontent.com/libretro-thumbnails/${githubRepo}/master/Named_Boxarts/${encodedTitle}.png`);
   }
 
-  // Combine URLs: Custom covers first, then primary GitHub raw URLs, then jsDelivr fallbacks, then official mirror
+  // Combine: Custom cover -> Libretro repo -> official thumbnail server mirror
   const combined = [
     ...urls,
     ...primaryUrls,
-    ...cdnFallbackUrls,
-    `https://thumbnails.libretro.com/${encodedLibSystem}/Named_Boxarts/${encodeURIComponent(clean)}.png`
+    `https://thumbnails.libretro.com/${encodedLibSystem}/Named_Boxarts/${encodeURIComponent(clean || rawBase)}.png`
   ];
 
-  // Return deduplicated array
-  return Array.from(new Set(combined));
+  return Array.from(new Set(combined)).slice(0, 6);
 }

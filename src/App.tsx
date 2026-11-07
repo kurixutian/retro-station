@@ -18,10 +18,7 @@ import {
 import { idbOpen, idbPut, idbGet, idbDelete } from './services/storage/idb';
 import { soundFX } from './services/audio/synth';
 import { haptics } from './services/haptics';
-import { createEmptySlotsForGame, createPrepopulatedThumbnail, downloadBinaryFile } from './services/storage/saveSlots';
-import { createInitialEngineState } from './demoEngines/engineState';
-import { stepGameFrame } from './demoEngines/gameLogic';
-import { drawGameCanvas } from './demoEngines/gameRenderer';
+import { createEmptySlotsForGame, downloadBinaryFile } from './services/storage/saveSlots';
 import {
   normalizeBinaryData,
   markLocalSaveModified,
@@ -196,45 +193,46 @@ export default function App() {
           }
         } catch (e) {}
       }
-      const hasStateUpdate = keys.some((k) => k.startsWith('state:'));
-      if (hasStateUpdate) {
+      const stateKeys = keys.filter((k) => k.startsWith('state:'));
+      if (stateKeys.length > 0) {
         (async () => {
-          for (const key of keys) {
-            if (key.startsWith('state:')) {
-              const parts = key.split(':');
-              const slotN = parseInt(parts[parts.length - 1], 10);
-              const gId = parts.slice(1, parts.length - 1).join(':');
-              const val = await idbGet(key).catch(() => null);
-              if (val && gId && slotN) {
-                setSavesByGameId((prev) => {
-                  const list = prev[gId] || createEmptySlotsForGame(gId);
-                  return {
-                    ...prev,
-                    [gId]: list.map((s) =>
-                      s.slot === slotN
-                        ? {
-                            slot: slotN,
-                            empty: false,
-                            label: val.label || `Slot #${slotN}`,
-                            timestamp: val.timestamp || '',
-                            score: 0,
-                            frame: 0,
-                            screenshot: val.screenshot || null,
-                            stateData: val.stateData?.engineState
-                              ? val.stateData
-                              : {
-                                  version: 'EJS_STATE',
-                                  gameId: gId,
-                                  timestamp: val.timestamp,
-                                  lazyIdbKey: key,
-                                }
-                          }
-                        : s
-                    )
-                  };
-                });
-              }
+          const updates: Array<{ gId: string; slotN: number; key: string; val: any }> = [];
+          for (const key of stateKeys) {
+            const parts = key.split(':');
+            const slotN = parseInt(parts[parts.length - 1], 10);
+            const gId = parts.slice(1, parts.length - 1).join(':');
+            const val = await idbGet(key).catch(() => null);
+            if (val && gId && slotN) {
+              updates.push({ gId, slotN, key, val });
             }
+          }
+          if (updates.length > 0) {
+            setSavesByGameId((prev) => {
+              const next = { ...prev };
+              for (const { gId, slotN, key, val } of updates) {
+                const list = next[gId] || createEmptySlotsForGame(gId);
+                next[gId] = list.map((s) =>
+                  s.slot === slotN
+                    ? {
+                        slot: slotN,
+                        empty: false,
+                        label: val.label || `Slot #${slotN}`,
+                        timestamp: val.timestamp || '',
+                        score: 0,
+                        frame: 0,
+                        screenshot: val.screenshot || null,
+                        stateData: {
+                          version: 'EJS_STATE',
+                          gameId: gId,
+                          timestamp: val.timestamp,
+                          lazyIdbKey: key,
+                        }
+                      }
+                    : s
+                );
+              }
+              return next;
+            });
           }
         })();
       }
@@ -288,6 +286,7 @@ export default function App() {
         const tx = db.transaction('roms', 'readonly');
         const store = tx.objectStore('roms');
         const req = store.openCursor();
+        const pendingSlots: Array<{ gId: string; slotN: number; key: string; val: any }> = [];
         req.onsuccess = (e) => {
           const cursor = (e.target as IDBRequest).result;
           if (cursor) {
@@ -298,36 +297,40 @@ export default function App() {
               const gId = parts.slice(1, parts.length - 1).join(':');
               const val = cursor.value;
               if (val && gId && slotN) {
-                setSavesByGameId((prev) => {
-                  const list = prev[gId] || createEmptySlotsForGame(gId);
-                  return {
-                    ...prev,
-                    [gId]: list.map((s) =>
-                      s.slot === slotN
-                        ? {
-                            slot: slotN,
-                            empty: false,
-                            label: val.label || `Slot #${slotN}`,
-                            timestamp: val.timestamp || '',
-                            score: 0,
-                            frame: 0,
-                            screenshot: val.screenshot || null,
-                            stateData: val.stateData?.engineState
-                              ? val.stateData
-                              : {
-                                  version: 'EJS_STATE',
-                                  gameId: gId,
-                                  timestamp: val.timestamp,
-                                  lazyIdbKey: key,
-                                }
-                          }
-                        : s
-                    )
-                  };
-                });
+                pendingSlots.push({ gId, slotN, key, val });
               }
             }
             cursor.continue();
+          } else {
+            // Cursor complete: single batched state update
+            if (pendingSlots.length > 0) {
+              setSavesByGameId((prev) => {
+                const next = { ...prev };
+                for (const { gId, slotN, key, val } of pendingSlots) {
+                  const list = next[gId] || createEmptySlotsForGame(gId);
+                  next[gId] = list.map((s) =>
+                    s.slot === slotN
+                      ? {
+                          slot: slotN,
+                          empty: false,
+                          label: val.label || `Slot #${slotN}`,
+                          timestamp: val.timestamp || '',
+                          score: 0,
+                          frame: 0,
+                          screenshot: val.screenshot || null,
+                          stateData: {
+                            version: 'EJS_STATE',
+                            gameId: gId,
+                            timestamp: val.timestamp,
+                            lazyIdbKey: key,
+                          }
+                        }
+                      : s
+                  );
+                }
+                return next;
+              });
+            }
           }
         };
       } catch (err) {}
@@ -514,9 +517,6 @@ export default function App() {
       releaseTimersRef.current[name] = null;
     }
     pressStartTimesRef.current[name] = performance.now();
-    if (!keysRef.current[name] && name in EdgeTapRef.current) {
-      EdgeTapRef.current[name] = true;
-    }
     keysRef.current[name] = true;
     sendKey(name, true);
     if (['up', 'down', 'left', 'right'].includes(name)) {
@@ -597,14 +597,9 @@ export default function App() {
   }, [activeGame?.id, isMuted]);
 
   const [fps, setFps] = useState(60);
-  const [liveScore, setLiveScore] = useState(0);
-  const [liveFrame, setLiveFrame] = useState(0);
   const [controlsModalOpen, setControlsModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const engineStateRef = useRef<any>(createInitialEngineState('pokegold'));
-  const rewindBufferRef = useRef<any[]>([]);
   const keysRef = useRef<Record<string, boolean>>({
     up: false,
     down: false,
@@ -616,14 +611,6 @@ export default function App() {
     actionY: false,
     start: false,
     select: false,
-  });
-  const EdgeTapRef = useRef<Record<string, boolean>>({
-    up: false,
-    down: false,
-    left: false,
-    right: false,
-    actionA: false,
-    actionB: false
   });
 
   const romInputRef = useRef<HTMLInputElement | null>(null);
@@ -864,20 +851,9 @@ export default function App() {
         }
 
         setActiveGame(game);
-        if (optionalStateData && optionalStateData.engineState) {
-          engineStateRef.current = JSON.parse(JSON.stringify(optionalStateData.engineState));
-          setLiveScore(engineStateRef.current.score || 0);
-          setLiveFrame(engineStateRef.current.frame || 0);
-          showToast(`Loaded State (${optionalStateData.timestamp || 'Saved'}) • ${game.title}`);
-        } else if (hasSlotTarget) {
-          engineStateRef.current = createInitialEngineState(game.engineType);
-          setLiveScore(0);
-          setLiveFrame(0);
+        if (hasSlotTarget) {
           showToast(`Loaded State (${optionalStateData?.timestamp || 'Saved'}) • ${game.title}`);
         } else {
-          engineStateRef.current = createInitialEngineState(game.engineType);
-          setLiveScore(0);
-          setLiveFrame(0);
           showToast(`Launching ${game.title} [${game.core}]`);
         }
 
@@ -895,7 +871,6 @@ export default function App() {
         pendingSrmRef.current = srm ? normalizeBinaryData(srm) : null;
         pendingRtcRef.current = rtc ? normalizeBinaryData(rtc) : null;
 
-        rewindBufferRef.current = [];
         setIsPaused(false);
         setIsRewinding(false);
         setFfSpeed(0);
@@ -908,33 +883,7 @@ export default function App() {
       return;
     }
 
-    // Demo/stub games
-    setActiveGame(game);
-    if (optionalStateData && optionalStateData.engineState) {
-      engineStateRef.current = JSON.parse(JSON.stringify(optionalStateData.engineState));
-      setLiveScore(engineStateRef.current.score || 0);
-      setLiveFrame(engineStateRef.current.frame || 0);
-      showToast(`Loaded State (${optionalStateData.timestamp || 'Saved'}) • ${game.title}`);
-    } else {
-      engineStateRef.current = createInitialEngineState(game.engineType);
-      setLiveScore(0);
-      setLiveFrame(0);
-      showToast(`Launching ${game.title} [${game.core}]`);
-    }
-    setRomUrl(null);
-    hasUserInteractedRef.current = false;
-    pendingStateRef.current = normalizeBinaryData(optionalStateData?.emuState) || null;
-    pendingSrmRef.current = null;
-    pendingRtcRef.current = null;
-    rewindBufferRef.current = [];
-    setIsPaused(false);
-    setIsRewinding(false);
-    setFfSpeed(0);
-    setDetailGame(null);
-    setInGameMenuOpen(false);
-    setInGameSaveModalMode(null);
-    setCurrentView('ingame');
-    soundFX.save();
+    showToast('Select a ROM file to launch');
   }, [recordRecentGame, showToast]);
 
   const saveStateToGameSlot = useCallback(async (game: Game, slotNumber: number) => {
@@ -1028,88 +977,6 @@ export default function App() {
       showToast(`Saved ${game.title} → Slot #${slotNumber}`);
       return;
     }
-
-    const canvas = canvasRef.current;
-    let screenshot: string | null = null;
-    if (canvas) {
-      try {
-        const maxW = 320;
-        let w = canvas.width;
-        let h = canvas.height;
-        if (w > maxW) {
-          const s = maxW / w;
-          w = Math.round(w * s);
-          h = Math.round(h * s);
-        }
-        const thumb = document.createElement('canvas');
-        thumb.width = w;
-        thumb.height = h;
-        const ctx = thumb.getContext('2d');
-        if (ctx) {
-          ctx.imageSmoothingEnabled = true;
-          ctx.drawImage(canvas, 0, 0, w, h);
-          screenshot = thumb.toDataURL('image/jpeg', 0.85);
-        } else {
-          screenshot = canvas.toDataURL('image/jpeg', 0.85);
-        }
-      } catch (e) {
-        screenshot = canvas.toDataURL('image/png');
-      }
-    }
-    if (!screenshot) {
-      screenshot = createPrepopulatedThumbnail('overworld');
-    }
-    const clonedEngine = JSON.parse(JSON.stringify(engineStateRef.current));
-    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
-    let customLabel = `Frame ${clonedEngine.frame} • Score ${clonedEngine.score}`;
-    if (game.engineType === 'pokegold') {
-      customLabel = clonedEngine.battle?.active
-        ? `Wild ${clonedEngine.battle.enemyName} • Lv.${clonedEngine.pokeLevel}`
-        : `Route 29 • Lv.${clonedEngine.pokeLevel} (${clonedEngine.caughtCount} Caught)`;
-    }
-
-    const statePayload = {
-      version: 'RETRO_POCKET_V2',
-      gameId: game.id,
-      romFileName: game.fileName,
-      core: game.core,
-      timestamp: timeStr,
-      savedAtISO: new Date().toISOString(),
-      score: clonedEngine.score,
-      frame: clonedEngine.frame,
-      engineState: clonedEngine,
-    };
-
-    setSavesByGameId((prev) => {
-      const existingSlots = prev[game.id] || createEmptySlotsForGame(game.id);
-      const updated = existingSlots.map((s) =>
-        s.slot === slotNumber
-          ? {
-              slot: slotNumber,
-              empty: false,
-              label: customLabel,
-              timestamp: timeStr,
-              score: clonedEngine.score,
-              frame: clonedEngine.frame,
-              screenshot,
-              stateData: statePayload
-            }
-          : s
-      );
-      return { ...prev, [game.id]: updated };
-    });
-
-    idbPut(`state:${game.id}:${slotNumber}`, {
-      slot: slotNumber,
-      label: customLabel,
-      timestamp: timeStr,
-      screenshot,
-      stateData: statePayload
-    }).then(() => markLocalSaveModified(`state:${game.id}:${slotNumber}`)).catch(console.error);
-
-    soundFX.save();
-    showToast(`Saved ${game.title} → Slot #${slotNumber}`);
   }, [showToast]);
 
   const loadStateFromGameSlot = useCallback(async (game: Game, slotNumber: number) => {
@@ -1150,15 +1017,6 @@ export default function App() {
       showToast(`Loaded ${game.title} • Slot #${slotNumber}`);
       return;
     }
-
-    engineStateRef.current = JSON.parse(JSON.stringify(targetSlot.stateData.engineState));
-    setLiveScore(engineStateRef.current.score || 0);
-    setLiveFrame(engineStateRef.current.frame || 0);
-    setIsPaused(false);
-    setInGameSaveModalMode(null);
-    setInGameMenuOpen(false);
-    soundFX.coin();
-    showToast(`Loaded ${game.title} • Slot #${slotNumber}`);
   }, [activeGame.id, currentView, launchGame, savesByGameId, showToast]);
 
   const deleteGameSlot = useCallback((gameId: string, slotNumber: number) => {
@@ -1229,16 +1087,17 @@ export default function App() {
   }, [activeGame?.core, activeGame?.id, activeGame?.real, activeGame?.shortSystem, currentView]);
 
   const handleReturnHome = useCallback(async () => {
-    // 1. Immediately switch back to library view so UI responds with zero lag
-    setCurrentView('home');
     setInGameMenuOpen(false);
 
-    // 2. Flush current game's SRAM/RTC and autosave to local IndexedDB
+    // 1. Flush current game's SRAM/RTC and autosave while iframe is still mounted
     try {
       await flushLiveProgress(true);
     } catch (e) {
       console.warn('[App] flushLiveProgress on return home warning:', e);
     }
+
+    // 2. Switch back to library view
+    setCurrentView('home');
 
     // 3. Mark gameplay inactive so cloud sync isn't deferred
     (window as any).__retroGameplayActive = false;
@@ -1499,57 +1358,7 @@ export default function App() {
     return () => clearInterval(timer);
   }, [activeGame.real, currentView, isPaused, topBarVisible]);
 
-  // 60 FPS Emulation Engine & Canvas Renderer Loop (Demo Games Only)
-  useEffect(() => {
-    if (currentView !== 'ingame' || activeGame.real) return;
 
-    let animId: number;
-    let frameCounter = 0;
-    let fpsTimer = performance.now();
-
-    const loop = (now: number) => {
-      frameCounter++;
-      if (now - fpsTimer >= 500) {
-        const computedFps = Math.min(120, Math.round((frameCounter * 1000) / (now - fpsTimer)));
-        setFps(isPaused ? 0 : computedFps);
-        setLiveScore(engineStateRef.current.score || 0);
-        setLiveFrame(engineStateRef.current.frame || 0);
-        frameCounter = 0;
-        fpsTimer = now;
-      }
-
-      const canvas = canvasRef.current;
-      if (canvas) {
-        const ctx = canvas.getContext('2d');
-        if (!isPaused) {
-          if (isRewinding && rewindBufferRef.current.length > 0) {
-            const prevSnapshot = rewindBufferRef.current.pop();
-            if (prevSnapshot) {
-              engineStateRef.current = prevSnapshot;
-            }
-          } else {
-            const steps = ffSpeed > 1 ? ffSpeed : 1;
-            for (let s = 0; s < steps; s++) {
-              stepGameFrame(engineStateRef.current, keysRef.current, EdgeTapRef);
-              if (engineStateRef.current.frame % 3 === 0) {
-                rewindBufferRef.current.push(JSON.parse(JSON.stringify(engineStateRef.current)));
-                if (rewindBufferRef.current.length > 180) rewindBufferRef.current.shift();
-              }
-            }
-          }
-        }
-
-        if (ctx) {
-          drawGameCanvas(ctx, engineStateRef.current, activeGame, isRewinding, ffSpeed);
-        }
-      }
-
-      animId = requestAnimationFrame(loop);
-    };
-
-    animId = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(animId);
-  }, [activeGame, currentView, ffSpeed, isPaused, isRewinding]);
 
   useEffect(() => {
     try {
@@ -1767,7 +1576,6 @@ export default function App() {
           exportBatterySave={exportBatterySave}
           showToast={showToast}
           emuFrameRef={emuFrameRef}
-          canvasRef={canvasRef}
           deckRef={deckRef}
           slotPortrait={slotPortrait}
           setSlotPortrait={switchSlotPortrait}

@@ -68,7 +68,6 @@ interface InGameViewProps {
   exportBatterySave: (game: any, format: 'sav' | 'srm') => void;
   showToast: (msg: string) => void;
   emuFrameRef: React.RefObject<HTMLIFrameElement | null>;
-  canvasRef: React.RefObject<HTMLCanvasElement | null>;
   deckRef: React.RefObject<HTMLDivElement | null>;
   slotPortrait: LayoutSlot;
   setSlotPortrait: (slot: LayoutSlot) => void;
@@ -122,7 +121,6 @@ export const InGameView: React.FC<InGameViewProps> = ({
   exportBatterySave,
   showToast,
   emuFrameRef,
-  canvasRef,
   deckRef,
   slotPortrait,
   setSlotPortrait,
@@ -711,13 +709,9 @@ export const InGameView: React.FC<InGameViewProps> = ({
             </div>
           )
         ) : (
-          <canvas
-            ref={canvasRef}
-            width={320}
-            height={240}
-            className="w-full h-full object-fill block"
-            style={{ imageRendering: 'pixelated', filter: gameFilter }}
-          />
+          <div className="w-full h-full flex items-center justify-center text-xs font-mono text-zinc-400">
+            No ROM loaded
+          </div>
         )}
 
       {/* Shader Layer 1: CRT Horizontal Scanlines */}

@@ -125,6 +125,14 @@ export default {
 
       // POST / PUT: Merge incoming save batch
       if (request.method === 'POST' || request.method === 'PUT') {
+        const contentLength = parseInt(request.headers.get('content-length') || '0', 10);
+        if (contentLength > 5 * 1024 * 1024) {
+          return new Response(JSON.stringify({ error: 'Payload too large (>5MB)' }), {
+            status: 413,
+            headers: corsHeaders,
+          });
+        }
+
         let body;
         try {
           body = await request.json();
@@ -226,8 +234,15 @@ export default {
         );
       }
 
-      // DELETE: Delete saved vault for this code
+      // DELETE: Delete saved vault for this code (requires explicit confirmation)
       if (request.method === 'DELETE') {
+        const confirmHeader = request.headers.get('X-Confirm-Delete');
+        if (confirmHeader !== 'true' && confirmHeader !== rawCode) {
+          return new Response(
+            JSON.stringify({ error: 'Missing X-Confirm-Delete confirmation header' }),
+            { status: 403, headers: corsHeaders }
+          );
+        }
         await storage.delete();
         return new Response(
           JSON.stringify({ success: true, message: 'Vault purged' }),

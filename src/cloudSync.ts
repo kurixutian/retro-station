@@ -870,10 +870,10 @@ export async function syncNow(): Promise<{
       }
     }
 
-    // 5. Send POST batch to remote in safe, lightweight chunks (<= 160KB)
+    // 5. Send POST batch to remote in safe, consolidated chunks (<= 1MB)
     const uploadEntries = Object.entries(itemsToUpload);
     if (uploadEntries.length > 0) {
-      const MAX_BATCH_BYTES = 160 * 1024;
+      const MAX_BATCH_BYTES = 1024 * 1024;
       const batches: Record<string, SyncVaultItem>[] = [];
       let currentBatch: Record<string, SyncVaultItem> = {};
       let currentSize = 0;
