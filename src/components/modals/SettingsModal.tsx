@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Sliders, X, Tv, Palette, Check, Vibrate, Cloud, ChevronRight, Sparkles, Gamepad2, Download, Upload, HardDrive } from 'lucide-react';
+import { Sliders, X, Tv, Palette, Check, Vibrate, Cloud, ChevronRight, Sparkles, Gamepad2, Download, Upload, HardDrive, Coffee } from 'lucide-react';
 import { THEMES } from '../../constants/themes';
 import { COLOR_PROFILES } from '../../constants/shaders';
 import { Theme } from '../../types';
@@ -513,6 +513,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
             </div>
           )}
+
+          {/* Support / Buy Me a Coffee Footer Banner */}
+          <a
+            href="https://buymeacoffee.com/kurixutian"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full p-3.5 rounded-2xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-200 flex items-center justify-between gap-3 tactile-btn transition"
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-amber-400/20 border border-amber-400/40 flex items-center justify-center text-amber-300 shrink-0">
+                <Coffee className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="text-xs font-extrabold text-white">Enjoying Retro Pocket?</div>
+                <div className="text-[11px] text-amber-300/90">Buy me a coffee to support development</div>
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-amber-300 shrink-0" />
+          </a>
         </div>
       </div>
     </div>

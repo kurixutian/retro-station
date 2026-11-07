@@ -3,13 +3,12 @@ import {
   Gamepad2,
   HardDrive,
   Plus,
-  Search,
   Settings,
   Play,
-  X,
   Cloud,
   Shuffle,
   History,
+  Coffee,
 } from 'lucide-react';
 import { Game, Theme } from '../../types';
 import { formatGameTitle } from '../../constants/cores';
@@ -88,25 +87,6 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       .filter((g): g is Game => Boolean(g));
   }, [recentGameIds, games]);
 
-  // ── Keyboard Shortcut (/ or Ctrl+K) to Open Search ─────────────────────
-  const searchInputRef = React.useRef<HTMLInputElement | null>(null);
-
-  React.useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName;
-      const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
-      if ((e.key === '/' && !isInput) || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k')) {
-        e.preventDefault();
-        setShowSearch(true);
-        setTimeout(() => searchInputRef.current?.focus(), 20);
-      } else if (e.key === 'Escape' && showSearch) {
-        setShowSearch(false);
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [showSearch, setShowSearch]);
-
   // ── Blurred Background of Randomized Installed ROMs (GPU-capped 4 tiles) ──
   const bgGames = React.useMemo(() => {
     if (games.length === 0) return [];
@@ -161,20 +141,18 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             </div>
           </div>
 
-          {/* Right Action Buttons: Search, + Load ROM, Cloud Vault, Controls, Settings */}
+          {/* Right Action Buttons: Buy Me a Coffee, + Load ROM, Cloud Vault, Controls, Settings */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            <button
-              onClick={() => setShowSearch((s) => !s)}
-              className={`p-2 sm:p-2.5 rounded-xl border tactile-btn transition flex items-center justify-center ${
-                showSearch
-                  ? 'bg-zinc-800 border-zinc-700 text-white shadow'
-                  : 'bg-zinc-900/90 hover:bg-zinc-800 border-zinc-800 text-zinc-300'
-              }`}
-              title="Search games"
-              aria-label="Toggle Search"
+            <a
+              href="https://buymeacoffee.com/kurixutian"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-2 sm:p-2.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 tactile-btn transition flex items-center justify-center"
+              title="Buy Me a Coffee"
+              aria-label="Buy Me a Coffee"
             >
-              <Search className="w-4 h-4 text-sky-400" />
-            </button>
+              <Coffee className="w-4 h-4 text-amber-400 shrink-0" />
+            </a>
 
             <button
               onClick={onTriggerAddRom}
@@ -224,31 +202,6 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             </button>
           </div>
         </div>
-
-        {/* Collapsible Search Bar */}
-        {showSearch && (
-          <div className="mt-2.5 max-w-6xl mx-auto relative">
-            <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              ref={searchInputRef}
-              type="text"
-              autoFocus
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search loaded ROMs or systems... (Press / or Esc)"
-              className="w-full bg-zinc-900/90 border border-zinc-800 rounded-xl pl-8 pr-8 py-2 text-xs text-zinc-100 outline-none"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-200"
-                aria-label="Clear search"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-        )}
       </header>
 
       {/* Main Content Container */}
