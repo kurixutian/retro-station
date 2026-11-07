@@ -50,6 +50,11 @@ class HapticsService {
     this.trigger(8);
   }
 
+  /** Subtle magnetic tick for Canva-style guidelines and snap grid locks */
+  public selection() {
+    this.trigger(6);
+  }
+
   /** Double pulse for toggles (2x Speed, Pause, Rewind) */
   public toggle() {
     this.trigger([10, 30, 12]);

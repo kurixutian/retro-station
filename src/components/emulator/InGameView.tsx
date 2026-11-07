@@ -22,6 +22,7 @@ import {
   RefreshCw,
   Gamepad2,
   GripHorizontal,
+  GripVertical,
   Layers,
   Pencil,
   Check,
@@ -40,7 +41,7 @@ import {
 import { getComputedGameFilter } from '../../constants/shaders';
 import { buildPlayerHtml } from '../../services/emulator/playerBridge';
 import { haptics } from '../../services/haptics';
-import { PadGroup } from '../controls/PadGroup';
+import { PadGroup, SnapGuide } from '../controls/PadGroup';
 
 interface InGameViewProps {
   activeGame: Game;
@@ -349,6 +350,13 @@ export const InGameView: React.FC<InGameViewProps> = ({
       } catch (err) {}
     }
   };
+
+  // ── Canva-style Snap Guides & Screen Dragging ─────────────────────────────
+  const [activeSnapGuide, setActiveSnapGuide] = React.useState<SnapGuide | null>(null);
+  const screenDraggingRef = React.useRef(false);
+  const screenStartClientYRef = React.useRef(0);
+  const screenInitialYRef = React.useRef(0.5);
+  const screenSnappedRef = React.useRef(false);
 
   // ── Layout names and inline renaming ──────────────────────────────────────
   const [layoutNames, setLayoutNames] = React.useState<Record<LayoutSlot, string>>(() => getLayoutNames(isLandscape, systemKey));
@@ -826,6 +834,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
 
   const transportScale = padLayout.transport?.s ?? 1;
   const screenScale = padLayout.screen?.s ?? 1;
+  const screenY = padLayout.screen?.y ?? 0.5;
 
   const renderCustomizer = () => {
     const activeKey = selectedPad;
@@ -984,6 +993,52 @@ export const InGameView: React.FC<InGameViewProps> = ({
           </button>
         </div>
 
+        {/* Screen Vertical Slide Position Slider (Centered X, Only Moves Y Up/Down) */}
+        {isScreen && !isLandscape && (
+          <div className="space-y-1 pt-1.5 border-t border-zinc-800/80">
+            <div className="flex items-center justify-between text-[11px] font-bold text-zinc-300">
+              <span className="flex items-center gap-1.5">
+                <span>Vertical Position</span>
+                <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-zinc-800 text-emerald-400">Centered X</span>
+              </span>
+              <span className="text-[10px] font-mono text-emerald-400">
+                {screenY === 0.5 ? 'Center (0%)' : `${Math.round((screenY - 0.5) * 200)}%`}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[9px] font-mono text-zinc-500">Up</span>
+              <input
+                type="range"
+                min="0.1"
+                max="0.9"
+                step="0.02"
+                value={screenY}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value);
+                  const snapped = Math.abs(val - 0.5) < 0.03 ? 0.5 : val;
+                  if (snapped === 0.5 && screenY !== 0.5) {
+                    haptics.selection();
+                  }
+                  movePad('screen', 0.5, snapped);
+                }}
+                className="flex-1 accent-emerald-500 cursor-pointer"
+              />
+              <span className="text-[9px] font-mono text-zinc-500">Down</span>
+              <button
+                type="button"
+                onClick={() => {
+                  movePad('screen', 0.5, 0.5);
+                  haptics.selection();
+                }}
+                className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[10px] font-bold transition active:scale-95"
+                title="Reset to center"
+              >
+                Center
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Pad Selection Pills (both portrait and landscape) */}
         <div className="grid grid-cols-5 gap-1 pt-1 border-t border-zinc-800/80">
           {(['screen', 'dpad', 'actions', 'system', 'transport'] as PadGroupId[]).map((key) => (
@@ -1011,7 +1066,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
 
         {selectedPad === 'screen' && (
           <div className="text-[10px] text-zinc-400 text-center">
-            Adjust slider to resize the game screen
+            Slide screen up/down or adjust scale. Screen stays strictly centered horizontally.
           </div>
         )}
         {selectedPad === 'transport' && (
@@ -1452,6 +1507,9 @@ export const InGameView: React.FC<InGameViewProps> = ({
               height: isLandscape
                 ? `calc((100lvh - ${Math.round(22 * transportScale + 10)}px) * ${screenScale})`
                 : 'auto',
+              transform: !isLandscape && screenY !== 0.5
+                ? `translateY(calc(${(screenY - 0.5) * 30}vh))`
+                : undefined,
               boxShadow: !shaders.edgeToEdge && !shaders.amoled && shaders.rgbBloom
                 ? `0 0 28px ${theme.hex}33, inset 0 0 18px rgba(0,0,0,0.75)`
                 : 'none',
@@ -1460,6 +1518,76 @@ export const InGameView: React.FC<InGameViewProps> = ({
             }}
           >
             {renderGameScreen()}
+
+            {/* Direct Vertical Screen Drag Handle in Customizing Mode (Strictly Centered Horizontally) */}
+            {customizing && (
+              <div
+                className={`absolute inset-0 touch-none cursor-ns-resize pointer-events-auto z-30 flex items-center justify-center ${
+                  selectedPad === 'screen'
+                    ? 'border-2 border-dashed border-emerald-400 bg-emerald-400/15'
+                    : 'border-2 border-dashed border-white/40 bg-black/40 hover:border-emerald-400/60'
+                }`}
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  try {
+                    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                  } catch (err) {}
+                  screenDraggingRef.current = true;
+                  screenStartClientYRef.current = e.clientY;
+                  screenInitialYRef.current = padLayout.screen?.y ?? 0.5;
+                  setSelectedPad('screen');
+                }}
+                onPointerMove={(e) => {
+                  if (!screenDraggingRef.current) return;
+                  const deltaY = (e.clientY - screenStartClientYRef.current) / (window.innerHeight * 0.35);
+                  const rawY = Math.min(0.9, Math.max(0.1, screenInitialYRef.current + deltaY));
+                  let snappedY = rawY;
+                  let snapLabel: string | null = null;
+                  if (Math.abs(rawY - 0.5) < 0.035) {
+                    snappedY = 0.5;
+                    snapLabel = 'Screen Centered (0%)';
+                    if (!screenSnappedRef.current) {
+                      haptics.selection();
+                      screenSnappedRef.current = true;
+                    }
+                  } else {
+                    screenSnappedRef.current = false;
+                    const offsetPct = Math.round((snappedY - 0.5) * 200);
+                    snapLabel = offsetPct > 0 ? `Screen Slide Down +${offsetPct}%` : `Screen Slide Up ${offsetPct}%`;
+                  }
+                  setActiveSnapGuide({ y: snappedY === 0.5 ? 0.5 : null, label: snapLabel });
+                  movePad('screen', 0.5, snappedY); // X is strictly 0.5 (CENTERED, NO LEFT/RIGHT!)
+                }}
+                onPointerUp={(e) => {
+                  if (screenDraggingRef.current) {
+                    screenDraggingRef.current = false;
+                    screenSnappedRef.current = false;
+                    setActiveSnapGuide(null);
+                    try {
+                      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+                    } catch (err) {}
+                  }
+                }}
+                onPointerCancel={(e) => {
+                  if (screenDraggingRef.current) {
+                    screenDraggingRef.current = false;
+                    screenSnappedRef.current = false;
+                    setActiveSnapGuide(null);
+                    try {
+                      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+                    } catch (err) {}
+                  }
+                }}
+              >
+                {selectedPad === 'screen' && (
+                  <div className="px-3 py-1.5 rounded-xl bg-black/85 border border-emerald-400/80 text-emerald-300 text-xs font-mono font-bold shadow-2xl flex items-center gap-2 pointer-events-none select-none backdrop-blur-md">
+                    <GripVertical className="w-4 h-4 text-emerald-400" />
+                    <span>Slide Up / Down • Centered X</span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Authentic Handheld Screen Lens Badge (Only when not in Edge-to-Edge mode) */}
@@ -1534,6 +1662,37 @@ export const InGameView: React.FC<InGameViewProps> = ({
             ref={landscapeDeckRef}
             className="absolute inset-0 pointer-events-none z-20 overflow-hidden select-none"
           >
+            {/* Canva Alignment Dot Grid & Guidelines (visible when customizing) */}
+            {customizing && (
+              <div className="absolute inset-0 pointer-events-none z-10 overflow-hidden">
+                <div
+                  className="absolute inset-0 opacity-15"
+                  style={{
+                    backgroundImage: 'radial-gradient(circle, rgba(255, 255, 255, 0.4) 1px, transparent 1px)',
+                    backgroundSize: '24px 24px'
+                  }}
+                />
+                {activeSnapGuide?.x != null && (
+                  <div
+                    className="absolute top-0 bottom-0 w-0 border-l-2 border-dashed border-cyan-400 z-30 shadow-[0_0_12px_rgba(6,182,212,0.9)]"
+                    style={{ left: `${activeSnapGuide.x * 100}%` }}
+                  />
+                )}
+                {activeSnapGuide?.y != null && (
+                  <div
+                    className="absolute left-0 right-0 h-0 border-t-2 border-dashed border-cyan-400 z-30 shadow-[0_0_12px_rgba(6,182,212,0.9)]"
+                    style={{ top: `${activeSnapGuide.y * 100}%` }}
+                  />
+                )}
+                {activeSnapGuide?.label && (
+                  <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 px-2.5 py-1 rounded-full bg-cyan-950/90 border border-cyan-400/80 text-cyan-200 text-[10px] font-mono font-bold shadow-xl flex items-center gap-1.5 backdrop-blur-md">
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                    <span>{activeSnapGuide.label}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Movable D-Pad */}
             <PadGroup
               id="dpad"
@@ -1542,6 +1701,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
               selected={customizing && selectedPad === 'dpad'}
               onSelect={setSelectedPad}
               onMove={movePad}
+              onSnapGuide={setActiveSnapGuide}
               deckRef={landscapeDeckRef}
             >
               <div className="pointer-events-auto">
@@ -1557,6 +1717,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
               selected={customizing && selectedPad === 'actions'}
               onSelect={setSelectedPad}
               onMove={movePad}
+              onSnapGuide={setActiveSnapGuide}
               deckRef={landscapeDeckRef}
             >
               <div className="pointer-events-auto">
@@ -1687,6 +1848,45 @@ export const InGameView: React.FC<InGameViewProps> = ({
             }}
             onContextMenu={(e) => e.preventDefault()}
           >
+            {/* Canva Alignment Dot Grid & Guidelines (visible when customizing) */}
+            {customizing && (
+              <div className="absolute inset-0 pointer-events-none z-10 overflow-hidden">
+                {/* Dot Grid Pattern */}
+                <div
+                  className="absolute inset-0 opacity-20"
+                  style={{
+                    backgroundImage: 'radial-gradient(circle, rgba(255, 255, 255, 0.4) 1px, transparent 1px)',
+                    backgroundSize: '24px 24px'
+                  }}
+                />
+                {/* Center Crosshair Lines (Faint) */}
+                <div className="absolute left-1/2 top-0 bottom-0 w-[1px] border-l border-dashed border-white/10" />
+                <div className="absolute top-1/2 left-0 right-0 h-[1px] border-t border-dashed border-white/10" />
+
+                {/* Magnetic Snap Guidelines (Active Canva Lines) */}
+                {activeSnapGuide?.x != null && (
+                  <div
+                    className="absolute top-0 bottom-0 w-0 border-l-2 border-dashed border-cyan-400 z-30 shadow-[0_0_12px_rgba(6,182,212,0.9)] transition-all duration-75"
+                    style={{ left: `${activeSnapGuide.x * 100}%` }}
+                  />
+                )}
+                {activeSnapGuide?.y != null && (
+                  <div
+                    className="absolute left-0 right-0 h-0 border-t-2 border-dashed border-cyan-400 z-30 shadow-[0_0_12px_rgba(6,182,212,0.9)] transition-all duration-75"
+                    style={{ top: `${activeSnapGuide.y * 100}%` }}
+                  />
+                )}
+
+                {/* Canva Alignment Floating Pill Badge */}
+                {activeSnapGuide?.label && (
+                  <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 px-2.5 py-1 rounded-full bg-cyan-950/90 border border-cyan-400/80 text-cyan-200 text-[10px] font-mono font-bold shadow-xl animate-fade-in flex items-center gap-1.5 backdrop-blur-md">
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                    <span>{activeSnapGuide.label}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* L & R Shoulder Buttons in Portrait */}
             {(!hidePad || customizing) && (
               <div className="absolute top-2.5 left-4 right-4 z-20 flex justify-between pointer-events-none">
@@ -1724,6 +1924,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
               selected={customizing && selectedPad === 'transport'}
               onSelect={setSelectedPad}
               onMove={movePad}
+              onSnapGuide={setActiveSnapGuide}
               deckRef={deckRef}
             >
               {renderTransport(false)}
@@ -1737,6 +1938,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 selected={customizing && selectedPad === 'dpad'}
                 onSelect={setSelectedPad}
                 onMove={movePad}
+                onSnapGuide={setActiveSnapGuide}
                 deckRef={deckRef}
               >
                 {renderDpad()}
@@ -1751,6 +1953,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 selected={customizing && selectedPad === 'actions'}
                 onSelect={setSelectedPad}
                 onMove={movePad}
+                onSnapGuide={setActiveSnapGuide}
                 deckRef={deckRef}
               >
                 {renderActions()}
@@ -1765,6 +1968,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 selected={customizing && selectedPad === 'system'}
                 onSelect={setSelectedPad}
                 onMove={movePad}
+                onSnapGuide={setActiveSnapGuide}
                 deckRef={deckRef}
               >
                 {renderSystem()}
