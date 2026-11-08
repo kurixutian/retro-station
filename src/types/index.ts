@@ -55,7 +55,6 @@ export interface Theme {
   btnB: string;
   btnXY: string;
   hex: string;
-  customAccent?: string;
 }
 
 export interface PadGroupPosition {

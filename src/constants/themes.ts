@@ -3,7 +3,7 @@ import { Theme } from '../types';
 export const THEMES: Record<string, Theme> = {
   midnight: {
     id: 'midnight',
-    name: 'Vader Obsidian',
+    name: 'Dark Mode',
     desc: 'Deep imperial obsidian gloss shell with cyber emerald and crimson phosphor accents',
     isLight: false,
     appBg: 'bg-zinc-950 text-zinc-100',
@@ -23,7 +23,7 @@ export const THEMES: Record<string, Theme> = {
   },
   trooper: {
     id: 'trooper',
-    name: 'Trooper White',
+    name: 'Light Mode',
     desc: 'Armor-white Game Boy pebble shell with matte black controls and magenta strike buttons',
     isLight: true,
     appBg: 'bg-[#ece9e2] text-zinc-900',

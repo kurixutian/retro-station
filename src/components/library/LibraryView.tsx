@@ -271,7 +271,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                     ? 'bg-stone-200 hover:bg-stone-300 border-stone-300 text-zinc-800'
                     : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-800 text-zinc-200'
                 }`}
-                title={theme.isLight ? 'Switch to Vader Obsidian (Dark Mode)' : 'Switch to Trooper White (Light Mode)'}
+                title={theme.isLight ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
                 aria-label="Toggle Light/Dark Theme"
               >
                 {theme.isLight ? (

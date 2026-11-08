@@ -1353,14 +1353,14 @@ export const InGameView: React.FC<InGameViewProps> = ({
                   <button
                     onClick={onToggleLightDark}
                     className="flex flex-col items-center justify-center gap-1 p-2 rounded-xl bg-zinc-900/80 hover:bg-zinc-900 border border-zinc-800 text-zinc-300 text-center transition active:scale-95"
-                    title={theme.isLight ? 'Switch to Vader Obsidian (Dark Mode)' : 'Switch to Trooper White (Light Mode)'}
+                    title={theme.isLight ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
                   >
                     {theme.isLight ? (
                       <Moon className="w-4 h-4 text-indigo-400" />
                     ) : (
                       <Sun className="w-4 h-4 text-amber-400" />
                     )}
-                    <span className="text-[10px] font-bold">{theme.isLight ? 'Vader' : 'Trooper'}</span>
+                    <span className="text-[10px] font-bold">{theme.isLight ? 'Dark' : 'Light'}</span>
                   </button>
                 )}
               </div>
