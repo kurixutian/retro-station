@@ -30,3 +30,13 @@ test('sanitizeLibretroTitle replaces forbidden filename characters', () => {
   assert.equal(sanitizeLibretroTitle('Sonic & Knuckles: Special / Edition'), 'Sonic _ Knuckles_ Special _ Edition');
   assert.equal(sanitizeLibretroTitle('Game <Name>?*|`"'), 'Game _Name______');
 });
+
+test('input polling is configured for late reads during fast-forward', async () => {
+  const { buildPlayerHtml } = await import('../src/services/emulator/playerBridge.ts');
+  const html = buildPlayerHtml('gba', 'rom.gba');
+  // RetroArch poll types: 0 = early, 1 = normal (default), 2 = late.
+  assert.match(html, /input_poll_type_behavior",default:2,isString:false/);
+  assert.match(html, /input_poll_type_behavior = 2/);
+  assert.ok(!/input_poll_type_behavior",default:1/.test(html));
+  assert.ok(!/input_poll_type_behavior = 1/.test(html));
+});

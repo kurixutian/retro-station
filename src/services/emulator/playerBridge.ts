@@ -33,6 +33,7 @@ export function buildPlayerHtml(core: string, romUrl: string, title?: string): s
     '  {name:"notification_show_fast_forward",default:false,isString:false},' +
     '  {name:"fastforward_frameskip",default:true,isString:false},' +
     '  {name:"fastforward_ratio",default:0.0,isString:false},' +
+    '  {name:"input_poll_type_behavior",default:2,isString:false},' +
     '  {name:"rewind_enable",default:true,isString:false},' +
     '  {name:"rewind_granularity",default:1,isString:false},' +
     '  {name:"rewind_buffer_size",default:30,isString:false}' +
@@ -48,10 +49,12 @@ export function buildPlayerHtml(core: string, romUrl: string, title?: string): s
     '      _realGM.prototype.getRetroArchCfg=function(){' +
     '        var cfg=_origCfg.call(this);' +
     '        cfg=cfg.replace(/fastforward_ratio\\s*=\\s*[^\\n]+/g,"fastforward_ratio = 0.0");' +
+    '        cfg=cfg.replace(/input_poll_type_behavior\\s*=\\s*[^\\n]+/g,"input_poll_type_behavior = 2");' +
     '        cfg+="video_font_enable = false\\n";' +
     '        cfg+="notification_show_fast_forward = false\\n";' +
     '        cfg+="fastforward_frameskip = true\\n";' +
     '        cfg+="fastforward_ratio = 0.0\\n";' +
+    '        cfg+="input_poll_type_behavior = 2\\n";' +
     '        cfg+="rewind_enable = \\"true\\"\\n";' +
     '        cfg+="rewind_granularity = \\"1\\"\\n";' +
     '        cfg+="rewind_buffer_size = \\"30\\"\\n";' +
