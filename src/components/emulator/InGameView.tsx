@@ -547,39 +547,39 @@ export const InGameView: React.FC<InGameViewProps> = ({
   );
 
   const renderActions = () => (
-    <div className="relative w-44 h-36 select-none touch-none flex items-center justify-center">
-      {/* Molded Recessed Shell Socket Bed */}
+    <div className="relative select-none touch-none flex items-center justify-center p-2">
+      {/* Molded Recessed Shell Socket Bed with -25deg Rotation */}
       <div
-        className="absolute inset-x-1 inset-y-2 rounded-[36px] gb-socket-bed -rotate-[25deg] pointer-events-none"
+        className="rounded-[40px] gb-socket-bed flex items-center gap-4 px-3.5 py-2.5 -rotate-[25deg]"
         aria-hidden="true"
-      />
+      >
+        {/* Button B (Left in rotated frame -> lower-left physically) */}
+        <div className="flex flex-col items-center">
+          <button
+            type="button"
+            {...safeBindPadButton('actionB')}
+            className="rounded-full font-black text-base flex items-center justify-center touch-none select-none gb-action-dome"
+            style={{ width: '3.4rem', height: '3.4rem' }}
+            aria-label="Button B"
+          />
+          <span className="mt-1.5 text-[12px] font-black italic tracking-widest text-indigo-900 dark:text-indigo-300 drop-shadow-[0_1px_0_rgba(255,255,255,0.3)] select-none">
+            B
+          </span>
+        </div>
 
-      {/* B Button (Bottom-Left) */}
-      <div className="absolute bottom-2 left-3 flex flex-col items-center z-10">
-        <button
-          type="button"
-          {...safeBindPadButton('actionB')}
-          className="rounded-full font-black text-base flex items-center justify-center touch-none select-none gb-action-dome"
-          style={{ width: '3.4rem', height: '3.4rem' }}
-          aria-label="Button B"
-        />
-        <span className="mt-1 text-[12px] font-black italic tracking-widest text-indigo-900 dark:text-indigo-300 drop-shadow-[0_1px_0_rgba(255,255,255,0.3)] select-none">
-          B
-        </span>
-      </div>
-
-      {/* A Button (Top-Right) */}
-      <div className="absolute top-2 right-3 flex flex-col items-center z-10">
-        <button
-          type="button"
-          {...safeBindPadButton('actionA')}
-          className="rounded-full font-black text-base flex items-center justify-center touch-none select-none gb-action-dome"
-          style={{ width: '3.4rem', height: '3.4rem' }}
-          aria-label="Button A"
-        />
-        <span className="mt-1 text-[12px] font-black italic tracking-widest text-indigo-900 dark:text-indigo-300 drop-shadow-[0_1px_0_rgba(255,255,255,0.3)] select-none">
-          A
-        </span>
+        {/* Button A (Right in rotated frame -> upper-right physically) */}
+        <div className="flex flex-col items-center">
+          <button
+            type="button"
+            {...safeBindPadButton('actionA')}
+            className="rounded-full font-black text-base flex items-center justify-center touch-none select-none gb-action-dome"
+            style={{ width: '3.4rem', height: '3.4rem' }}
+            aria-label="Button A"
+          />
+          <span className="mt-1.5 text-[12px] font-black italic tracking-widest text-indigo-900 dark:text-indigo-300 drop-shadow-[0_1px_0_rgba(255,255,255,0.3)] select-none">
+            A
+          </span>
+        </div>
       </div>
     </div>
   );
