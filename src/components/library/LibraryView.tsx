@@ -253,9 +253,18 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       <main className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 pt-5 space-y-7">
         {/* Slot-1 Active Cartridge Deck Bay */}
         {featuredGame && (
-          <div className="relative rounded-3xl overflow-hidden border border-zinc-800/90 shadow-2xl p-4 sm:p-6 hardware-panel bg-zinc-950/90">
+          <div className="relative rounded-3xl overflow-hidden border border-zinc-800/90 shadow-2xl p-4 sm:p-6 hardware-panel bg-zinc-950">
+            {/* Ambient Cartridge Art Backdrop */}
+            <div className="absolute inset-0 pointer-events-none overflow-hidden select-none z-0">
+              <div className="w-full h-full opacity-25 sm:opacity-30 blur-xl hero-art-pan scale-110">
+                <AmbientBackdropTile game={featuredGame} theme={theme} />
+              </div>
+              <div className="absolute inset-0 bg-gradient-to-r from-zinc-950/95 via-zinc-950/80 to-zinc-950/90" />
+              <div className="absolute inset-0 bg-gradient-to-t from-zinc-950/95 via-transparent to-zinc-950/50" />
+            </div>
+
             {/* Molded Cartridge Slot Top Grip Rib */}
-            <div className="h-3 w-full rounded-t-xl bg-black/60 border-b border-white/5 mb-4 flex items-center justify-between px-3">
+            <div className="relative z-10 h-3 w-full rounded-t-xl bg-black/60 border-b border-white/5 mb-4 flex items-center justify-between px-3">
               <div className="w-24 h-full cartridge-grip opacity-50" />
               <div className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 hardware-led" />
