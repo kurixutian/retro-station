@@ -26,14 +26,16 @@ export function buildPlayerHtml(core: string, romUrl: string, title?: string): s
     'window.EJS_startOnLoaded=true;' +
     'window.EJS_fixedSaveInterval=10000;' +
     'window.EJS_VirtualGamepadSettings=[];' +
-    'window.EJS_coreOpts=' + (isGba ? '{"mgba_frameskip":"auto","mgba_frameskip_threshold":"33"}' : '{}') + ';' +
-    'window.EJS_defaultOptions={"virtual-gamepad":"disabled","settings.virtual-gamepad":"disabled","ff-ratio":"2"};' +
+    'window.EJS_coreOpts=' + (isGba ? '{"mgba_frameskip":"0"}' : '{}') + ';' +
+    'window.EJS_defaultOptions={"virtual-gamepad":"disabled","settings.virtual-gamepad":"disabled","ff-ratio":"2","rewindEnabled":"enabled"};' +
     'window.EJS_retroarchOpts=[' +
     '  {name:"video_font_enable",default:false,isString:false},' +
     '  {name:"notification_show_fast_forward",default:false,isString:false},' +
     '  {name:"fastforward_frameskip",default:true,isString:false},' +
-    '  {name:"fastforward_ratio",default:0.0,isString:false}' +
-    (isGba ? ',  {name:"mgba_frameskip",default:"auto",isString:true}' : '') +
+    '  {name:"fastforward_ratio",default:0.0,isString:false},' +
+    '  {name:"rewind_enable",default:true,isString:false},' +
+    '  {name:"rewind_granularity",default:1,isString:false},' +
+    '  {name:"rewind_buffer_size",default:30,isString:false}' +
     '];' +
     'var _realGM=undefined;' +
     'Object.defineProperty(window,"EJS_GameManager",{' +
@@ -50,7 +52,9 @@ export function buildPlayerHtml(core: string, romUrl: string, title?: string): s
     '        cfg+="notification_show_fast_forward = false\\n";' +
     '        cfg+="fastforward_frameskip = true\\n";' +
     '        cfg+="fastforward_ratio = 0.0\\n";' +
-    (isGba ? '        cfg+="mgba_frameskip = \\"auto\\"\\n";cfg+="mgba_frameskip_threshold = \\"33\\"\\n";' : '') +
+    '        cfg+="rewind_enable = \\"true\\"\\n";' +
+    '        cfg+="rewind_granularity = \\"1\\"\\n";' +
+    '        cfg+="rewind_buffer_size = \\"30\\"\\n";' +
     '        return cfg;' +
     '      };' +
     '    }' +
@@ -102,36 +106,52 @@ export function buildPlayerHtml(core: string, romUrl: string, title?: string): s
     '  var key=String(name).toLowerCase();' +
     '  var idx=_btnIndexMap[key];' +
     '  window._markInteracted&&window._markInteracted();' +
-    '  var sendDirect=function(val){' +
-    '    if(idx!==undefined&&window.EJS_emulator&&window.EJS_emulator.gameManager){' +
-    '      try{window.EJS_emulator.gameManager.simulateInput(0,idx,val?1:0);}catch(e){}' +
-    '    }' +
-    '    _dispatchKb(key,val);' +
-    '  };' +
     '  if(down){' +
     '    window.unlockAudio&&window.unlockAudio();' +
-    '    if(_simReleaseTimers[key]){clearTimeout(_simReleaseTimers[key]);delete _simReleaseTimers[key];}' +
-    '    _simPressTimes[key]=performance.now();' +
-    '    sendDirect(true);' +
-    '  }else{' +
-    '    var elapsed=performance.now()-(_simPressTimes[key]||0);' +
-    '    var minHold=50;' +
-    '    if(elapsed<minHold){' +
-    '      if(_simReleaseTimers[key])clearTimeout(_simReleaseTimers[key]);' +
-    '      _simReleaseTimers[key]=setTimeout(function(){' +
-    '        delete _simReleaseTimers[key];' +
-    '        sendDirect(false);' +
-    '      },minHold-elapsed);' +
-    '    }else{' +
-    '      sendDirect(false);' +
-    '    }' +
+    '  }' +
+    '  var handled=false;' +
+    '  if(idx!==undefined&&window.EJS_emulator&&window.EJS_emulator.gameManager){' +
+    '    try{' +
+    '      window.EJS_emulator.gameManager.simulateInput(0,idx,down?1:0);' +
+    '      handled=true;' +
+    '    }catch(e){}' +
+    '  }' +
+    '  if(!handled){' +
+    '    _dispatchKb(key,down);' +
     '  }' +
     '};' +
     'window.setButtonBit=function(idx,down){' +
+    '  window._markInteracted&&window._markInteracted();' +
+    '  if(down)window.unlockAudio&&window.unlockAudio();' +
+    '  if(window.EJS_emulator&&window.EJS_emulator.gameManager){' +
+    '    try{' +
+    '      window.EJS_emulator.gameManager.simulateInput(0,idx,down?1:0);' +
+    '      return;' +
+    '    }catch(e){}' +
+    '  }' +
     '  var revMap={0:"actionb",1:"actiony",2:"select",3:"start",4:"up",5:"down",6:"left",7:"right",8:"actiona",9:"actionx",10:"btnl",11:"btnr"};' +
     '  var name=revMap[idx];' +
-    '  if(name)window.simulateButton(name,down);' +
+    '  if(name)_dispatchKb(name,down);' +
     '};' +
+    'window.setRewind=function(active){' +
+    '  try{' +
+    '    var emu=window.EJS_emulator;' +
+    '    if(!emu)return;' +
+    '    var gm=emu.gameManager;' +
+    '    var v=active?1:0;' +
+    '    if(gm){' +
+    '      if(typeof gm.simulateInput==="function"){try{gm.simulateInput(0,28,v);}catch(e){}}' +
+    '      if(gm.functions&&typeof gm.functions.toggleRewind==="function"){try{gm.functions.toggleRewind(v);}catch(e){}}' +
+    '    }' +
+    '  }catch(e){}' +
+    '};' +
+    'window.addEventListener("message",function(ev){' +
+    '  try{' +
+    '    if(ev.data&&ev.data.type==="ejs-set-rewind"){' +
+    '      window.setRewind(!!ev.data.active);' +
+    '    }' +
+    '  }catch(e){}' +
+    '});' +
     'window.setFastForward=function(active,ratio){' +
     '  try{' +
     '    var emu=window.EJS_emulator;' +
