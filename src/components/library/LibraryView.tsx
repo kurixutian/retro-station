@@ -96,9 +96,9 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 
   return (
     <div className="relative pb-16 min-h-[100vh] min-h-[100lvh]">
-      {/* Ambient Randomized ROM Backdrop (Calmed 5% opacity, blur-2xl) */}
+      {/* Ambient Animated Blurred ROM Backdrop (GPU-composited drift, 12% opacity) */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0 select-none">
-        <div className="grid grid-cols-2 w-full h-full opacity-5 blur-2xl scale-105">
+        <div className="grid grid-cols-2 w-full h-full opacity-12 blur-2xl ambient-backdrop-pan">
           {bgGames.map((g, idx) => {
             const imgSrc = g.customCover || g.cover;
             return (
@@ -115,7 +115,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
         <div
           className="absolute inset-0"
           style={{
-            background: `radial-gradient(circle at 20% 15%, ${theme.hex}10 0%, rgba(9,9,11,0.90) 55%, rgba(9,9,11,0.98) 100%)`
+            background: `radial-gradient(circle at 20% 15%, ${theme.hex}14 0%, rgba(9,9,11,0.85) 55%, rgba(9,9,11,0.98) 100%)`
           }}
         />
       </div>

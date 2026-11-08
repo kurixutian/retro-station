@@ -219,8 +219,27 @@ input, textarea {
   backface-visibility: hidden;
 }
 
+@keyframes ambientBackdropDrift {
+  0% {
+    transform: scale(1.10) translate3d(-1.5%, -1.5%, 0);
+  }
+  50% {
+    transform: scale(1.16) translate3d(1.5%, 1.5%, 0);
+  }
+  100% {
+    transform: scale(1.10) translate3d(-1.5%, -1.5%, 0);
+  }
+}
+
+.ambient-backdrop-pan {
+  animation: ambientBackdropDrift 28s ease-in-out infinite;
+  will-change: transform;
+  backface-visibility: hidden;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .hero-art-pan {
+  .hero-art-pan,
+  .ambient-backdrop-pan {
     animation: none !important;
     transform: none !important;
   }
