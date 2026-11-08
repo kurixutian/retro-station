@@ -118,26 +118,42 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         paddingRight: 'max(env(safe-area-inset-right, 0px) + 12px, 16px)'
       }}
     >
-      <div className="w-full max-w-xl max-h-[88vh] flex flex-col rounded-3xl bg-zinc-950 border border-zinc-800 shadow-2xl overflow-hidden my-auto hardware-panel">
-        <div className="flex-none flex items-center justify-between px-5 py-4 border-b border-zinc-800 bg-zinc-950">
+      <div className={`w-full max-w-xl max-h-[88vh] flex flex-col rounded-3xl border shadow-2xl overflow-hidden my-auto hardware-panel ${
+        theme.isLight
+          ? 'bg-[#dedbd2] border-stone-300 text-zinc-900'
+          : 'bg-zinc-950 border-zinc-800 text-zinc-100'
+      }`}>
+        <div className={`flex-none flex items-center justify-between px-5 py-4 border-b ${
+          theme.isLight ? 'border-stone-300 bg-[#dedbd2]' : 'border-zinc-800 bg-zinc-950'
+        }`}>
           <div className="flex items-center gap-2.5">
             {activePanel !== 'menu' && (
               <button
                 onClick={() => setActivePanel('menu')}
-                className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white tactile-btn border border-zinc-800"
+                className={`p-2 rounded-xl tactile-btn border transition ${
+                  theme.isLight
+                    ? 'bg-stone-200 hover:bg-stone-300 text-stone-700 border-stone-300'
+                    : 'bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white border-zinc-800'
+                }`}
                 aria-label="Back to Configuration"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
             )}
             <Sliders className={`w-5 h-5 ${theme.accentText}`} />
-            <h2 id="settings-dialog-title" className="text-base font-black text-white">
+            <h2 id="settings-dialog-title" className={`text-base font-black ${
+              theme.isLight ? 'text-zinc-900' : 'text-white'
+            }`}>
               {activePanel === 'menu' ? 'Configuration' : SETTINGS_PANELS.find((p) => p.id === activePanel)?.label}
             </h2>
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white tactile-btn border border-zinc-800"
+            className={`p-2 rounded-xl tactile-btn border transition ${
+              theme.isLight
+                ? 'bg-stone-200 hover:bg-stone-300 text-stone-700 border-stone-300'
+                : 'bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white border-zinc-800'
+            }`}
             aria-label="Close Settings"
           >
             <X className="w-4 h-4" />
@@ -154,16 +170,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <button
                     key={panel.id}
                     onClick={() => setActivePanel(panel.id)}
-                    className="text-left p-4 rounded-2xl border bg-zinc-900/70 border-zinc-800 hover:bg-zinc-900 hover:border-zinc-700 transition flex items-center gap-3 min-h-[74px] tacti tactile-btn focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+                    className={`text-left p-4 rounded-2xl border transition flex items-center gap-3 min-h-[74px] tactile-btn focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
+                      theme.isLight
+                        ? 'bg-stone-100 hover:bg-white border-stone-300 hover:border-stone-400 text-zinc-900'
+                        : 'bg-zinc-900/70 border-zinc-800 hover:bg-zinc-900 hover:border-zinc-700 text-zinc-100'
+                    }`}
                   >
-                    <div className="w-10 h-10 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center shrink-0">
-                      <Icon className="w-5 h-5 text-emerald-400" />
+                    <div className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 ${
+                      theme.isLight ? 'bg-stone-200 border-stone-300' : 'bg-zinc-950 border-zinc-800'
+                    }`}>
+                      <Icon className="w-5 h-5 text-emerald-500" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="text-sm font-extrabold text-white truncate">{panel.label}</div>
-                      <div className="text-[11px] text-zinc-400 truncate">{panel.desc}</div>
+                      <div className={`text-sm font-extrabold truncate ${
+                        theme.isLight ? 'text-zinc-900' : 'text-white'
+                      }`}>{panel.label}</div>
+                      <div className={`text-[11px] truncate ${
+                        theme.isLight ? 'text-stone-600' : 'text-zinc-400'
+                      }`}>{panel.desc}</div>
                     </div>
-                    <ChevronRight className="w-4 h-4 text-zinc-600 shrink-0" />
+                    <ChevronRight className={`w-4 h-4 shrink-0 ${
+                      theme.isLight ? 'text-stone-400' : 'text-zinc-600'
+                    }`} />
                   </button>
                 );
               })}
@@ -422,8 +450,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {activePanel === 'themes' && (
             <div className="space-y-5">
               <div>
-                <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5 mb-3">
-                  <Palette className="w-4 h-4 text-amber-400" />
+                <h3 className={`text-xs font-extrabold uppercase tracking-wider flex items-center gap-1.5 mb-3 ${
+                  theme.isLight ? 'text-stone-600' : 'text-zinc-400'
+                }`}>
+                  <Palette className="w-4 h-4 text-amber-500" />
                   <span>APPEARANCE & THEME</span>
                 </h3>
 
@@ -433,27 +463,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   aria-checked={!theme.isLight}
                   onClick={() => applyTheme(theme.isLight ? 'midnight' : 'trooper')}
                   className={`w-full text-left p-4 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 tactile-btn focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
-                    !theme.isLight
-                      ? 'bg-zinc-900 border-zinc-700 text-white'
-                      : 'bg-zinc-900/60 border-zinc-800 text-zinc-300 hover:bg-zinc-900'
+                    theme.isLight
+                      ? 'bg-stone-100 border-stone-300 text-zinc-900 shadow-sm'
+                      : 'bg-zinc-900 border-zinc-700 text-white'
                   }`}
                 >
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                      <Moon className="w-4 h-4 text-emerald-400" />
-                      <span className="text-sm font-extrabold text-white">Dark Mode</span>
-                      <span className="px-2 py-0.5 rounded-md text-[9px] font-black tracking-wider uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      <Moon className="w-4 h-4 text-emerald-500" />
+                      <span className={`text-sm font-extrabold ${theme.isLight ? 'text-zinc-900' : 'text-white'}`}>Dark Mode</span>
+                      <span className={`px-2 py-0.5 rounded-md text-[9px] font-black tracking-wider uppercase border ${
+                        theme.isLight
+                          ? 'bg-stone-200 text-stone-700 border-stone-300'
+                          : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                      }`}>
                         {theme.isLight ? 'Light' : 'Dark'}
                       </span>
                     </div>
-                    <p className="text-xs text-zinc-400 leading-snug">
+                    <p className={`text-xs leading-snug ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
                       Toggle between dark obsidian and warm retro light stone across the library and console.
                     </p>
                   </div>
 
                   <div
                     className={`shrink-0 w-12 h-6 rounded-full transition-colors p-0.5 flex items-center ${
-                      !theme.isLight ? 'bg-emerald-500 justify-end' : 'bg-zinc-800 border border-zinc-700 justify-start'
+                      !theme.isLight ? 'bg-emerald-500 justify-end' : 'bg-stone-300 border border-stone-400 justify-start'
                     }`}
                   >
                     <div className="w-5 h-5 rounded-full bg-white shadow-md" />
@@ -462,19 +496,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
 
               {/* Accent Color Presets & Custom Picker */}
-              <div className="p-4 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-3">
+              <div className={`p-4 rounded-2xl border space-y-3 ${
+                theme.isLight ? 'bg-stone-100 border-stone-300 shadow-sm' : 'bg-zinc-900/80 border-zinc-800'
+              }`}>
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-zinc-200">Accent Color</span>
+                  <span className={`text-xs font-bold ${theme.isLight ? 'text-zinc-900' : 'text-zinc-200'}`}>Accent Color</span>
                   {customAccent ? (
                     <button
                       type="button"
                       onClick={() => onSelectCustomAccent?.('')}
-                      className="text-[10px] text-zinc-400 hover:text-white underline transition"
+                      className={`text-[10px] underline transition ${
+                        theme.isLight ? 'text-stone-600 hover:text-black' : 'text-zinc-400 hover:text-white'
+                      }`}
                     >
                       Reset to Theme Default
                     </button>
                   ) : (
-                    <span className="text-[10px] font-mono text-zinc-500 uppercase">Default</span>
+                    <span className={`text-[10px] font-mono uppercase ${
+                      theme.isLight ? 'text-stone-500' : 'text-zinc-500'
+                    }`}>Default</span>
                   )}
                 </div>
 
@@ -524,13 +564,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </label>
                 </div>
 
-                <div className="flex items-center gap-2 pt-1 text-[11px] text-zinc-400">
+                <div className={`flex items-center gap-2 pt-1 text-[11px] ${
+                  theme.isLight ? 'text-stone-600' : 'text-zinc-400'
+                }`}>
                   <div
                     className="w-3.5 h-3.5 rounded-full border border-white/20 shadow-sm"
                     style={{ backgroundColor: customAccent || theme.hex }}
                   />
                   <span>Active accent:</span>
-                  <span className="font-mono font-bold text-zinc-200 uppercase">
+                  <span className={`font-mono font-bold uppercase ${
+                    theme.isLight ? 'text-zinc-900' : 'text-zinc-200'
+                  }`}>
                     {customAccent || theme.hex}
                   </span>
                 </div>

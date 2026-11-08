@@ -1776,6 +1776,7 @@ export default function App() {
         targetGame={detailGame || activeGame}
         activeGame={activeGame}
         currentView={currentView}
+        theme={theme}
         savesByGameId={savesByGameId}
         launchGame={launchGame}
         exportBatterySave={exportBatterySave}

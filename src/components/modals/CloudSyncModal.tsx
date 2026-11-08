@@ -264,17 +264,25 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
       onClick={onClose}
     >
       <div
-        className={`relative w-full max-w-lg rounded-3xl border border-zinc-800 ${theme.cardBg} shadow-2xl overflow-hidden flex flex-col max-h-[90vh]`}
+        className={`relative w-full max-w-lg rounded-3xl border shadow-2xl overflow-hidden flex flex-col max-h-[90vh] hardware-panel ${
+          theme.isLight
+            ? 'bg-[#dedbd2] border-stone-300 text-zinc-900'
+            : 'bg-zinc-950 border-zinc-800 text-zinc-100'
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800/80 bg-zinc-900/50">
+        <div className={`flex items-center justify-between px-5 py-4 border-b ${
+          theme.isLight ? 'border-stone-300 bg-[#dedbd2]' : 'border-zinc-800/80 bg-zinc-900/50'
+        }`}>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-500">
               <Cloud className="w-5 h-5" />
             </div>
             <div>
-              <h2 id="cloud-sync-dialog-title" className="text-base font-black tracking-tight text-white flex items-center gap-2">
+              <h2 id="cloud-sync-dialog-title" className={`text-base font-black tracking-tight flex items-center gap-2 ${
+                theme.isLight ? 'text-zinc-900' : 'text-white'
+              }`}>
                 Cloud Save & Backup
                 <span
                   className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${statusColor}`}
@@ -286,7 +294,11 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-xl bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 transition cursor-pointer"
+            className={`p-2 rounded-xl transition cursor-pointer tactile-btn border ${
+              theme.isLight
+                ? 'bg-stone-200 hover:bg-stone-300 text-stone-700 border-stone-300'
+                : 'bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 border-zinc-700'
+            }`}
             title="Close"
             aria-label="Close"
           >
@@ -299,7 +311,9 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
           {/* 1. GOOGLE DRIVE SYNC SECTION */}
           {user ? (
             <div className="space-y-3">
-              <div className="p-4 rounded-2xl bg-zinc-950/90 border border-emerald-500/30 space-y-3">
+              <div className={`p-4 rounded-2xl border space-y-3 ${
+                theme.isLight ? 'bg-stone-100 border-stone-300' : 'bg-zinc-950/90 border-emerald-500/30'
+              }`}>
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0">
                     {user.picture ? (
@@ -310,20 +324,22 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                         referrerPolicy="no-referrer"
                       />
                     ) : (
-                      <div className="w-10 h-10 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-300 font-black text-sm shrink-0">
+                      <div className="w-10 h-10 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-500 font-black text-sm shrink-0">
                         {(user.name || user.email || 'G')[0].toUpperCase()}
                       </div>
                     )}
                     <div className="min-w-0">
-                      <div className="text-xs font-extrabold text-white truncate">
+                      <div className={`text-xs font-extrabold truncate ${
+                        theme.isLight ? 'text-zinc-900' : 'text-white'
+                      }`}>
                         {user.name || 'Google Drive Account'}
                       </div>
-                      <div className="text-[11px] text-emerald-400 font-medium truncate">
+                      <div className="text-[11px] text-emerald-500 font-medium truncate">
                         {user.email}
                       </div>
                     </div>
                   </div>
-                  <span className="text-[11px] text-zinc-400 shrink-0">
+                  <span className={`text-[11px] shrink-0 ${theme.isLight ? 'text-stone-500' : 'text-zinc-400'}`}>
                     {lastSyncTime ? `Last sync: ${lastSyncTime}` : statusDetails || 'Ready'}
                   </span>
                 </div>

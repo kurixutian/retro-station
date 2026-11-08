@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Play, Download, Trash2, Layers, Camera, X, AlertTriangle, Pencil, Camera as SlotNameIcon } from 'lucide-react';
-import { Game, SaveSlot } from '../../types';
+import { Game, SaveSlot, Theme } from '../../types';
 import { GameCoverImage } from '../common/GameCoverImage';
 import { formatGameTitle } from '../../constants/cores';
 import { createEmptySlotsForGame } from '../../services/storage/saveSlots';
@@ -11,6 +11,7 @@ interface SaveSlotsModalProps {
   targetGame: Game | null;
   activeGame: Game | null;
   currentView: string;
+  theme?: Theme;
   savesByGameId: Record<string, SaveSlot[]>;
   launchGame: (game: Game) => void;
   exportBatterySave: (game: Game, format: 'sav' | 'srm') => void;
@@ -43,6 +44,7 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
   targetGame,
   activeGame,
   currentView,
+  theme,
   savesByGameId,
   launchGame,
   exportBatterySave,
@@ -107,7 +109,11 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-2xl max-h-[88vh] flex flex-col rounded-3xl bg-zinc-950 border border-zinc-800 shadow-2xl overflow-hidden my-auto hardware-panel"
+        className={`w-full max-w-2xl max-h-[88vh] flex flex-col rounded-3xl border shadow-2xl overflow-hidden my-auto hardware-panel ${
+          theme?.isLight
+            ? 'bg-[#dedbd2] border-stone-300 text-zinc-900'
+            : 'bg-zinc-950 border-zinc-800 text-zinc-100'
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Dialog Header Banner */}
@@ -148,10 +154,16 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
               </button>
             )}
 
-            <div className="flex items-center rounded-xl bg-zinc-900/95 border border-amber-500/30 p-0.5 shadow-sm">
+            <div className={`flex items-center rounded-xl p-0.5 shadow-sm border ${
+              theme?.isLight
+                ? 'bg-stone-200 border-amber-600/40 text-stone-900'
+                : 'bg-zinc-900/95 border-amber-500/30 text-amber-300'
+            }`}>
               <button
                 onClick={() => exportBatterySave(targetGame, saveFormat)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-amber-500/15 text-amber-300 text-xs font-bold transition active:scale-95"
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition active:scale-95 ${
+                  theme?.isLight ? 'hover:bg-amber-500/20 text-amber-800' : 'hover:bg-amber-500/15 text-amber-300'
+                }`}
                 title={
                   saveFormat === 'sav'
                     ? 'Download raw battery RAM (.sav) for cartridge flashers (GB Operator / FlashGBX)'
@@ -161,7 +173,7 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
                 <Download className="w-3.5 h-3.5" />
                 <span>Download Battery Save</span>
               </button>
-              <div className="h-4 w-px bg-zinc-800 mx-0.5" />
+              <div className={`h-4 w-px mx-0.5 ${theme?.isLight ? 'bg-stone-300' : 'bg-zinc-800'}`} />
               <div className="flex items-center gap-0.5 pr-0.5" role="group" aria-label="Battery save format">
                 <button
                   type="button"
@@ -169,6 +181,8 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
                   className={`px-2 py-1 rounded-md text-[10px] font-mono font-bold transition ${
                     saveFormat === 'sav'
                       ? 'bg-amber-400 text-zinc-950'
+                      : theme?.isLight
+                      ? 'text-stone-600 hover:text-stone-900'
                       : 'text-zinc-400 hover:text-zinc-200'
                   }`}
                   title="Physical Flasher format (.sav)"
@@ -181,6 +195,8 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
                   className={`px-2 py-1 rounded-md text-[10px] font-mono font-bold transition ${
                     saveFormat === 'srm'
                       ? 'bg-amber-400 text-zinc-950'
+                      : theme?.isLight
+                      ? 'text-stone-600 hover:text-stone-900'
                       : 'text-zinc-400 hover:text-zinc-200'
                   }`}
                   title="RetroArch format (.srm)"
@@ -192,7 +208,11 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
 
             <button
               onClick={() => setConfirmDeleteRom(true)}
-              className="p-2 rounded-xl bg-zinc-900/90 hover:bg-rose-900/30 text-zinc-400 hover:text-rose-400 border border-zinc-800 hover:border-rose-500/40 tactile-btn transition ml-auto"
+              className={`p-2 rounded-xl border tactile-btn transition ml-auto ${
+                theme?.isLight
+                  ? 'bg-stone-200/90 hover:bg-rose-100 text-stone-600 hover:text-rose-600 border-stone-300 hover:border-rose-300'
+                  : 'bg-zinc-900/90 hover:bg-rose-900/30 text-zinc-400 hover:text-rose-400 border-zinc-800 hover:border-rose-500/40'
+              }`}
               title="Delete ROM"
               aria-label="Delete ROM"
             >
@@ -235,18 +255,20 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
         <div className="p-5 space-y-3 flex-1 overflow-y-auto modal-scroll">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-extrabold text-zinc-100 flex items-center gap-2">
-                <Layers className="w-4 h-4 text-emerald-400" />
+              <h3 className={`text-sm font-extrabold flex items-center gap-2 ${
+                theme?.isLight ? 'text-zinc-900' : 'text-zinc-100'
+              }`}>
+                <Layers className="w-4 h-4 text-emerald-500" />
                 <span>State Slots</span>
               </h3>
-              <p className="text-[11px] text-zinc-400">
+              <p className={`text-[11px] ${theme?.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
                 {initialMode === 'save'
                   ? 'Pick a slot to save into. Filled slots can be overwritten.'
                   : initialMode === 'load'
                     ? 'Pick a saved state to resume.'
                     : 'Each game has its own dedicated save state slots. Switch or resume anytime.'}
               </p>
-              <p className="text-[10px] text-zinc-500 mt-0.5">
+              <p className={`text-[10px] mt-0.5 ${theme?.isLight ? 'text-stone-500' : 'text-zinc-500'}`}>
                 When all slots are full, a new empty slot is added automatically.
               </p>
             </div>
@@ -261,13 +283,19 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
                 key={slotObj.slot}
                 className={`rounded-2xl border p-3 flex flex-col justify-between gap-2.5 transition ${
                   slotObj.empty
-                    ? 'bg-zinc-900/40 border-zinc-800/80'
-                    : 'bg-zinc-900/95 border-emerald-500/40 shadow-md'
+                    ? theme?.isLight
+                      ? 'bg-stone-200/60 border-stone-300'
+                      : 'bg-zinc-900/40 border-zinc-800/80'
+                    : theme?.isLight
+                      ? 'bg-stone-100 border-emerald-600/40 shadow-sm'
+                      : 'bg-zinc-900/95 border-emerald-500/40 shadow-md'
                 }`}
               >
                 <div className="flex items-center gap-3">
                   {/* Thumbnail Preview */}
-                  <div className="w-20 h-16 rounded-xl bg-zinc-950 border border-zinc-800 overflow-hidden shrink-0 flex items-center justify-center">
+                  <div className={`w-20 h-16 rounded-xl border overflow-hidden shrink-0 flex items-center justify-center ${
+                    theme?.isLight ? 'bg-stone-300 border-stone-400/50' : 'bg-zinc-950 border-zinc-800'
+                  }`}>
                     {(() => {
                       const isValidScreenshot = Boolean(slotObj.screenshot && slotObj.screenshot.length > 50);
                       const previewImg = isValidScreenshot ? slotObj.screenshot : (!slotObj.empty ? (targetGame.customCover || targetGame.cover) : null);
@@ -281,14 +309,16 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
                         );
                       }
                       return (
-                        <span className="text-[10px] font-mono font-bold text-zinc-400">EMPTY</span>
+                        <span className={`text-[10px] font-mono font-bold ${
+                          theme?.isLight ? 'text-stone-500' : 'text-zinc-400'
+                        }`}>EMPTY</span>
                       );
                     })()}
                   </div>
 
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-1">
-                      <span className="text-xs font-black text-emerald-400 font-mono shrink-0">
+                      <span className="text-xs font-black text-emerald-500 font-mono shrink-0">
                         SLOT #{slotObj.slot}
                       </span>
                       <button
@@ -296,7 +326,11 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
                           setEditingSlot(slotObj.slot);
                           setEditValue(customName || '');
                         }}
-                        className="p-1 rounded-md text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition shrink-0"
+                        className={`p-1 rounded-md transition shrink-0 ${
+                          theme?.isLight
+                            ? 'text-stone-500 hover:text-stone-800 hover:bg-stone-200'
+                            : 'text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800'
+                        }`}
                         title="Rename slot"
                         aria-label={`Rename slot ${slotObj.slot}`}
                       >
@@ -316,16 +350,24 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
                           onBlur={() => commitRename(slotObj.slot)}
                           placeholder="Slot name"
                           aria-label={`Name for slot ${slotObj.slot}`}
-                          className="flex-1 min-w-0 px-2 py-0.5 rounded-md bg-zinc-950 border border-zinc-700 text-[11px] font-bold text-zinc-100 outline-none focus:border-emerald-500"
+                          className={`flex-1 min-w-0 px-2 py-0.5 rounded-md border text-[11px] font-bold outline-none focus:border-emerald-500 ${
+                            theme?.isLight
+                              ? 'bg-white border-stone-300 text-zinc-900'
+                              : 'bg-zinc-950 border-zinc-700 text-zinc-100'
+                          }`}
                         />
                       </div>
                     ) : (
-                      <p className="text-xs font-bold text-zinc-100 truncate mt-0.5">
+                      <p className={`text-xs font-bold truncate mt-0.5 ${
+                        theme?.isLight ? 'text-zinc-900' : 'text-zinc-100'
+                      }`}>
                         {displayName}
                       </p>
                     )}
                     {!slotObj.empty && !customName && (slotObj.score > 0 || slotObj.frame > 0) && (
-                      <p className="text-[10px] font-mono text-zinc-400">
+                      <p className={`text-[10px] font-mono ${
+                        theme?.isLight ? 'text-stone-500' : 'text-zinc-400'
+                      }`}>
                         Score: {slotObj.score} • Frame: {slotObj.frame}
                       </p>
                     )}
@@ -333,7 +375,9 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
                 </div>
 
                 {/* Slot Action Buttons */}
-                <div className="flex items-center gap-1.5 pt-1 border-t border-zinc-800/80">
+                <div className={`flex items-center gap-1.5 pt-1 border-t ${
+                  theme?.isLight ? 'border-stone-300' : 'border-zinc-800/80'
+                }`}>
                   {/* Load & Play Slot */}
                   <button
                     disabled={slotObj.empty}
@@ -346,7 +390,9 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
                     }}
                     className={`flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg text-[11px] font-bold transition tactile-btn ${
                       slotObj.empty
-                        ? 'bg-zinc-800/50 text-zinc-600 cursor-not-allowed'
+                        ? theme?.isLight
+                          ? 'bg-stone-200 text-stone-400 cursor-not-allowed'
+                          : 'bg-zinc-800/50 text-zinc-600 cursor-not-allowed'
                         : 'bg-emerald-500 hover:bg-emerald-400 text-zinc-950'
                     }`}
                   >
@@ -378,7 +424,11 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
                         setConfirmDeleteSlot(slotObj.slot);
                         setDeleteTypeText('');
                       }}
-                      className="p-1.5 rounded-lg bg-zinc-800 hover:bg-rose-500/30 text-rose-400 tactile-btn"
+                      className={`p-1.5 rounded-lg tactile-btn transition ${
+                        theme?.isLight
+                          ? 'bg-stone-200 hover:bg-rose-100 text-rose-600 border border-stone-300'
+                          : 'bg-zinc-800 hover:bg-rose-500/30 text-rose-400'
+                      }`}
                       title="Delete slot"
                       aria-label="Delete slot"
                     >
