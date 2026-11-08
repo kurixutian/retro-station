@@ -12,6 +12,8 @@ import {
   Sun,
   Moon,
   MoreVertical,
+  Search,
+  X,
 } from 'lucide-react';
 import { Game, Theme } from '../../types';
 import { formatGameTitle, getBoxartUrls } from '../../constants/cores';
@@ -491,19 +493,60 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 
         {/* CARTRIDGE BINDER & SYSTEM DIVIDER TABS */}
         <section className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <HardDrive className={`w-4 h-4 ${theme.accentText}`} />
               <h2 className="text-sm sm:text-base font-extrabold tracking-tight">
                 Cartridge Binder
               </h2>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-zinc-900 border border-zinc-800 text-zinc-400">
-                {filteredGames.length} {filteredGames.length === 1 ? 'ROM' : 'ROMs'}
-              </span>
             </div>
 
+            {/* Search Toggle (far right) */}
+            <button
+              onClick={() => {
+                if (showSearch) {
+                  setShowSearch(false);
+                  setSearchQuery('');
+                } else {
+                  setShowSearch(true);
+                }
+              }}
+              className="px-2 py-1.5 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800 tactile-btn transition"
+              title={showSearch ? 'Close Search' : 'Search Library'}
+              aria-label={showSearch ? 'Close Library Search' : 'Open Library Search'}
+              aria-pressed={showSearch}
+            >
+              {showSearch ? <X className="w-4 h-4" /> : <Search className="w-4 h-4" />}
+            </button>
+          </div>
+
+          {/* ROM Count + Search Field + System Divider Tabs (below) */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {showSearch && (
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape' || e.key === 'Enter') {
+                    if (e.key === 'Escape') {
+                      setShowSearch(false);
+                      setSearchQuery('');
+                    }
+                  }
+                }}
+                placeholder="Search library…"
+                autoFocus
+                aria-label="Search library by title"
+                className="flex-1 min-w-[150px] px-3 py-1 rounded-xl bg-zinc-900 border border-zinc-800 text-xs font-semibold text-zinc-100 placeholder:text-zinc-500 outline-none focus:border-emerald-500/60 transition"
+              />
+            )}
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-zinc-900 border border-zinc-800 text-zinc-400">
+              {filteredGames.length} {filteredGames.length === 1 ? 'ROM' : 'ROMs'}
+            </span>
+
             {/* Binder System Divider Tabs */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar ml-auto">
               {['ALL', ...new Set(games.map((g) => g.shortSystem))].filter(Boolean).map((sys) => (
                 <button
                   key={sys}
