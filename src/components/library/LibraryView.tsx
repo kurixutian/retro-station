@@ -17,6 +17,7 @@ import { formatGameTitle, getBoxartUrls } from '../../constants/cores';
 import { idbGet } from '../../services/storage/idb';
 import { GameCoverImage } from '../common/GameCoverImage';
 import { GameCard } from './GameCard';
+import appIcon from '../../assets/icon.png';
 
 interface LibraryViewProps {
   games: Game[];
@@ -143,7 +144,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
           {/* Brand Logo */}
           <div className="flex items-center gap-2.5">
             <div className={`w-9 h-9 rounded-xl overflow-hidden flex items-center justify-center border ${theme.accentSoft} shadow-sm bg-zinc-900`}>
-              <img src="./icon-192.png" alt="Retro Station Logo" className="w-full h-full object-cover" />
+              <img src={appIcon} alt="Retro Station Logo" className="w-full h-full object-cover" />
             </div>
             <div>
               <div className="flex items-center gap-1.5">
