@@ -23,15 +23,15 @@ test('isZipBuffer identifies PK zip header magic bytes', () => {
 });
 
 test('extractRomsFromZip extracts single ROM from zip', async () => {
-  const romContent = new TextEncoder().encode('NES\x1aromdata');
+  const romContent = new TextEncoder().encode('GB\x1aromdata');
   const zipBytes = zipSync({
-    'Super Mario Bros (USA).nes': romContent,
+    'Pokemon Red (USA).gb': romContent,
     'readme.txt': new TextEncoder().encode('Enjoy the game!'),
   });
 
   const extracted = await extractRomsFromZip(zipBytes);
   assert.equal(extracted.length, 1);
-  assert.equal(extracted[0].name, 'Super Mario Bros (USA).nes');
+  assert.equal(extracted[0].name, 'Pokemon Red (USA).gb');
   assert.equal(extracted[0].size, romContent.length);
 
   const buf = new Uint8Array(await extracted[0].arrayBuffer());
@@ -40,21 +40,21 @@ test('extractRomsFromZip extracts single ROM from zip', async () => {
 
 test('extractRomsFromZip handles nested paths and filters macOS metadata', async () => {
   const gbaData = new Uint8Array([0x00, 0x01, 0x02, 0x03]);
-  const snesData = new Uint8Array([0x04, 0x05, 0x06, 0x07]);
+  const gbcData = new Uint8Array([0x04, 0x05, 0x06, 0x07]);
 
   const zipBytes = zipSync({
     'folder/subfolder/Pokemon Emerald.gba': gbaData,
     '__MACOSX/._Pokemon Emerald.gba': new Uint8Array([0x00, 0x05, 0x16]),
     'folder/.DS_Store': new Uint8Array([0x00]),
-    'folder/._hidden.smc': new Uint8Array([0x00]),
-    'nested/Zelda.sfc': snesData,
+    'folder/._hidden.gb': new Uint8Array([0x00]),
+    'nested/Zelda DX.gbc': gbcData,
     'manual.pdf': new Uint8Array([0x25, 0x50, 0x44, 0x46]),
   });
 
   const extracted = await extractRomsFromZip(zipBytes);
   assert.equal(extracted.length, 2);
   assert.equal(extracted[0].name, 'Pokemon Emerald.gba');
-  assert.equal(extracted[1].name, 'Zelda.sfc');
+  assert.equal(extracted[1].name, 'Zelda DX.gbc');
 });
 
 test('extractRomsFromZip returns empty array when no supported ROM exists', async () => {

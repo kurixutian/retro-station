@@ -80,7 +80,7 @@ export const PAD_LABELS: Record<keyof PadLayout, string> = {
   screen: 'Game Screen',
   transport: 'Pause / Rewind / Speed',
   dpad: 'D-Pad',
-  actions: 'Action Buttons (ABXY)',
+  actions: 'Action Buttons (A / B)',
   system: 'Select / Start'
 };
 

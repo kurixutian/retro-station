@@ -9,48 +9,21 @@ export const CORE_MAP: Record<string, CoreInfo> = {
   gb: { core: 'gambatte', system: 'Game Boy', shortSystem: 'GB', badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' },
   gbc: { core: 'gambatte', system: 'Game Boy Color', shortSystem: 'GBC', badgeColor: 'bg-teal-500/20 text-teal-300 border-teal-500/40' },
   gba: { core: 'mgba', system: 'Game Boy Advance', shortSystem: 'GBA', badgeColor: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40' },
-  nes: { core: 'fceumm', system: 'Nintendo Entertainment System', shortSystem: 'NES', badgeColor: 'bg-rose-500/20 text-rose-300 border-rose-500/40' },
-  sfc: { core: 'snes9x', system: 'Super Nintendo (SNES)', shortSystem: 'SNES', badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/40' },
-  smc: { core: 'snes9x', system: 'Super Nintendo (SNES)', shortSystem: 'SNES', badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/40' },
-  fig: { core: 'snes9x', system: 'Super Nintendo (SNES)', shortSystem: 'SNES', badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/40' },
-  swc: { core: 'snes9x', system: 'Super Nintendo (SNES)', shortSystem: 'SNES', badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/40' },
-  md: { core: 'genesis_plus_gx', system: 'Sega Genesis / Mega Drive', shortSystem: 'GEN', badgeColor: 'bg-sky-500/20 text-sky-300 border-sky-500/40' },
-  gen: { core: 'genesis_plus_gx', system: 'Sega Genesis / Mega Drive', shortSystem: 'GEN', badgeColor: 'bg-sky-500/20 text-sky-300 border-sky-500/40' },
-  smd: { core: 'genesis_plus_gx', system: 'Sega Genesis / Mega Drive', shortSystem: 'GEN', badgeColor: 'bg-sky-500/20 text-sky-300 border-sky-500/40' },
-  bin: { core: 'genesis_plus_gx', system: 'Sega Genesis / Binary ROM', shortSystem: 'BIN', badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/40' },
-  gg: { core: 'genesis_plus_gx', system: 'Sega Game Gear', shortSystem: 'GG', badgeColor: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40' },
-  sms: { core: 'genesis_plus_gx', system: 'Sega Master System', shortSystem: 'SMS', badgeColor: 'bg-blue-500/20 text-blue-300 border-blue-500/40' },
-  sg: { core: 'genesis_plus_gx', system: 'Sega SG-1000', shortSystem: 'SG', badgeColor: 'bg-violet-500/20 text-violet-300 border-violet-500/40' },
 };
 
 export const EJS_CORES: Record<string, string> = {
   gambatte: 'gb',
   mgba: 'gba',
-  fceumm: 'nes',
-  snes9x: 'snes',
-  genesis_plus_gx: 'segaMD',
 };
 
 export const LIBRETRO_SYSTEM_MAP: Record<string, string> = {
   gb: 'Nintendo - Game Boy',
   gbc: 'Nintendo - Game Boy Color',
   gba: 'Nintendo - Game Boy Advance',
-  nes: 'Nintendo - Nintendo Entertainment System',
-  sfc: 'Nintendo - Super Nintendo Entertainment System',
-  smc: 'Nintendo - Super Nintendo Entertainment System',
-  fig: 'Nintendo - Super Nintendo Entertainment System',
-  swc: 'Nintendo - Super Nintendo Entertainment System',
-  md: 'Sega - Mega Drive - Genesis',
-  gen: 'Sega - Mega Drive - Genesis',
-  smd: 'Sega - Mega Drive - Genesis',
-  bin: 'Sega - Mega Drive - Genesis',
-  gg: 'Sega - Game Gear',
-  sms: 'Sega - Master System - Mark III',
-  sg: 'Sega - SG-1000',
 };
 
 export const coreRatio = (core: string, isLandscape: boolean = false): number => {
-  return ({ gambatte: 10 / 9, mgba: 3 / 2, fceumm: 8 / 7, snes9x: 8 / 7 }[core] || 4 / 3);
+  return ({ gambatte: 10 / 9, mgba: 3 / 2 }[core] || 10 / 9);
 };
 
 export function formatGameTitle(rawTitle: string): string {

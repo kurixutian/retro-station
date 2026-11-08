@@ -3,8 +3,9 @@ import { Theme } from '../types';
 export const THEMES: Record<string, Theme> = {
   midnight: {
     id: 'midnight',
-    name: 'Midnight OLED',
-    desc: 'Deep obsidian carbon shell with cyber emerald & cyan phosphor accents',
+    name: 'Vader Obsidian',
+    desc: 'Deep imperial obsidian gloss shell with cyber emerald and crimson phosphor accents',
+    isLight: false,
     appBg: 'bg-zinc-950 text-zinc-100',
     shellBg: 'bg-zinc-900 border-zinc-800/90',
     deckBg: 'bg-zinc-950/95 border-zinc-800/90',
@@ -19,6 +20,26 @@ export const THEMES: Record<string, Theme> = {
     btnB: 'bg-cyan-500 active:bg-cyan-300 text-zinc-950 border-cyan-400/80',
     btnXY: 'bg-zinc-800 active:bg-zinc-600 text-zinc-200 border-zinc-600',
     hex: '#10b981'
+  },
+  trooper: {
+    id: 'trooper',
+    name: 'Trooper White',
+    desc: 'Armor-white Game Boy pebble shell with matte black controls and magenta strike buttons',
+    isLight: true,
+    appBg: 'bg-[#ece9e2] text-zinc-900',
+    shellBg: 'bg-[#dedbd2] border-stone-300',
+    deckBg: 'bg-[#e4e1d8]/95 border-stone-300',
+    bezelBg: 'bg-[#767885] border-stone-400',
+    cardBg: 'bg-[#f4f2ec] border-stone-300/80 hover:border-rose-600/60 text-zinc-900',
+    accentText: 'text-rose-600',
+    accentBg: 'bg-rose-600 hover:bg-rose-500 text-white',
+    accentBorder: 'border-rose-600/40',
+    accentSoft: 'bg-rose-500/10 text-rose-700 border-rose-500/30',
+    dpadBg: 'bg-zinc-900 active:bg-zinc-700 text-zinc-100 border-black',
+    btnA: 'bg-[#8d1d5c] active:bg-[#a82a72] text-white border-[#5e123d]',
+    btnB: 'bg-[#8d1d5c] active:bg-[#a82a72] text-white border-[#5e123d]',
+    btnXY: 'bg-zinc-800 active:bg-zinc-600 text-zinc-100 border-zinc-900',
+    hex: '#8d1d5c'
   },
   dmg: {
     id: 'dmg',

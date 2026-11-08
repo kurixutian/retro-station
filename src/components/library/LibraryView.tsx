@@ -9,6 +9,8 @@ import {
   Shuffle,
   History,
   Coffee,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { Game, Theme } from '../../types';
 import { formatGameTitle, getBoxartUrls } from '../../constants/cores';
@@ -34,6 +36,7 @@ interface LibraryViewProps {
   cloudStatus?: 'unlinked' | 'idle' | 'syncing' | 'needs_reauth' | 'offline' | 'error';
   onOpenControls?: () => void;
   recentGameIds?: string[];
+  onToggleLightDark?: () => void;
 }
 
 const AmbientBackdropTile: React.FC<{ game: Game; theme: Theme }> = ({ game, theme }) => {
@@ -66,6 +69,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   cloudStatus,
   onOpenControls,
   recentGameIds,
+  onToggleLightDark,
 }) => {
   // ── Random Featured Cartridge ──────────────────────────────────────────
   const [featuredIndex, setFeaturedIndex] = React.useState<number>(() => {
@@ -200,6 +204,21 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                 aria-label="Controls and keybindings"
               >
                 <Gamepad2 className="w-4 h-4 text-sky-400" />
+              </button>
+            )}
+
+            {onToggleLightDark && (
+              <button
+                onClick={onToggleLightDark}
+                className="p-2 sm:p-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 tactile-btn transition"
+                title={theme.isLight ? 'Switch to Vader Obsidian (Dark Mode)' : 'Switch to Trooper White (Light Mode)'}
+                aria-label="Toggle Light/Dark Theme"
+              >
+                {theme.isLight ? (
+                  <Moon className="w-4 h-4 text-indigo-400" />
+                ) : (
+                  <Sun className="w-4 h-4 text-amber-400" />
+                )}
               </button>
             )}
 
@@ -419,7 +438,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                 <div className="space-y-1.5">
                   <h3 className="text-lg font-black text-zinc-100">Your Cartridge Shelf is Empty</h3>
                   <p className="text-xs text-zinc-400 leading-relaxed">
-                    Insert your personal game backup files (<span className="text-zinc-300 font-mono">.gb, .gbc, .gba, .nes, .sfc, .md, .zip</span>) to play instantly in browser with CRT shaders and battery saves.
+                    Insert your personal game backup files (<span className="text-zinc-300 font-mono">.gb, .gbc, .gba, .zip</span>) to play instantly in browser with CRT shaders and battery saves.
                   </p>
                 </div>
                 <div className="flex flex-col sm:flex-row items-center gap-2.5 w-full justify-center">

@@ -1593,7 +1593,7 @@ export default function App() {
       <input
         ref={romInputRef}
         type="file"
-        accept=".gb,.gbc,.gba,.nes,.sfc,.smc,.fig,.swc,.md,.gen,.smd,.bin,.gg,.sms,.sg,.zip,application/zip"
+        accept=".gb,.gbc,.gba,.zip,application/zip"
         onChange={handleRomUpload}
         className="hidden"
         multiple
@@ -1631,6 +1631,10 @@ export default function App() {
           cloudStatus={cloudStatus}
           recentGameIds={recentGameIds}
           onOpenControls={() => setControlsModalOpen(true)}
+          onToggleLightDark={() => {
+            const nextTheme = theme.isLight ? 'midnight' : 'trooper';
+            applyTheme(nextTheme);
+          }}
         />
       )}
 

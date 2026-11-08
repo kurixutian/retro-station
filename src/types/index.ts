@@ -40,6 +40,7 @@ export interface Theme {
   id: string;
   name: string;
   desc: string;
+  isLight?: boolean;
   appBg: string;
   shellBg: string;
   deckBg: string;

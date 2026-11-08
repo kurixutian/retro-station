@@ -457,7 +457,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
   const renderDpad = () => (
     <div
       ref={dpadContainerRef}
-      className="relative w-32 h-32 select-none touch-none dpad-cross rounded-2xl"
+      className="relative w-36 h-36 select-none touch-none dpad-cross rounded-2xl flex items-center justify-center"
       style={{
         touchAction: 'none',
         userSelect: 'none',
@@ -501,103 +501,94 @@ export const InGameView: React.FC<InGameViewProps> = ({
         releaseDpadAll();
       }}
     >
-      {/* Up (visual-only arm; pointer capture owned by parent cross for zero-drop thumb sliding) */}
+      {/* Up */}
       <div
         ref={(el) => { dpadArmRefs.current.up = el; }}
-        className={`absolute top-0 left-10 w-12 h-12 rounded-t-xl border flex items-center justify-center shadow-md pointer-events-none select-none dpad-arm ${theme.dpadBg}`}
+        className={`absolute top-0 left-12 w-12 h-14 rounded-t-lg border border-black/50 flex items-start justify-center pt-1.5 shadow-md pointer-events-none select-none dpad-arm ${theme.dpadBg}`}
         aria-hidden="true"
       >
-        <ChevronUp className="w-6 h-6 stroke-[2.5]" />
+        <span className="text-[10px] font-black opacity-60">▲</span>
       </div>
       {/* Down */}
       <div
         ref={(el) => { dpadArmRefs.current.down = el; }}
-        className={`absolute bottom-0 left-10 w-12 h-12 rounded-b-xl border flex items-center justify-center shadow-md pointer-events-none select-none dpad-arm ${theme.dpadBg}`}
+        className={`absolute bottom-0 left-12 w-12 h-14 rounded-b-lg border border-black/50 flex items-end justify-center pb-1.5 shadow-md pointer-events-none select-none dpad-arm ${theme.dpadBg}`}
         aria-hidden="true"
       >
-        <ChevronDown className="w-6 h-6 stroke-[2.5]" />
+        <span className="text-[10px] font-black opacity-60">▼</span>
       </div>
       {/* Left */}
       <div
         ref={(el) => { dpadArmRefs.current.left = el; }}
-        className={`absolute top-10 left-0 w-12 h-12 rounded-l-xl border flex items-center justify-center shadow-md pointer-events-none select-none dpad-arm ${theme.dpadBg}`}
+        className={`absolute top-12 left-0 w-14 h-12 rounded-l-lg border border-black/50 flex items-center justify-start pl-1.5 shadow-md pointer-events-none select-none dpad-arm ${theme.dpadBg}`}
         aria-hidden="true"
       >
-        <ChevronLeft className="w-6 h-6 stroke-[2.5]" />
+        <span className="text-[10px] font-black opacity-60">◀</span>
       </div>
       {/* Right */}
       <div
         ref={(el) => { dpadArmRefs.current.right = el; }}
-        className={`absolute top-10 right-0 w-12 h-12 rounded-r-xl border flex items-center justify-center shadow-md pointer-events-none select-none dpad-arm ${theme.dpadBg}`}
+        className={`absolute top-12 right-0 w-14 h-12 rounded-r-lg border border-black/50 flex items-center justify-end pr-1.5 shadow-md pointer-events-none select-none dpad-arm ${theme.dpadBg}`}
         aria-hidden="true"
       >
-        <ChevronRight className="w-6 h-6 stroke-[2.5]" />
+        <span className="text-[10px] font-black opacity-60">▶</span>
       </div>
-      {/* Molded Center Pivot Dish */}
+      {/* Molded Center Pivot Dish (Game Boy Concave indentation) */}
       <div
-        className={`absolute top-10 left-10 w-12 h-12 ${
-          shaders.amoled ? 'bg-black border-black' : 'bg-zinc-900 border-zinc-800'
+        className={`absolute top-12 left-12 w-12 h-12 ${
+          shaders.amoled ? 'bg-black' : 'bg-zinc-900'
         } flex items-center justify-center pointer-events-none shadow-inner`}
       >
-        <div className={`w-5 h-5 rounded-full ${shaders.amoled ? 'bg-zinc-950' : 'bg-zinc-800'} shadow-inner border border-black/40`} />
+        <div className="w-5 h-5 rounded-full bg-black/60 shadow-inner border border-white/5" />
       </div>
     </div>
   );
 
   const renderActions = () => (
-    <div className="relative w-36 h-32 select-none touch-none">
-      {/* X (Top) */}
-      <button
-        type="button"
-        {...safeBindPadButton('actionX')}
-        className={`absolute top-0 left-12 w-12 h-12 rounded-full border-2 font-black text-sm shadow-xl flex items-center justify-center tactile-btn touch-none select-none ${theme.btnXY}`}
-        aria-label="Button X"
-      >
-        X
-      </button>
-      {/* Y (Left) */}
-      <button
-        type="button"
-        {...safeBindPadButton('actionY')}
-        className={`absolute top-10 left-1 w-12 h-12 rounded-full border-2 font-black text-sm shadow-xl flex items-center justify-center tactile-btn touch-none select-none ${theme.btnXY}`}
-        aria-label="Button Y"
-      >
-        Y
-      </button>
-      {/* B (Bottom) */}
-      <button
-        type="button"
-        {...safeBindPadButton('actionB')}
-        className={`absolute bottom-0 left-12 w-12 h-12 rounded-full border-2 font-black text-base shadow-2xl flex items-center justify-center tactile-btn touch-none select-none ${theme.btnB}`}
-        aria-label="Button B"
-      >
-        B
-      </button>
-      {/* A (Right) */}
-      <button
-        type="button"
-        {...safeBindPadButton('actionA')}
-        className={`absolute top-10 right-1 w-12 h-12 rounded-full border-2 font-black text-base shadow-2xl flex items-center justify-center tactile-btn touch-none select-none ${theme.btnA}`}
-        aria-label="Button A"
-      >
-        A
-      </button>
+    <div className="relative w-40 h-32 select-none touch-none">
+      {/* B Button (Bottom-Left) */}
+      <div className="absolute bottom-1 left-2 flex flex-col items-center">
+        <button
+          type="button"
+          {...safeBindPadButton('actionB')}
+          className={`w-13 h-13 rounded-full border-2 font-black text-base shadow-2xl flex items-center justify-center tactile-btn touch-none select-none ${theme.btnB}`}
+          style={{ width: '3.35rem', height: '3.35rem' }}
+          aria-label="Button B"
+        />
+        <span className="mt-1 text-[11px] font-black italic tracking-widest text-indigo-900 dark:text-indigo-400 select-none">
+          B
+        </span>
+      </div>
+      {/* A Button (Top-Right) */}
+      <div className="absolute top-1 right-2 flex flex-col items-center">
+        <button
+          type="button"
+          {...safeBindPadButton('actionA')}
+          className={`w-13 h-13 rounded-full border-2 font-black text-base shadow-2xl flex items-center justify-center tactile-btn touch-none select-none ${theme.btnA}`}
+          style={{ width: '3.35rem', height: '3.35rem' }}
+          aria-label="Button A"
+        />
+        <span className="mt-1 text-[11px] font-black italic tracking-widest text-indigo-900 dark:text-indigo-400 select-none">
+          A
+        </span>
+      </div>
     </div>
   );
 
   const renderSystem = () => (
-    <div className="flex items-center justify-center gap-6 pt-1 pb-1 select-none touch-none">
+    <div className="flex items-center justify-center gap-7 pt-1 pb-1 select-none touch-none">
       <button
         type="button"
         {...safeBindPadButton('select')}
-        className="flex flex-col items-center gap-1 group touch-none select-none tactile-btn"
+        className="flex flex-col items-center gap-1.5 group touch-none select-none tactile-btn"
       >
         <div
-          className={`w-12 h-3.5 rounded-full ${
-            shaders.amoled ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-800 border-zinc-600'
-          } group-active:bg-emerald-400 border shadow-inner -rotate-12 transition`}
+          className={`w-13 h-4 rounded-full ${
+            theme.isLight ? 'bg-zinc-600 border-zinc-700' : 'bg-zinc-800 border-zinc-600'
+          } group-active:bg-rose-500 border shadow-inner -rotate-[25deg] transition`}
+          style={{ width: '3.1rem', height: '0.95rem' }}
         />
-        <span className="text-[9px] font-mono font-bold tracking-widest text-zinc-400 uppercase">
+        <span className="text-[9px] font-black italic tracking-widest text-indigo-900 dark:text-indigo-400 uppercase select-none">
           SELECT
         </span>
       </button>
@@ -605,14 +596,15 @@ export const InGameView: React.FC<InGameViewProps> = ({
       <button
         type="button"
         {...safeBindPadButton('start')}
-        className="flex flex-col items-center gap-1 group touch-none select-none tactile-btn"
+        className="flex flex-col items-center gap-1.5 group touch-none select-none tactile-btn"
       >
         <div
-          className={`w-12 h-3.5 rounded-full ${
-            shaders.amoled ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-800 border-zinc-600'
-          } group-active:bg-emerald-400 border shadow-inner -rotate-12 transition`}
+          className={`w-13 h-4 rounded-full ${
+            theme.isLight ? 'bg-zinc-600 border-zinc-700' : 'bg-zinc-800 border-zinc-600'
+          } group-active:bg-rose-500 border shadow-inner -rotate-[25deg] transition`}
+          style={{ width: '3.1rem', height: '0.95rem' }}
         />
-        <span className="text-[9px] font-mono font-bold tracking-widest text-zinc-400 uppercase">
+        <span className="text-[9px] font-black italic tracking-widest text-indigo-900 dark:text-indigo-400 uppercase select-none">
           START
         </span>
       </button>
@@ -1998,6 +1990,16 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 {renderActions()}
               </PadGroup>
             )}
+
+            {/* Game Boy Diagonal Speaker Grille Accents (Bottom Right) */}
+            <div className="absolute bottom-3 right-4 flex items-center gap-1.5 rotate-[28deg] opacity-40 pointer-events-none select-none" aria-hidden="true">
+              <div className="w-1.5 h-7 rounded-full bg-black/70 shadow-inner" />
+              <div className="w-1.5 h-8 rounded-full bg-black/70 shadow-inner" />
+              <div className="w-1.5 h-9 rounded-full bg-black/70 shadow-inner" />
+              <div className="w-1.5 h-9 rounded-full bg-black/70 shadow-inner" />
+              <div className="w-1.5 h-8 rounded-full bg-black/70 shadow-inner" />
+              <div className="w-1.5 h-7 rounded-full bg-black/70 shadow-inner" />
+            </div>
 
             {(!hidePad || customizing) && (
               <PadGroup
