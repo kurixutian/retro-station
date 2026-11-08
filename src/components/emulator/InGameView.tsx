@@ -665,23 +665,6 @@ export const InGameView: React.FC<InGameViewProps> = ({
             return next;
           });
         }}
-        onPointerDown={(e) => {
-          e.preventDefault();
-          if (customizing) {
-            setSelectedPad('transport');
-            return;
-          }
-          haptics.toggle();
-          setIsPaused((p) => {
-            const next = !p;
-            if (next) {
-              revealTopBar(5000);
-            } else {
-              if (topBarTimer.current) clearTimeout(topBarTimer.current);
-            }
-            return next;
-          });
-        }}
         className={`relative flex items-center justify-center gap-1.5 ${
           compact ? 'h-[28px] min-w-[92px] px-3.5 rounded-md before:content-[\'\'] before:absolute before:-top-4 before:-bottom-4 before:-inset-x-2' : 'py-2.5 px-3 min-h-[44px] rounded-xl text-xs font-bold'
         } border transition active:scale-95 touch-none select-none tactile-btn ${
