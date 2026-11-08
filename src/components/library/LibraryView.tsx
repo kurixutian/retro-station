@@ -96,9 +96,9 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 
   return (
     <div className="relative pb-16 min-h-[100vh] min-h-[100lvh]">
-      {/* Ambient Randomized ROM Backdrop (Low-noise 10% opacity, unmounted in-game) */}
+      {/* Ambient Randomized ROM Backdrop (Calmed 5% opacity, blur-2xl) */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0 select-none">
-        <div className="grid grid-cols-2 w-full h-full opacity-10 blur-xl scale-105">
+        <div className="grid grid-cols-2 w-full h-full opacity-5 blur-2xl scale-105">
           {bgGames.map((g, idx) => {
             const imgSrc = g.customCover || g.cover;
             return (
@@ -106,7 +106,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                 key={`${g.id}-${idx}`}
                 className="w-full h-full bg-cover bg-center"
                 style={{
-                  backgroundImage: imgSrc ? `url(${imgSrc})` : `linear-gradient(135deg, ${theme.hex}33, #09090b)`
+                  backgroundImage: imgSrc ? `url(${imgSrc})` : `linear-gradient(135deg, ${theme.hex}22, #09090b)`
                 }}
               />
             );
@@ -115,7 +115,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
         <div
           className="absolute inset-0"
           style={{
-            background: `radial-gradient(circle at 20% 15%, ${theme.hex}18 0%, rgba(9,9,11,0.82) 55%, rgba(9,9,11,0.96) 100%)`
+            background: `radial-gradient(circle at 20% 15%, ${theme.hex}10 0%, rgba(9,9,11,0.90) 55%, rgba(9,9,11,0.98) 100%)`
           }}
         />
       </div>
@@ -133,7 +133,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             <div>
               <div className="flex items-center gap-1.5">
                 <span className="font-black tracking-tight text-base sm:text-lg text-zinc-100">RETRO</span>
-                <span className={`font-black tracking-tight text-base sm:text-lg ${theme.accentText}`}>POCKET</span>
+                <span className={`font-black tracking-tight text-base sm:text-lg ${theme.accentText}`}>STATION</span>
               </div>
               <p className="text-[10px] text-zinc-400 hidden sm:block">
                 Mobile & Web Libretro Frontend • Auto-Core & Per-Game State Slots
@@ -224,8 +224,17 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
               {/* Physical Cartridge Unit Preview + Details */}
               <div className="flex items-center gap-4 min-w-0 flex-1">
                 <div
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Play cartridge ${formatGameTitle(featuredGame.title)}`}
                   onClick={() => onSelectGame(featuredGame)}
-                  className="relative w-20 h-24 sm:w-24 sm:h-28 rounded-2xl overflow-hidden shrink-0 bg-zinc-900 border-2 border-zinc-700/80 p-1 flex flex-col cursor-pointer cartridge-card"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      onSelectGame(featuredGame);
+                    }
+                  }}
+                  className="relative w-20 h-24 sm:w-24 sm:h-28 rounded-2xl overflow-hidden shrink-0 bg-zinc-900 border-2 border-zinc-700/80 p-1 flex flex-col cursor-pointer cartridge-card focus-visible:ring-2 focus-visible:ring-emerald-400"
                 >
                   <div className="h-2.5 w-full bg-black/60 rounded-t-lg mb-1 flex items-center justify-center">
                     <div className="w-10 h-full cartridge-grip opacity-50" />
@@ -338,7 +347,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                       e.stopPropagation();
                       onLaunchGame(game);
                     }}
-                    className="w-7 h-7 rounded-full bg-zinc-800 hover:bg-white text-zinc-300 hover:text-zinc-950 flex items-center justify-center shrink-0 border border-white/10 opacity-70 group-hover:opacity-100 transition active:scale-90"
+                    className="w-8 h-8 sm:w-7 sm:h-7 rounded-full bg-zinc-800 hover:bg-white text-zinc-300 hover:text-zinc-950 flex items-center justify-center shrink-0 border border-white/10 opacity-80 group-hover:opacity-100 transition active:scale-90"
                     title={`Play ${formatGameTitle(game.title)}`}
                     aria-label={`Play ${formatGameTitle(game.title)}`}
                   >
@@ -383,23 +392,34 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 
           <div className="rounded-3xl border border-zinc-800/90 p-3.5 sm:p-5 binder-page">
             {filteredGames.length === 0 && games.length === 0 ? (
-              <div className="py-16 flex flex-col items-center justify-center text-center space-y-4">
-                <div className="w-16 h-16 rounded-3xl bg-zinc-900 border border-zinc-800 flex items-center justify-center">
+              <div className="py-16 px-4 flex flex-col items-center justify-center text-center space-y-5 max-w-md mx-auto">
+                <div className="w-16 h-16 rounded-3xl bg-zinc-900 border border-zinc-800 flex items-center justify-center shadow-inner">
                   <Gamepad2 className="w-8 h-8 text-zinc-400" />
                 </div>
-                <div className="space-y-1">
-                  <h3 className="text-base font-bold text-zinc-200">No ROMs in Binder</h3>
-                  <p className="text-xs text-zinc-400 max-w-xs">
-                    Load your own .gb, .gbc, .gba, .nes, .sfc, or .md ROM files to start playing.
+                <div className="space-y-1.5">
+                  <h3 className="text-lg font-black text-zinc-100">Your Cartridge Shelf is Empty</h3>
+                  <p className="text-xs text-zinc-400 leading-relaxed">
+                    Insert your personal game backup files (<span className="text-zinc-300 font-mono">.gb, .gbc, .gba, .nes, .sfc, .md, .zip</span>) to play instantly in browser with CRT shaders and battery saves.
                   </p>
                 </div>
-                <button
-                  onClick={onTriggerAddRom}
-                  className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs tactile-btn shadow-lg transition ${theme.accentBg}`}
-                >
-                  <Plus className="w-4 h-4 stroke-[2.5]" />
-                  <span>Load ROM</span>
-                </button>
+                <div className="flex flex-col sm:flex-row items-center gap-2.5 w-full justify-center">
+                  <button
+                    onClick={onTriggerAddRom}
+                    className={`w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold text-xs tactile-btn shadow-lg transition ${theme.accentBg}`}
+                  >
+                    <Plus className="w-4 h-4 stroke-[2.5]" />
+                    <span>Insert Cartridge (.ROM)</span>
+                  </button>
+                  {onOpenControls && (
+                    <button
+                      onClick={onOpenControls}
+                      className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-xs font-bold border border-zinc-800 transition tactile-btn"
+                    >
+                      <Gamepad2 className="w-4 h-4 text-sky-400" />
+                      <span>View Keybindings</span>
+                    </button>
+                  )}
+                </div>
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">

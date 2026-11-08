@@ -624,6 +624,23 @@ export const InGameView: React.FC<InGameViewProps> = ({
       {/* Pause Toggle */}
       <button
         type="button"
+        aria-label={isPaused ? 'Resume game' : 'Pause game'}
+        onClick={() => {
+          if (customizing) {
+            setSelectedPad('transport');
+            return;
+          }
+          haptics.toggle();
+          setIsPaused((p) => {
+            const next = !p;
+            if (next) {
+              revealTopBar(5000);
+            } else {
+              if (topBarTimer.current) clearTimeout(topBarTimer.current);
+            }
+            return next;
+          });
+        }}
         onPointerDown={(e) => {
           e.preventDefault();
           if (customizing) {
@@ -642,7 +659,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
           });
         }}
         className={`relative flex items-center justify-center gap-1.5 ${
-          compact ? 'h-[20px] min-w-[92px] px-3.5 rounded-md before:content-[\'\'] before:absolute before:-top-5 before:-bottom-5 before:-inset-x-2' : 'py-2.5 px-3 min-h-[44px] rounded-xl text-xs font-bold'
+          compact ? 'h-[28px] min-w-[92px] px-3.5 rounded-md before:content-[\'\'] before:absolute before:-top-4 before:-bottom-4 before:-inset-x-2' : 'py-2.5 px-3 min-h-[44px] rounded-xl text-xs font-bold'
         } border transition active:scale-95 touch-none select-none tactile-btn ${
           isPaused
             ? 'bg-amber-500 text-zinc-950 border-amber-300 shadow-lg'
@@ -659,6 +676,17 @@ export const InGameView: React.FC<InGameViewProps> = ({
       {/* Hold Rewind */}
       <button
         type="button"
+        aria-label="Hold to Rewind"
+        onKeyDown={(e) => {
+          if (e.key === ' ' || e.key === 'Enter') {
+            setIsRewinding(true);
+          }
+        }}
+        onKeyUp={(e) => {
+          if (e.key === ' ' || e.key === 'Enter') {
+            setIsRewinding(false);
+          }
+        }}
         onPointerDown={(e) => {
           e.preventDefault();
           if (customizing) {
@@ -689,7 +717,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
         }}
         onContextMenu={(e) => e.preventDefault()}
         className={`relative flex items-center justify-center gap-1.5 ${
-          compact ? 'h-[20px] min-w-[92px] px-3.5 rounded-md before:content-[\'\'] before:absolute before:-top-5 before:-bottom-5 before:-inset-x-2' : 'py-2.5 px-3 min-h-[44px] rounded-xl text-xs font-bold'
+          compact ? 'h-[28px] min-w-[92px] px-3.5 rounded-md before:content-[\'\'] before:absolute before:-top-4 before:-bottom-4 before:-inset-x-2' : 'py-2.5 px-3 min-h-[44px] rounded-xl text-xs font-bold'
         } border transition active:scale-95 touch-none select-none tactile-btn ${
           isRewinding
             ? 'bg-amber-400 text-zinc-950 border-amber-200 shadow-lg'
@@ -706,6 +734,20 @@ export const InGameView: React.FC<InGameViewProps> = ({
       {/* Fast-Forward Speed Picker: OFF | 2x | 4x | 8x (cycles on tap) */}
       <button
         type="button"
+        aria-label={isFastForward ? `Fast Forward ${ffSpeed}x` : 'Fast Forward'}
+        onClick={() => {
+          if (customizing) {
+            setSelectedPad('transport');
+            return;
+          }
+          haptics.toggle();
+          setFfSpeed((s) => {
+            if (s === 0) return 2;
+            if (s === 2) return 4;
+            if (s === 4) return 8;
+            return 0;
+          });
+        }}
         onPointerDown={(e) => {
           e.preventDefault();
           if (customizing) {
@@ -721,7 +763,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
           });
         }}
         className={`relative flex items-center justify-center gap-1.5 ${
-          compact ? 'h-[20px] min-w-[92px] px-3.5 rounded-md before:content-[\'\'] before:absolute before:-top-5 before:-bottom-5 before:-inset-x-2' : 'py-2.5 px-3 min-h-[44px] rounded-xl text-xs font-bold'
+          compact ? 'h-[28px] min-w-[92px] px-3.5 rounded-md before:content-[\'\'] before:absolute before:-top-4 before:-bottom-4 before:-inset-x-2' : 'py-2.5 px-3 min-h-[44px] rounded-xl text-xs font-bold'
         } border transition active:scale-95 touch-none select-none tactile-btn ${
           isFastForward
             ? 'bg-sky-400 text-zinc-950 border-sky-200 shadow-lg'
@@ -891,7 +933,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 maxLength={20}
                 autoFocus
                 placeholder={`Layout ${activeSlot}`}
-                className="flex-1 bg-zinc-800 text-emerald-300 font-bold text-xs rounded-lg px-2 py-1 border border-emerald-500/50 outline-none"
+                className="flex-1 bg-zinc-800 text-emerald-300 font-bold text-xs rounded-lg px-2 py-1 border border-emerald-500/50 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
               />
               <button
                 onClick={() => {
@@ -924,13 +966,14 @@ export const InGameView: React.FC<InGameViewProps> = ({
               </div>
               <div className="flex items-center gap-1.5 min-w-0">
                 <select
+                  aria-label="Preset layout selector"
                   value={activeSlot}
                   onChange={(e) => {
                     const newSlot = parseInt(e.target.value, 10) as LayoutSlot;
                     setActiveSlotHandler(newSlot);
                     showToast(`Loaded ${layoutNames[newSlot] || `Layout ${newSlot}`} (${isLandscape ? 'Landscape' : 'Portrait'})`);
                   }}
-                  className="bg-zinc-800 hover:bg-zinc-700 text-emerald-300 font-bold text-xs rounded-lg px-2.5 py-1 border border-zinc-700 outline-none cursor-pointer transition max-w-[145px] truncate"
+                  className="bg-zinc-800 hover:bg-zinc-700 text-emerald-300 font-bold text-xs rounded-lg px-2.5 py-1 border border-zinc-700 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 cursor-pointer transition max-w-[145px] truncate"
                 >
                   <option value={1}>{layoutNames[1] || 'Layout 1'}</option>
                   <option value={2}>{layoutNames[2] || 'Layout 2'}</option>
@@ -1862,13 +1905,13 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 {/* Magnetic Snap Guidelines (Active Canva Lines) */}
                 {activeSnapGuide?.x != null && (
                   <div
-                    className="absolute top-0 bottom-0 w-0 border-l-2 border-dashed border-cyan-400 z-30 shadow-[0_0_12px_rgba(6,182,212,0.9)] transition-all duration-75"
+                    className="absolute top-0 bottom-0 w-0 border-l-2 border-dashed border-cyan-400 z-30 shadow-[0_0_12px_rgba(6,182,212,0.9)]"
                     style={{ left: `${activeSnapGuide.x * 100}%` }}
                   />
                 )}
                 {activeSnapGuide?.y != null && (
                   <div
-                    className="absolute left-0 right-0 h-0 border-t-2 border-dashed border-cyan-400 z-30 shadow-[0_0_12px_rgba(6,182,212,0.9)] transition-all duration-75"
+                    className="absolute left-0 right-0 h-0 border-t-2 border-dashed border-cyan-400 z-30 shadow-[0_0_12px_rgba(6,182,212,0.9)]"
                     style={{ top: `${activeSnapGuide.y * 100}%` }}
                   />
                 )}

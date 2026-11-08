@@ -22,6 +22,15 @@ export const MissingRomModal: React.FC<MissingRomModalProps> = ({
 }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen || !game) return null;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -33,6 +42,9 @@ export const MissingRomModal: React.FC<MissingRomModalProps> = ({
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="missing-rom-dialog-title"
       className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
       style={{
         paddingTop: 'max(env(safe-area-inset-top, 0px) + 20px, 36px)',
@@ -49,7 +61,7 @@ export const MissingRomModal: React.FC<MissingRomModalProps> = ({
               <HardDrive className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-sm sm:text-base font-black text-white">Locate Game ROM</h2>
+              <h2 id="missing-rom-dialog-title" className="text-sm sm:text-base font-black text-white">Locate Game ROM</h2>
               <p className="text-[10px] text-zinc-400 font-medium">
                 Cloud saves ready • Link ROM file for this device
               </p>

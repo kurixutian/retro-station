@@ -224,6 +224,17 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     }
   };
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
   const statusColor =
     syncStatus === 'syncing' || isSyncing
       ? 'text-amber-400 border-amber-500/30 bg-amber-500/10'
@@ -252,6 +263,9 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="cloud-sync-dialog-title"
       className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fadeIn"
       onClick={onClose}
     >
@@ -266,7 +280,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
               <Cloud className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-black tracking-tight text-white flex items-center gap-2">
+              <h2 id="cloud-sync-dialog-title" className="text-base font-black tracking-tight text-white flex items-center gap-2">
                 Cloud Save & Backup
                 <span
                   className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${statusColor}`}
@@ -283,6 +297,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
             onClick={onClose}
             className="p-2 rounded-xl bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 transition cursor-pointer"
             title="Close"
+            aria-label="Close"
           >
             <X className="w-4 h-4" />
           </button>
@@ -382,7 +397,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                     role="switch"
                     aria-checked={romSyncOn}
                     aria-label="Sync ROM files to Google Drive"
-                    className={`relative w-11 h-6 rounded-full shrink-0 transition-colors cursor-pointer focus:outline-none ${
+                    className={`relative w-11 h-6 rounded-full shrink-0 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
                       romSyncOn ? 'bg-emerald-500' : 'bg-zinc-700'
                     }`}
                   >
@@ -585,7 +600,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                       value={clientIdInput}
                       onChange={(e) => setClientIdInput(e.target.value)}
                       placeholder={DEFAULT_GOOGLE_CLIENT_ID}
-                      className="flex-1 px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700/80 text-white font-mono text-xs focus:outline-none focus:border-emerald-500"
+                      className="flex-1 px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700/80 text-white font-mono text-xs focus:outline-none focus:border-emerald-500 focus-visible:ring-2 focus-visible:ring-emerald-400"
                     />
                     <button
                       onClick={() => {

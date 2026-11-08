@@ -39,12 +39,24 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
   const [confirmDeleteSlot, setConfirmDeleteSlot] = useState<number | null>(null);
   const [saveFormat, setSaveFormat] = useState<'sav' | 'srm'>('sav');
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen || !targetGame) return null;
 
   const gameSlots = savesByGameId[targetGame.id] || createEmptySlotsForGame(targetGame.id);
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="save-slots-title"
       className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
       style={{
         paddingTop: 'max(env(safe-area-inset-top, 0px) + 20px, 36px)',
@@ -71,7 +83,7 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
                   {targetGame.system}
                 </span>
               </div>
-              <h2 className="text-xl sm:text-2xl font-black text-white">{formatGameTitle(targetGame.title)}</h2>
+              <h2 id="save-slots-title" className="text-xl sm:text-2xl font-black text-white">{formatGameTitle(targetGame.title)}</h2>
             </div>
 
             <button
@@ -207,7 +219,7 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
                   {/* Thumbnail Preview */}
                   <div className="w-20 h-16 rounded-xl bg-zinc-950 border border-zinc-800 overflow-hidden shrink-0 flex items-center justify-center">
                     {(() => {
-                      const isValidScreenshot = slotObj.screenshot && !slotObj.screenshot.includes('AezYV5YcSZIEwHp7');
+                      const isValidScreenshot = Boolean(slotObj.screenshot && slotObj.screenshot.length > 50);
                       const previewImg = isValidScreenshot ? slotObj.screenshot : (!slotObj.empty ? (targetGame.customCover || targetGame.cover) : null);
                       if (previewImg) {
                         return (

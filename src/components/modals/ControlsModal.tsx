@@ -34,10 +34,22 @@ export const ControlsModal: React.FC<ControlsModalProps> = ({
     };
   }, []);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="controls-dialog-title"
       className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
       style={{
         paddingTop: 'max(env(safe-area-inset-top, 0px) + 20px, 36px)',
@@ -56,7 +68,7 @@ export const ControlsModal: React.FC<ControlsModalProps> = ({
           <div className="flex items-center gap-2.5">
             <Gamepad2 className={`w-5 h-5 ${theme.accentText}`} />
             <div>
-              <h2 className="text-sm font-black tracking-tight text-white flex items-center gap-2">
+              <h2 id="controls-dialog-title" className="text-sm font-black tracking-tight text-white flex items-center gap-2">
                 <span>Controls & Keybindings</span>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-zinc-800 text-zinc-300 border border-white/10">
                   Universal Map
