@@ -755,10 +755,10 @@ export const InGameView: React.FC<InGameViewProps> = ({
         {!compact && <span>Rewind</span>}
       </button>
 
-      {/* Fast-Forward Speed Picker: OFF | 2x | 4x | 8x (cycles on tap) */}
+      {/* Fast-Forward Speed Picker: 1x | 2x | 4x | 8x (cycles on tap) */}
       <button
         type="button"
-        aria-label={isFastForward ? `Fast Forward ${ffSpeed}x` : 'Fast Forward'}
+        aria-label={isFastForward ? `Fast Forward ${ffSpeed}x` : 'Fast Forward 1x'}
         onClick={() => {
           if (customizing) {
             setSelectedPad('transport');
@@ -766,24 +766,10 @@ export const InGameView: React.FC<InGameViewProps> = ({
           }
           haptics.toggle();
           setFfSpeed((s) => {
-            if (s === 0) return 2;
+            if (s <= 1) return 2;
             if (s === 2) return 4;
             if (s === 4) return 8;
-            return 0;
-          });
-        }}
-        onPointerDown={(e) => {
-          e.preventDefault();
-          if (customizing) {
-            setSelectedPad('transport');
-            return;
-          }
-          haptics.toggle();
-          setFfSpeed((s) => {
-            if (s === 0) return 2;
-            if (s === 2) return 4;
-            if (s === 4) return 8;
-            return 0;
+            return 1;
           });
         }}
         className={`relative flex items-center justify-center gap-1.5 ${

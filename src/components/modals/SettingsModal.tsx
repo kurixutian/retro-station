@@ -12,6 +12,8 @@ interface SettingsModalProps {
   theme: Theme;
   themeId: string;
   applyTheme: (id: string) => void;
+  customAccent?: string;
+  onSelectCustomAccent?: (hex: string) => void;
   shaders: Record<string, any>;
   toggleShader: (key: string) => void;
   setColorProfile?: (profile: string) => void;
@@ -36,6 +38,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   theme,
   themeId,
   applyTheme,
+  customAccent = '',
+  onSelectCustomAccent,
   shaders,
   toggleShader,
   setColorProfile,
@@ -414,46 +418,123 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           )}
 
-          {/* PANEL 3: THEMES (Clean Dark/Light toggle) */}
+          {/* PANEL 3: THEMES (Dark/Light toggle + Accent Colors + Color Picker) */}
           {activePanel === 'themes' && (
-            <div className="space-y-4">
-              <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
-                <Palette className="w-4 h-4 text-amber-400" />
-                <span>APPEARANCE</span>
-              </h3>
+            <div className="space-y-5">
+              <div>
+                <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5 mb-3">
+                  <Palette className="w-4 h-4 text-amber-400" />
+                  <span>APPEARANCE & THEME</span>
+                </h3>
 
-              <button
-                type="button"
-                role="switch"
-                aria-checked={!theme.isLight}
-                onClick={() => applyTheme(theme.isLight ? 'midnight' : 'trooper')}
-                className={`w-full text-left p-4 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 tactile-btn focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
-                  !theme.isLight
-                    ? 'bg-zinc-900 border-zinc-700 text-white'
-                    : 'bg-zinc-900/60 border-zinc-800 text-zinc-300 hover:bg-zinc-900'
-                }`}
-              >
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Moon className="w-4 h-4 text-emerald-400" />
-                    <span className="text-sm font-extrabold text-white">Dark Mode</span>
-                    <span className="px-2 py-0.5 rounded-md text-[9px] font-black tracking-wider uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                      {theme.isLight ? 'Light' : 'Dark'}
-                    </span>
-                  </div>
-                  <p className="text-xs text-zinc-400 leading-snug">
-                    Toggle between dark and light appearance across the entire app and in-game console shell.
-                  </p>
-                </div>
-
-                <div
-                  className={`shrink-0 w-12 h-6 rounded-full transition-colors p-0.5 flex items-center ${
-                    !theme.isLight ? 'bg-emerald-500 justify-end' : 'bg-zinc-800 border border-zinc-700 justify-start'
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={!theme.isLight}
+                  onClick={() => applyTheme(theme.isLight ? 'midnight' : 'trooper')}
+                  className={`w-full text-left p-4 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 tactile-btn focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
+                    !theme.isLight
+                      ? 'bg-zinc-900 border-zinc-700 text-white'
+                      : 'bg-zinc-900/60 border-zinc-800 text-zinc-300 hover:bg-zinc-900'
                   }`}
                 >
-                  <div className="w-5 h-5 rounded-full bg-white shadow-md" />
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Moon className="w-4 h-4 text-emerald-400" />
+                      <span className="text-sm font-extrabold text-white">Dark Mode</span>
+                      <span className="px-2 py-0.5 rounded-md text-[9px] font-black tracking-wider uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                        {theme.isLight ? 'Light' : 'Dark'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-zinc-400 leading-snug">
+                      Toggle between dark obsidian and warm retro light stone across the library and console.
+                    </p>
+                  </div>
+
+                  <div
+                    className={`shrink-0 w-12 h-6 rounded-full transition-colors p-0.5 flex items-center ${
+                      !theme.isLight ? 'bg-emerald-500 justify-end' : 'bg-zinc-800 border border-zinc-700 justify-start'
+                    }`}
+                  >
+                    <div className="w-5 h-5 rounded-full bg-white shadow-md" />
+                  </div>
+                </button>
+              </div>
+
+              {/* Accent Color Presets & Custom Picker */}
+              <div className="p-4 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-zinc-200">Accent Color</span>
+                  {customAccent ? (
+                    <button
+                      type="button"
+                      onClick={() => onSelectCustomAccent?.('')}
+                      className="text-[10px] text-zinc-400 hover:text-white underline transition"
+                    >
+                      Reset to Theme Default
+                    </button>
+                  ) : (
+                    <span className="text-[10px] font-mono text-zinc-500 uppercase">Default</span>
+                  )}
                 </div>
-              </button>
+
+                {/* Preset Swatches */}
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  {[
+                    { label: 'Emerald', hex: '#10b981' },
+                    { label: 'Cyan', hex: '#06b6d4' },
+                    { label: 'Rose', hex: '#e11d48' },
+                    { label: 'Amber', hex: '#f59e0b' },
+                    { label: 'Violet', hex: '#8b5cf6' },
+                    { label: 'Blue', hex: '#3b82f6' },
+                  ].map((preset) => {
+                    const isSelected = (customAccent || theme.hex).toLowerCase() === preset.hex.toLowerCase();
+                    return (
+                      <button
+                        key={preset.hex}
+                        type="button"
+                        onClick={() => {
+                          haptics.toggle();
+                          onSelectCustomAccent?.(preset.hex);
+                        }}
+                        aria-label={`Select ${preset.label} accent`}
+                        title={preset.label}
+                        className={`w-8 h-8 rounded-full border-2 transition-transform active:scale-90 flex items-center justify-center ${
+                          isSelected ? 'border-white scale-110 shadow-lg' : 'border-black/50 hover:scale-105'
+                        }`}
+                        style={{ backgroundColor: preset.hex }}
+                      >
+                        {isSelected && <Check className="w-4 h-4 text-white drop-shadow-md stroke-[3]" />}
+                      </button>
+                    );
+                  })}
+
+                  {/* Native Custom Color Picker */}
+                  <label
+                    title="Custom Color Picker"
+                    className="relative w-8 h-8 rounded-full border-2 border-dashed border-zinc-600 hover:border-zinc-400 flex items-center justify-center cursor-pointer transition-transform active:scale-90 overflow-hidden bg-gradient-to-tr from-rose-500 via-amber-400 to-sky-500"
+                  >
+                    <input
+                      type="color"
+                      value={customAccent || theme.hex}
+                      onChange={(e) => onSelectCustomAccent?.(e.target.value)}
+                      className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+                    />
+                    <Sparkles className="w-3.5 h-3.5 text-white drop-shadow pointer-events-none" />
+                  </label>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1 text-[11px] text-zinc-400">
+                  <div
+                    className="w-3.5 h-3.5 rounded-full border border-white/20 shadow-sm"
+                    style={{ backgroundColor: customAccent || theme.hex }}
+                  />
+                  <span>Active accent:</span>
+                  <span className="font-mono font-bold text-zinc-200 uppercase">
+                    {customAccent || theme.hex}
+                  </span>
+                </div>
+              </div>
             </div>
           )}
 

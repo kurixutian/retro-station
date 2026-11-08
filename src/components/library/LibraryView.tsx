@@ -145,9 +145,9 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   }, [actionsMenuOpen]);
 
   return (
-    <div className="relative pb-16 min-h-[100vh] min-h-[100lvh]">
+    <div className={`relative pb-16 min-h-[100vh] min-h-[100lvh] ${theme.isLight ? 'text-zinc-900' : 'text-zinc-100'}`}>
       {/* Ambient Animated Blurred ROM Backdrop */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0 select-none bg-zinc-950">
+      <div className={`fixed inset-0 pointer-events-none overflow-hidden z-0 select-none ${theme.isLight ? 'bg-[#ece9e2]' : 'bg-zinc-950'}`}>
         <div className="grid grid-cols-2 grid-rows-2 w-full h-full opacity-30 sm:opacity-40 blur-lg sm:blur-xl ambient-backdrop-pan scale-115">
           {bgGames.map((g, idx) => (
             <AmbientBackdropTile key={`bg-tile-${g.id}-${idx}`} game={g} theme={theme} />
@@ -156,27 +156,33 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
         <div
           className="absolute inset-0"
           style={{
-            background: `radial-gradient(ellipse at 50% 30%, rgba(9,9,11,0.2) 0%, rgba(9,9,11,0.68) 65%, rgba(9,9,11,0.92) 100%)`
+            background: theme.isLight
+              ? `radial-gradient(ellipse at 50% 30%, rgba(236,233,226,0.3) 0%, rgba(236,233,226,0.75) 65%, rgba(236,233,226,0.95) 100%)`
+              : `radial-gradient(ellipse at 50% 30%, rgba(9,9,11,0.2) 0%, rgba(9,9,11,0.68) 65%, rgba(9,9,11,0.92) 100%)`
           }}
         />
       </div>
       {/* Sticky Top Navigation Bar */}
       <header
-        className="sticky top-0 z-30 backdrop-blur-xl bg-zinc-950/85 border-b border-zinc-800/80 px-4 sm:px-6 py-3 hardware-panel"
+        className={`sticky top-0 z-30 backdrop-blur-xl border-b px-4 sm:px-6 py-3 hardware-panel ${
+          theme.isLight
+            ? 'bg-[#dedbd2]/90 border-stone-300 text-zinc-900 shadow-sm'
+            : 'bg-zinc-950/85 border-zinc-800/80 text-zinc-100'
+        }`}
         style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 12px)' }}
       >
         <div className="max-w-6xl mx-auto flex items-center justify-between gap-3">
           {/* Brand Logo */}
           <div className="flex items-center gap-2.5">
-            <div className={`w-9 h-9 rounded-xl overflow-hidden flex items-center justify-center border ${theme.accentSoft} shadow-sm bg-zinc-900`}>
+            <div className={`w-9 h-9 rounded-xl overflow-hidden flex items-center justify-center border ${theme.accentSoft} shadow-sm ${theme.isLight ? 'bg-white' : 'bg-zinc-900'}`}>
               <img src={appIcon} alt="Retro Station Logo" className="w-full h-full object-cover" />
             </div>
             <div>
               <div className="flex items-center gap-1.5">
-                <span className="font-black tracking-tight text-base sm:text-lg text-zinc-100">RETRO</span>
+                <span className={`font-black tracking-tight text-base sm:text-lg ${theme.isLight ? 'text-zinc-900' : 'text-zinc-100'}`}>RETRO</span>
                 <span className={`font-black tracking-tight text-base sm:text-lg ${theme.accentText}`}>STATION</span>
               </div>
-              <p className="text-[10px] text-zinc-400 hidden sm:block">
+              <p className={`text-[10px] hidden sm:block ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
                 Mobile & Web Libretro Frontend • Auto-Core & Per-Game State Slots
               </p>
             </div>
@@ -188,9 +194,11 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
               onClick={onOpenCloudSync}
               className={`p-2 sm:p-2.5 rounded-xl border tactile-btn transition flex items-center ${
                 cloudStatus === 'idle'
-                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/20'
                   : cloudStatus === 'syncing'
-                  ? 'bg-sky-500/10 border-sky-500/30 text-sky-400'
+                  ? 'bg-sky-500/10 border-sky-500/30 text-sky-500'
+                  : theme.isLight
+                  ? 'bg-stone-200/90 hover:bg-stone-300 border-stone-300 text-zinc-700'
                   : 'bg-zinc-900/90 hover:bg-zinc-800 border-zinc-800 text-zinc-300'
               }`}
               title="Cloud Save Vault"
@@ -243,23 +251,31 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             {onOpenControls && (
               <button
                 onClick={onOpenControls}
-                className="p-2 sm:p-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 tactile-btn transition hidden sm:block"
+                className={`p-2 sm:p-2.5 rounded-xl border text-xs font-bold tactile-btn transition hidden sm:block ${
+                  theme.isLight
+                    ? 'bg-stone-200 hover:bg-stone-300 border-stone-300 text-zinc-800'
+                    : 'bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200'
+                }`}
                 title="Controls & Keybindings Guide"
                 aria-label="Controls and keybindings"
               >
-                <Gamepad2 className="w-4 h-4 text-sky-400" />
+                <Gamepad2 className="w-4 h-4 text-sky-500" />
               </button>
             )}
 
             {onToggleLightDark && (
               <button
                 onClick={onToggleLightDark}
-                className="p-2 sm:p-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 tactile-btn transition hidden sm:block"
+                className={`p-2 sm:p-2.5 rounded-xl border tactile-btn transition hidden sm:block ${
+                  theme.isLight
+                    ? 'bg-stone-200 hover:bg-stone-300 border-stone-300 text-zinc-800'
+                    : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-800 text-zinc-200'
+                }`}
                 title={theme.isLight ? 'Switch to Vader Obsidian (Dark Mode)' : 'Switch to Trooper White (Light Mode)'}
                 aria-label="Toggle Light/Dark Theme"
               >
                 {theme.isLight ? (
-                  <Moon className="w-4 h-4 text-indigo-400" />
+                  <Moon className="w-4 h-4 text-indigo-500" />
                 ) : (
                   <Sun className="w-4 h-4 text-amber-400" />
                 )}
@@ -268,18 +284,26 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 
             <button
               onClick={onOpenSettings}
-              className="p-2 sm:p-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 tactile-btn transition hidden sm:block"
+              className={`p-2 sm:p-2.5 rounded-xl border tactile-btn transition hidden sm:block ${
+                theme.isLight
+                  ? 'bg-stone-200 hover:bg-stone-300 border-stone-300 text-zinc-800'
+                  : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-800 text-zinc-200'
+              }`}
               title="Configuration"
               aria-label="Configuration Settings"
             >
-              <Settings className="w-4 h-4 text-emerald-400" />
+              <Settings className="w-4 h-4 text-emerald-500" />
             </button>
 
             {/* Mobile Overflow Menu: Controls / Theme / Configuration */}
             <div className="relative sm:hidden" ref={actionsMenuRef}>
               <button
                 onClick={() => setActionsMenuOpen((o) => !o)}
-                className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 tactile-btn transition"
+                className={`p-2 rounded-xl border tactile-btn transition ${
+                  theme.isLight
+                    ? 'bg-stone-200 hover:bg-stone-300 border-stone-300 text-zinc-800'
+                    : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-800 text-zinc-200'
+                }`}
                 title="More actions"
                 aria-label="More actions"
                 aria-haspopup="menu"
@@ -291,15 +315,21 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
               {actionsMenuOpen && (
                 <div
                   role="menu"
-                  className="absolute right-0 top-[calc(100%+10px)] w-56 rounded-2xl border border-zinc-800 bg-zinc-950/95 backdrop-blur-xl shadow-2xl hardware-panel p-1.5"
+                  className={`absolute right-0 top-[calc(100%+10px)] w-56 rounded-2xl border backdrop-blur-xl shadow-2xl hardware-panel p-1.5 ${
+                    theme.isLight
+                      ? 'border-stone-300 bg-[#dedbd2]/95 text-zinc-900'
+                      : 'border-zinc-800 bg-zinc-950/95 text-zinc-200'
+                  }`}
                 >
                   {onOpenControls && (
                     <button
                       role="menuitem"
                       onClick={() => { setActionsMenuOpen(false); onOpenControls(); }}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-zinc-200 hover:bg-zinc-800/70 transition text-left"
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition text-left ${
+                        theme.isLight ? 'text-zinc-800 hover:bg-stone-300/80' : 'text-zinc-200 hover:bg-zinc-800/70'
+                      }`}
                     >
-                      <Gamepad2 className="w-4 h-4 text-sky-400" />
+                      <Gamepad2 className="w-4 h-4 text-sky-500" />
                       <span className="flex-1">Controls</span>
                     </button>
                   )}
@@ -308,10 +338,12 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                     <button
                       role="menuitem"
                       onClick={() => { setActionsMenuOpen(false); onToggleLightDark(); }}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-zinc-200 hover:bg-zinc-800/70 transition text-left"
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition text-left ${
+                        theme.isLight ? 'text-zinc-800 hover:bg-stone-300/80' : 'text-zinc-200 hover:bg-zinc-800/70'
+                      }`}
                     >
                       {theme.isLight ? (
-                        <Moon className="w-4 h-4 text-indigo-400" />
+                        <Moon className="w-4 h-4 text-indigo-500" />
                       ) : (
                         <Sun className="w-4 h-4 text-amber-400" />
                       )}
@@ -322,9 +354,11 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                   <button
                     role="menuitem"
                     onClick={() => { setActionsMenuOpen(false); onOpenSettings(); }}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-zinc-200 hover:bg-zinc-800/70 transition text-left"
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition text-left ${
+                      theme.isLight ? 'text-zinc-800 hover:bg-stone-300/80' : 'text-zinc-200 hover:bg-zinc-800/70'
+                    }`}
                   >
-                    <Settings className="w-4 h-4 text-emerald-400" />
+                    <Settings className="w-4 h-4 text-emerald-500" />
                     <span className="flex-1">Configuration</span>
                   </button>
                 </div>
@@ -338,22 +372,38 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       <main className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 pt-5 space-y-7">
         {/* Slot-1 Active Cartridge Deck Bay */}
         {featuredGame && (
-          <div className="relative rounded-3xl overflow-hidden border border-zinc-800/90 shadow-2xl p-4 sm:p-6 hardware-panel bg-zinc-950/70">
+          <div className={`relative rounded-3xl overflow-hidden border shadow-2xl p-4 sm:p-6 hardware-panel ${
+            theme.isLight
+              ? 'bg-[#dedbd2]/90 border-stone-300'
+              : 'bg-zinc-950/70 border-zinc-800/90'
+          }`}>
             {/* Ambient Cartridge Art Backdrop */}
             <div className="absolute inset-0 pointer-events-none overflow-hidden select-none z-0">
               <div className="w-full h-full opacity-45 sm:opacity-50 blur-lg hero-art-pan scale-110">
                 <AmbientBackdropTile game={featuredGame} theme={theme} />
               </div>
-              <div className="absolute inset-0 bg-gradient-to-r from-zinc-950/90 via-zinc-950/65 to-zinc-950/80" />
-              <div className="absolute inset-0 bg-gradient-to-t from-zinc-950/90 via-transparent to-zinc-950/40" />
+              <div className={`absolute inset-0 ${
+                theme.isLight
+                  ? 'bg-gradient-to-r from-[#dedbd2]/95 via-[#dedbd2]/75 to-[#dedbd2]/90'
+                  : 'bg-gradient-to-r from-zinc-950/90 via-zinc-950/65 to-zinc-950/80'
+              }`} />
+              <div className={`absolute inset-0 ${
+                theme.isLight
+                  ? 'bg-gradient-to-t from-[#dedbd2]/95 via-transparent to-[#dedbd2]/50'
+                  : 'bg-gradient-to-t from-zinc-950/90 via-transparent to-zinc-950/40'
+              }`} />
             </div>
 
             {/* Molded Cartridge Slot Top Grip Rib */}
-            <div className="relative z-10 h-3 w-full rounded-t-xl bg-black/60 border-b border-white/5 mb-4 flex items-center justify-between px-3">
+            <div className={`relative z-10 h-3 w-full rounded-t-xl border-b mb-4 flex items-center justify-between px-3 ${
+              theme.isLight ? 'bg-stone-300/80 border-stone-400/50' : 'bg-black/60 border-white/5'
+            }`}>
               <div className="w-24 h-full cartridge-grip opacity-50" />
               <div className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 hardware-led" />
-                <span className="text-[9px] font-mono font-bold uppercase tracking-widest text-zinc-400">
+                <span className={`text-[9px] font-mono font-bold uppercase tracking-widest ${
+                  theme.isLight ? 'text-stone-600' : 'text-zinc-400'
+                }`}>
                   SLOT-1 DECK BAY
                 </span>
               </div>
@@ -373,9 +423,15 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                       onSelectGame(featuredGame);
                     }
                   }}
-                  className="relative w-20 h-24 sm:w-24 sm:h-28 rounded-2xl overflow-hidden shrink-0 bg-zinc-900 border-2 border-zinc-700/80 p-1 flex flex-col cursor-pointer cartridge-card focus-visible:ring-2 focus-visible:ring-emerald-400"
+                  className={`relative w-20 h-24 sm:w-24 sm:h-28 rounded-2xl overflow-hidden shrink-0 border-2 p-1 flex flex-col cursor-pointer cartridge-card focus-visible:ring-2 focus-visible:ring-emerald-400 ${
+                    theme.isLight
+                      ? 'bg-stone-200 border-stone-300 shadow-md'
+                      : 'bg-zinc-900 border-zinc-700/80'
+                  }`}
                 >
-                  <div className="h-2.5 w-full bg-black/60 rounded-t-lg mb-1 flex items-center justify-center">
+                  <div className={`h-2.5 w-full rounded-t-lg mb-1 flex items-center justify-center ${
+                    theme.isLight ? 'bg-stone-300' : 'bg-black/60'
+                  }`}>
                     <div className="w-10 h-full cartridge-grip opacity-50" />
                   </div>
                   <div className="flex-1 rounded-lg overflow-hidden bg-black relative">
@@ -384,18 +440,24 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                 </div>
 
                 <div className="space-y-2 min-w-0 flex-1">
-                  <h1 className="text-lg sm:text-2xl font-black tracking-tight text-white truncate">
+                  <h1 className={`text-lg sm:text-2xl font-black tracking-tight truncate ${
+                    theme.isLight ? 'text-zinc-900' : 'text-white'
+                  }`}>
                     {formatGameTitle(featuredGame.title)}
                   </h1>
                   <div className="flex flex-wrap items-center gap-2">
                     {games.length > 1 && (
                       <button
                         onClick={handleShuffleFeatured}
-                        className="p-1.5 rounded-md bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-zinc-800 transition active:scale-95"
+                        className={`p-1.5 rounded-md border transition active:scale-95 ${
+                          theme.isLight
+                            ? 'bg-stone-200 hover:bg-stone-300 text-stone-700 border-stone-300'
+                            : 'bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white border-zinc-800'
+                        }`}
                         title="Cycle Next Cartridge in Deck"
                         aria-label="Cycle next cartridge in deck"
                       >
-                        <Shuffle className="w-3.5 h-3.5 text-emerald-400" />
+                        <Shuffle className="w-3.5 h-3.5 text-emerald-500" />
                       </button>
                     )}
                   </div>
@@ -406,7 +468,11 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
               <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0">
                 <button
                   onClick={() => onSelectGame(featuredGame)}
-                  className="px-3.5 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-800 text-xs font-bold tactile-btn transition"
+                  className={`px-3.5 py-2.5 rounded-xl border text-xs font-bold tactile-btn transition ${
+                    theme.isLight
+                      ? 'bg-stone-200 hover:bg-stone-300 text-stone-800 border-stone-300'
+                      : 'bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border-zinc-800'
+                  }`}
                 >
                   Save Slots
                 </button>
@@ -429,10 +495,12 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <History className={`w-4 h-4 ${theme.accentText}`} />
-                <h2 className="text-xs sm:text-sm font-extrabold tracking-tight text-zinc-100">
+                <h2 className={`text-xs sm:text-sm font-extrabold tracking-tight ${theme.isLight ? 'text-zinc-900' : 'text-zinc-100'}`}>
                   Recently Played
                 </h2>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-zinc-900 border border-zinc-800 text-zinc-400">
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono border ${
+                  theme.isLight ? 'bg-stone-200 border-stone-300 text-stone-700' : 'bg-zinc-900 border-zinc-800 text-zinc-400'
+                }`}>
                   {recentGames.length}
                 </span>
               </div>
@@ -444,7 +512,11 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                 <div
                   key={`recent-${game.id}`}
                   onClick={() => onSelectGame(game)}
-                  className="group relative flex items-center gap-2.5 p-2 rounded-2xl bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 shadow-sm transition active:scale-[0.98] cursor-pointer h-14 sm:h-16 overflow-hidden hardware-panel select-none"
+                  className={`group relative flex items-center gap-2.5 p-2 rounded-2xl border shadow-sm transition active:scale-[0.98] cursor-pointer h-14 sm:h-16 overflow-hidden hardware-panel select-none ${
+                    theme.isLight
+                      ? 'bg-[#dedbd2]/90 hover:bg-[#dedbd2] border-stone-300 hover:border-stone-400'
+                      : 'bg-zinc-900/80 hover:bg-zinc-800 border-zinc-800 hover:border-zinc-700'
+                  }`}
                   role="button"
                   tabIndex={0}
                   aria-label={`Open ${formatGameTitle(game.title)}`}
@@ -456,7 +528,9 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                   }}
                 >
                   {/* Small Cartridge Art */}
-                  <div className="relative w-10 h-10 sm:w-11 sm:h-12 rounded-lg overflow-hidden shrink-0 bg-zinc-950 border border-zinc-700/60 shadow-inner">
+                  <div className={`relative w-10 h-10 sm:w-11 sm:h-12 rounded-lg overflow-hidden shrink-0 border shadow-inner ${
+                    theme.isLight ? 'bg-stone-300 border-stone-400/60' : 'bg-zinc-950 border-zinc-700/60'
+                  }`}>
                     <GameCoverImage
                       game={game}
                       imgClassName="w-full h-full object-cover group-hover:scale-105 transition duration-200"
@@ -466,11 +540,15 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 
                   {/* Name and System beside it */}
                   <div className="flex-1 min-w-0 pr-1 space-y-0.5">
-                    <h3 className="text-xs font-bold text-zinc-100 truncate group-hover:text-white transition">
+                    <h3 className={`text-xs font-bold truncate transition ${
+                      theme.isLight ? 'text-zinc-900 group-hover:text-black' : 'text-zinc-100 group-hover:text-white'
+                    }`}>
                       {formatGameTitle(game.title)}
                     </h3>
                     <div className="flex items-center gap-1.5">
-                      <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-zinc-800 text-amber-300 border border-white/5">
+                      <span className={`px-1.5 py-0.2 rounded text-[9px] font-mono font-bold border ${
+                        theme.isLight ? 'bg-stone-200 text-stone-700 border-stone-300' : 'bg-zinc-800 text-amber-300 border-white/5'
+                      }`}>
                         {game.shortSystem || game.system}
                       </span>
                     </div>
@@ -482,7 +560,11 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                       e.stopPropagation();
                       onLaunchGame(game);
                     }}
-                    className="w-8 h-8 sm:w-7 sm:h-7 rounded-full bg-zinc-800 hover:bg-white text-zinc-300 hover:text-zinc-950 flex items-center justify-center shrink-0 border border-white/10 opacity-80 group-hover:opacity-100 transition active:scale-90"
+                    className={`w-8 h-8 sm:w-7 sm:h-7 rounded-full flex items-center justify-center shrink-0 border opacity-80 group-hover:opacity-100 transition active:scale-90 ${
+                      theme.isLight
+                        ? 'bg-stone-200 hover:bg-white text-stone-800 hover:text-black border-stone-300'
+                        : 'bg-zinc-800 hover:bg-white text-zinc-300 hover:text-zinc-950 border-white/10'
+                    }`}
                     title={`Play ${formatGameTitle(game.title)}`}
                     aria-label={`Play ${formatGameTitle(game.title)}`}
                   >
@@ -499,7 +581,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <HardDrive className={`w-4 h-4 ${theme.accentText}`} />
-              <h2 className="text-sm sm:text-base font-extrabold tracking-tight">
+              <h2 className={`text-sm sm:text-base font-extrabold tracking-tight ${theme.isLight ? 'text-zinc-900' : 'text-zinc-100'}`}>
                 Cartridge Binder
               </h2>
             </div>
@@ -514,7 +596,11 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                   setShowSearch(true);
                 }
               }}
-              className="px-2 py-1.5 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800 tactile-btn transition"
+              className={`px-2 py-1.5 rounded-xl border tactile-btn transition ${
+                theme.isLight
+                  ? 'bg-stone-200 hover:bg-stone-300 border-stone-300 text-stone-800'
+                  : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800'
+              }`}
               title={showSearch ? 'Close Search' : 'Search Library'}
               aria-label={showSearch ? 'Close Library Search' : 'Open Library Search'}
               aria-pressed={showSearch}
@@ -541,10 +627,18 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                 placeholder="Search library…"
                 autoFocus
                 aria-label="Search library by title"
-                className="flex-1 min-w-[150px] px-3 py-1 rounded-xl bg-zinc-900 border border-zinc-800 text-xs font-semibold text-zinc-100 placeholder:text-zinc-500 outline-none focus:border-emerald-500/60 transition"
+                className={`flex-1 min-w-[150px] px-3 py-1 rounded-xl border text-xs font-semibold outline-none transition ${
+                  theme.isLight
+                    ? 'bg-white border-stone-300 text-zinc-900 placeholder:text-stone-400 focus:border-emerald-500'
+                    : 'bg-zinc-900 border-zinc-800 text-zinc-100 placeholder:text-zinc-500 focus:border-emerald-500/60'
+                }`}
               />
             )}
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-zinc-900 border border-zinc-800 text-zinc-400">
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono border ${
+              theme.isLight
+                ? 'bg-stone-200 border-stone-300 text-stone-700'
+                : 'bg-zinc-900 border-zinc-800 text-zinc-400'
+            }`}>
               {filteredGames.length} {filteredGames.length === 1 ? 'ROM' : 'ROMs'}
             </span>
 
@@ -557,6 +651,8 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                   className={`px-3 py-1 rounded-xl text-xs font-bold tactile-btn transition ${
                     systemFilter === sys
                       ? theme.accentBg
+                      : theme.isLight
+                      ? 'bg-stone-200 text-stone-700 hover:text-black border border-stone-300'
                       : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200 border border-zinc-800'
                   }`}
                 >
@@ -566,16 +662,20 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             </div>
           </div>
 
-          <div className="rounded-3xl border border-zinc-800/90 p-3.5 sm:p-5 binder-page">
+          <div className={`rounded-3xl border p-3.5 sm:p-5 binder-page ${
+            theme.isLight ? 'bg-[#dedbd2]/60 border-stone-300' : 'border-zinc-800/90'
+          }`}>
             {filteredGames.length === 0 && games.length === 0 ? (
               <div className="py-16 px-4 flex flex-col items-center justify-center text-center space-y-5 max-w-md mx-auto">
-                <div className="w-16 h-16 rounded-3xl bg-zinc-900 border border-zinc-800 flex items-center justify-center shadow-inner">
-                  <Gamepad2 className="w-8 h-8 text-zinc-400" />
+                <div className={`w-16 h-16 rounded-3xl border flex items-center justify-center shadow-inner ${
+                  theme.isLight ? 'bg-stone-200 border-stone-300' : 'bg-zinc-900 border-zinc-800'
+                }`}>
+                  <Gamepad2 className={`w-8 h-8 ${theme.isLight ? 'text-stone-500' : 'text-zinc-400'}`} />
                 </div>
                 <div className="space-y-1.5">
-                  <h3 className="text-lg font-black text-zinc-100">Your Cartridge Shelf is Empty</h3>
-                  <p className="text-xs text-zinc-400 leading-relaxed">
-                    Insert your personal game backup files (<span className="text-zinc-300 font-mono">.gb, .gbc, .gba, .zip</span>) to play instantly in browser with CRT shaders and battery saves.
+                  <h3 className={`text-lg font-black ${theme.isLight ? 'text-zinc-900' : 'text-zinc-100'}`}>Your Cartridge Shelf is Empty</h3>
+                  <p className={`text-xs leading-relaxed ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
+                    Insert your personal game backup files (<span className={`font-mono ${theme.isLight ? 'text-zinc-800' : 'text-zinc-300'}`}>.gb, .gbc, .gba, .zip</span>) to play instantly in browser with CRT shaders and battery saves.
                   </p>
                 </div>
                 <div className="flex flex-col sm:flex-row items-center gap-2.5 w-full justify-center">
@@ -589,9 +689,13 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                   {onOpenControls && (
                     <button
                       onClick={onOpenControls}
-                      className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-xs font-bold border border-zinc-800 transition tactile-btn"
+                      className={`w-full sm:w-auto flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl border text-xs font-bold transition tactile-btn ${
+                        theme.isLight
+                          ? 'bg-stone-200 hover:bg-stone-300 text-stone-800 border-stone-300'
+                          : 'bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border-zinc-800'
+                      }`}
                     >
-                      <Gamepad2 className="w-4 h-4 text-sky-400" />
+                      <Gamepad2 className="w-4 h-4 text-sky-500" />
                       <span>View Keybindings</span>
                     </button>
                   )}
@@ -600,7 +704,9 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
                 {filteredGames.map((game) => (
-                  <div key={game.id} className="p-1.5 rounded-2xl bg-black/40 border border-zinc-800/70 binder-slot">
+                  <div key={game.id} className={`p-1.5 rounded-2xl border binder-slot ${
+                    theme.isLight ? 'bg-stone-200/70 border-stone-300' : 'bg-black/40 border-zinc-800/70'
+                  }`}>
                     <GameCard
                       game={game}
                       theme={theme}
@@ -612,13 +718,21 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                 {/* Empty Binder Slot: Quick "Add ROM" Bay */}
                 <button
                   onClick={onTriggerAddRom}
-                  className="rounded-2xl border-2 border-dashed border-zinc-800 hover:border-emerald-500/60 bg-black/40 hover:bg-zinc-900/80 p-4 flex flex-col items-center justify-center gap-2 min-h-[210px] transition group tactile-btn binder-slot"
+                  className={`rounded-2xl border-2 border-dashed p-4 flex flex-col items-center justify-center gap-2 min-h-[210px] transition group tactile-btn binder-slot ${
+                    theme.isLight
+                      ? 'border-stone-300 hover:border-emerald-500 bg-stone-200/50 hover:bg-stone-200'
+                      : 'border-zinc-800 hover:border-emerald-500/60 bg-black/40 hover:bg-zinc-900/80'
+                  }`}
                 >
-                  <div className="w-11 h-11 rounded-2xl bg-zinc-900 group-hover:bg-emerald-500/20 border border-zinc-800 flex items-center justify-center transition">
-                    <Plus className="w-6 h-6 text-zinc-400 group-hover:text-emerald-400" />
+                  <div className={`w-11 h-11 rounded-2xl border flex items-center justify-center transition ${
+                    theme.isLight
+                      ? 'bg-stone-300 group-hover:bg-emerald-500/20 border-stone-400'
+                      : 'bg-zinc-900 group-hover:bg-emerald-500/20 border-zinc-800'
+                  }`}>
+                    <Plus className={`w-6 h-6 group-hover:text-emerald-500 ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`} />
                   </div>
-                  <span className="text-xs font-bold text-zinc-200">Insert New Cartridge</span>
-                  <span className="text-[10px] text-zinc-400 text-center leading-tight">
+                  <span className={`text-xs font-bold ${theme.isLight ? 'text-zinc-900' : 'text-zinc-200'}`}>Insert New Cartridge</span>
+                  <span className={`text-[10px] text-center leading-tight ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
                     .gb, .gbc, .gba, .nes, .sfc, .md
                   </span>
                 </button>

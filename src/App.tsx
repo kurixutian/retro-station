@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 
-import { Game, SaveSlot, PadLayout, PadGroupId } from './types';
+import { Game, SaveSlot, PadLayout, PadGroupId, Theme } from './types';
 import { CORE_MAP } from './constants/cores';
 import { THEMES } from './constants/themes';
 import {
@@ -372,6 +372,14 @@ export default function App() {
     }
   });
 
+  const [customAccent, setCustomAccent] = useState<string>(() => {
+    try {
+      return localStorage.getItem('retro_accent_hex') || '';
+    } catch (e) {
+      return '';
+    }
+  });
+
   const [shaders, setShaders] = useState<Record<string, any>>(() => {
     const defaultShaders: Record<string, any> = {
       scanlines: true,
@@ -717,7 +725,23 @@ export default function App() {
     return () => clearInterval(id);
   }, [currentView, sendKey]);
 
-  const theme = THEMES[themeId] || THEMES.midnight;
+  const baseTheme = THEMES[themeId] || THEMES.midnight;
+  const theme = useMemo<Theme>(() => {
+    if (!customAccent) return baseTheme;
+    return {
+      ...baseTheme,
+      hex: customAccent,
+      customAccent,
+    };
+  }, [baseTheme, customAccent]);
+
+  const selectCustomAccent = useCallback((hex: string) => {
+    setCustomAccent(hex);
+    try {
+      if (hex) localStorage.setItem('retro_accent_hex', hex);
+      else localStorage.removeItem('retro_accent_hex');
+    } catch (e) {}
+  }, []);
 
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
@@ -1768,6 +1792,8 @@ export default function App() {
         theme={theme}
         themeId={themeId}
         applyTheme={applyTheme}
+        customAccent={customAccent}
+        onSelectCustomAccent={selectCustomAccent}
         shaders={shaders}
         toggleShader={toggleShader}
         setColorProfile={setColorProfile}
