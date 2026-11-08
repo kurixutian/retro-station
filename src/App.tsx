@@ -1692,6 +1692,10 @@ export default function App() {
           toggleShader={toggleShader}
           setColorProfile={setColorProfile}
           savesByGameId={savesByGameId}
+          onToggleLightDark={() => {
+            const nextTheme = theme.isLight ? 'midnight' : 'trooper';
+            applyTheme(nextTheme);
+          }}
         />
       )}
 

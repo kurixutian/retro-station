@@ -27,6 +27,8 @@ import {
   Pencil,
   Check,
   Tv,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { Game, Theme, PadLayout, PadGroupId, SaveSlot } from '../../types';
 import { coreRatio, formatGameTitle, EJS_CORES } from '../../constants/cores';
@@ -96,6 +98,7 @@ interface InGameViewProps {
   toggleShader?: (key: string) => void;
   setColorProfile?: (profile: string) => void;
   savesByGameId?: Record<string, SaveSlot[]>;
+  onToggleLightDark?: () => void;
 }
 
 export const InGameView: React.FC<InGameViewProps> = ({
@@ -150,6 +153,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
   toggleShader,
   setColorProfile,
   savesByGameId,
+  onToggleLightDark,
 }) => {
   const dpadContainerRef = React.useRef<HTMLDivElement | null>(null);
   const dpadRectRef = React.useRef<DOMRect | null>(null);
@@ -457,7 +461,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
   const renderDpad = () => (
     <div
       ref={dpadContainerRef}
-      className="relative w-36 h-36 select-none touch-none dpad-cross rounded-2xl flex items-center justify-center"
+      className="relative w-36 h-36 select-none touch-none gb-dpad-base rounded-2xl flex items-center justify-center"
       style={{
         touchAction: 'none',
         userSelect: 'none',
@@ -504,71 +508,76 @@ export const InGameView: React.FC<InGameViewProps> = ({
       {/* Up */}
       <div
         ref={(el) => { dpadArmRefs.current.up = el; }}
-        className={`absolute top-0 left-12 w-12 h-14 rounded-t-lg border border-black/50 flex items-start justify-center pt-1.5 shadow-md pointer-events-none select-none dpad-arm ${theme.dpadBg}`}
+        className="absolute top-0 left-12 w-12 h-14 rounded-t-lg gb-dpad-arm flex items-start justify-center pt-2 pointer-events-none select-none dpad-arm"
         aria-hidden="true"
       >
-        <span className="text-[10px] font-black opacity-60">▲</span>
+        <span className="text-[10px] font-black text-black/80 drop-shadow-[0_1px_0_rgba(255,255,255,0.2)]">▲</span>
       </div>
       {/* Down */}
       <div
         ref={(el) => { dpadArmRefs.current.down = el; }}
-        className={`absolute bottom-0 left-12 w-12 h-14 rounded-b-lg border border-black/50 flex items-end justify-center pb-1.5 shadow-md pointer-events-none select-none dpad-arm ${theme.dpadBg}`}
+        className="absolute bottom-0 left-12 w-12 h-14 rounded-b-lg gb-dpad-arm flex items-end justify-center pb-2 pointer-events-none select-none dpad-arm"
         aria-hidden="true"
       >
-        <span className="text-[10px] font-black opacity-60">▼</span>
+        <span className="text-[10px] font-black text-black/80 drop-shadow-[0_1px_0_rgba(255,255,255,0.2)]">▼</span>
       </div>
       {/* Left */}
       <div
         ref={(el) => { dpadArmRefs.current.left = el; }}
-        className={`absolute top-12 left-0 w-14 h-12 rounded-l-lg border border-black/50 flex items-center justify-start pl-1.5 shadow-md pointer-events-none select-none dpad-arm ${theme.dpadBg}`}
+        className="absolute top-12 left-0 w-14 h-12 rounded-l-lg gb-dpad-arm flex items-center justify-start pl-2 pointer-events-none select-none dpad-arm"
         aria-hidden="true"
       >
-        <span className="text-[10px] font-black opacity-60">◀</span>
+        <span className="text-[10px] font-black text-black/80 drop-shadow-[0_1px_0_rgba(255,255,255,0.2)]">◀</span>
       </div>
       {/* Right */}
       <div
         ref={(el) => { dpadArmRefs.current.right = el; }}
-        className={`absolute top-12 right-0 w-14 h-12 rounded-r-lg border border-black/50 flex items-center justify-end pr-1.5 shadow-md pointer-events-none select-none dpad-arm ${theme.dpadBg}`}
+        className="absolute top-12 right-0 w-14 h-12 rounded-r-lg gb-dpad-arm flex items-center justify-end pr-2 pointer-events-none select-none dpad-arm"
         aria-hidden="true"
       >
-        <span className="text-[10px] font-black opacity-60">▶</span>
+        <span className="text-[10px] font-black text-black/80 drop-shadow-[0_1px_0_rgba(255,255,255,0.2)]">▶</span>
       </div>
-      {/* Molded Center Pivot Dish (Game Boy Concave indentation) */}
+      {/* Molded Center Pivot Dish (Authentic Game Boy Concave indentation) */}
       <div
-        className={`absolute top-12 left-12 w-12 h-12 ${
-          shaders.amoled ? 'bg-black' : 'bg-zinc-900'
-        } flex items-center justify-center pointer-events-none shadow-inner`}
+        className="absolute top-12 left-12 w-12 h-12 gb-dpad-arm flex items-center justify-center pointer-events-none z-10"
       >
-        <div className="w-5 h-5 rounded-full bg-black/60 shadow-inner border border-white/5" />
+        <div className="w-5 h-5 rounded-full gb-pivot-dish" />
       </div>
     </div>
   );
 
   const renderActions = () => (
-    <div className="relative w-40 h-32 select-none touch-none">
+    <div className="relative w-44 h-36 select-none touch-none flex items-center justify-center">
+      {/* Molded Recessed Shell Socket Bed */}
+      <div
+        className="absolute inset-x-1 inset-y-2 rounded-[36px] gb-socket-bed -rotate-[25deg] pointer-events-none"
+        aria-hidden="true"
+      />
+
       {/* B Button (Bottom-Left) */}
-      <div className="absolute bottom-1 left-2 flex flex-col items-center">
+      <div className="absolute bottom-2 left-3 flex flex-col items-center z-10">
         <button
           type="button"
           {...safeBindPadButton('actionB')}
-          className={`w-13 h-13 rounded-full border-2 font-black text-base shadow-2xl flex items-center justify-center tactile-btn touch-none select-none ${theme.btnB}`}
-          style={{ width: '3.35rem', height: '3.35rem' }}
+          className="rounded-full font-black text-base flex items-center justify-center touch-none select-none gb-action-dome"
+          style={{ width: '3.4rem', height: '3.4rem' }}
           aria-label="Button B"
         />
-        <span className="mt-1 text-[11px] font-black italic tracking-widest text-indigo-900 dark:text-indigo-400 select-none">
+        <span className="mt-1 text-[12px] font-black italic tracking-widest text-indigo-900 dark:text-indigo-300 drop-shadow-[0_1px_0_rgba(255,255,255,0.3)] select-none">
           B
         </span>
       </div>
+
       {/* A Button (Top-Right) */}
-      <div className="absolute top-1 right-2 flex flex-col items-center">
+      <div className="absolute top-2 right-3 flex flex-col items-center z-10">
         <button
           type="button"
           {...safeBindPadButton('actionA')}
-          className={`w-13 h-13 rounded-full border-2 font-black text-base shadow-2xl flex items-center justify-center tactile-btn touch-none select-none ${theme.btnA}`}
-          style={{ width: '3.35rem', height: '3.35rem' }}
+          className="rounded-full font-black text-base flex items-center justify-center touch-none select-none gb-action-dome"
+          style={{ width: '3.4rem', height: '3.4rem' }}
           aria-label="Button A"
         />
-        <span className="mt-1 text-[11px] font-black italic tracking-widest text-indigo-900 dark:text-indigo-400 select-none">
+        <span className="mt-1 text-[12px] font-black italic tracking-widest text-indigo-900 dark:text-indigo-300 drop-shadow-[0_1px_0_rgba(255,255,255,0.3)] select-none">
           A
         </span>
       </div>
@@ -580,15 +589,13 @@ export const InGameView: React.FC<InGameViewProps> = ({
       <button
         type="button"
         {...safeBindPadButton('select')}
-        className="flex flex-col items-center gap-1.5 group touch-none select-none tactile-btn"
+        className="flex flex-col items-center gap-1.5 group touch-none select-none"
       >
         <div
-          className={`w-13 h-4 rounded-full ${
-            theme.isLight ? 'bg-zinc-600 border-zinc-700' : 'bg-zinc-800 border-zinc-600'
-          } group-active:bg-rose-500 border shadow-inner -rotate-[25deg] transition`}
-          style={{ width: '3.1rem', height: '0.95rem' }}
+          className="rounded-full gb-rubber-pill -rotate-[25deg]"
+          style={{ width: '3.2rem', height: '0.95rem' }}
         />
-        <span className="text-[9px] font-black italic tracking-widest text-indigo-900 dark:text-indigo-400 uppercase select-none">
+        <span className="text-[10px] font-black italic tracking-widest text-indigo-900 dark:text-indigo-300 uppercase select-none drop-shadow-[0_1px_0_rgba(255,255,255,0.2)]">
           SELECT
         </span>
       </button>
@@ -596,15 +603,13 @@ export const InGameView: React.FC<InGameViewProps> = ({
       <button
         type="button"
         {...safeBindPadButton('start')}
-        className="flex flex-col items-center gap-1.5 group touch-none select-none tactile-btn"
+        className="flex flex-col items-center gap-1.5 group touch-none select-none"
       >
         <div
-          className={`w-13 h-4 rounded-full ${
-            theme.isLight ? 'bg-zinc-600 border-zinc-700' : 'bg-zinc-800 border-zinc-600'
-          } group-active:bg-rose-500 border shadow-inner -rotate-[25deg] transition`}
-          style={{ width: '3.1rem', height: '0.95rem' }}
+          className="rounded-full gb-rubber-pill -rotate-[25deg]"
+          style={{ width: '3.2rem', height: '0.95rem' }}
         />
-        <span className="text-[9px] font-black italic tracking-widest text-indigo-900 dark:text-indigo-400 uppercase select-none">
+        <span className="text-[10px] font-black italic tracking-widest text-indigo-900 dark:text-indigo-300 uppercase select-none drop-shadow-[0_1px_0_rgba(255,255,255,0.2)]">
           START
         </span>
       </button>
@@ -1308,7 +1313,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
               </div>
 
               {/* Tier 2: Quick Control & Display Toggles (Compact horizontal pill row) */}
-              <div className="grid grid-cols-3 gap-1.5">
+              <div className="grid grid-cols-4 gap-1.5">
                 <button
                   onClick={toggleAudio}
                   className={`flex flex-col items-center justify-center gap-1 p-2 rounded-xl border text-center transition active:scale-95 ${
@@ -1319,7 +1324,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                   title="Toggle Audio Mute"
                 >
                   {isMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
-                  <span className="text-[10px] font-bold">{isMuted ? 'Muted' : 'Audio On'}</span>
+                  <span className="text-[10px] font-bold">{isMuted ? 'Muted' : 'Audio'}</span>
                 </button>
 
                 <button
@@ -1347,6 +1352,21 @@ export const InGameView: React.FC<InGameViewProps> = ({
                   <Tv className="w-4 h-4 text-purple-400" />
                   <span className="text-[10px] font-bold">Shaders</span>
                 </button>
+
+                {onToggleLightDark && (
+                  <button
+                    onClick={onToggleLightDark}
+                    className="flex flex-col items-center justify-center gap-1 p-2 rounded-xl bg-zinc-900/80 hover:bg-zinc-900 border border-zinc-800 text-zinc-300 text-center transition active:scale-95"
+                    title={theme.isLight ? 'Switch to Vader Obsidian (Dark Mode)' : 'Switch to Trooper White (Light Mode)'}
+                  >
+                    {theme.isLight ? (
+                      <Moon className="w-4 h-4 text-indigo-400" />
+                    ) : (
+                      <Sun className="w-4 h-4 text-amber-400" />
+                    )}
+                    <span className="text-[10px] font-bold">{theme.isLight ? 'Vader' : 'Trooper'}</span>
+                  </button>
+                )}
               </div>
 
               {/* Tier 3: Collapsible Cartridge Tools & Session Exit */}

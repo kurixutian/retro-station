@@ -15,9 +15,9 @@ export const THEMES: Record<string, Theme> = {
     accentBg: 'bg-emerald-500 hover:bg-emerald-400 text-zinc-950',
     accentBorder: 'border-emerald-500/40',
     accentSoft: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
-    dpadBg: 'bg-zinc-800 active:bg-emerald-500 active:text-zinc-950 border-zinc-700 text-zinc-200',
-    btnA: 'bg-emerald-500 active:bg-emerald-300 text-zinc-950 border-emerald-400/80',
-    btnB: 'bg-cyan-500 active:bg-cyan-300 text-zinc-950 border-cyan-400/80',
+    dpadBg: 'bg-zinc-900 active:bg-zinc-800 text-zinc-200 border-black',
+    btnA: 'bg-[#8d1d5c] active:bg-[#a82a72] text-white border-[#5e123d]',
+    btnB: 'bg-[#8d1d5c] active:bg-[#a82a72] text-white border-[#5e123d]',
     btnXY: 'bg-zinc-800 active:bg-zinc-600 text-zinc-200 border-zinc-600',
     hex: '#10b981'
   },
