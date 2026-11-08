@@ -152,7 +152,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     <div className="relative pb-16 min-h-[100vh] min-h-[100lvh]">
       {/* Ambient Animated Blurred ROM Backdrop */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0 select-none bg-zinc-950">
-        <div className="grid grid-cols-2 grid-rows-2 w-full h-full opacity-35 sm:opacity-45 blur-2xl sm:blur-3xl ambient-backdrop-pan scale-125">
+        <div className="grid grid-cols-2 grid-rows-2 w-full h-full opacity-30 sm:opacity-40 blur-lg sm:blur-xl ambient-backdrop-pan scale-115">
           {bgGames.map((g, idx) => (
             <AmbientBackdropTile key={`bg-tile-${g.id}-${idx}`} game={g} theme={theme} />
           ))}
