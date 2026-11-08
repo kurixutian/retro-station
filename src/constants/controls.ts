@@ -86,10 +86,12 @@ export const PAD_LABELS: Record<keyof PadLayout, string> = {
 
 export type LayoutSlot = 1 | 2 | 3;
 
-function notifyCloudSync(key: string): void {
+function notifyCloudSync(_key: string): void {
   if (typeof window !== 'undefined') {
     import('../cloudSync')
-      .then(({ markLocalSaveModified }) => markLocalSaveModified(key))
+      .then(({ markLocalSaveModified, SETTINGS_SYNC_KEY }) =>
+        markLocalSaveModified(SETTINGS_SYNC_KEY)
+      )
       .catch(() => {});
   }
 }

@@ -15,6 +15,7 @@ import {
   Upload,
   Trash2,
   KeyRound,
+  Gamepad2,
 } from 'lucide-react';
 import { Theme } from '../../types';
 import {
@@ -27,6 +28,8 @@ import {
   getCachedUserProfile,
   getCustomGoogleClientId,
   setGoogleClientId,
+  setRomSyncEnabled,
+  isRomSyncEnabled,
   DEFAULT_GOOGLE_CLIENT_ID,
   deleteAllCloudSaves,
   CloudSyncStatus,
@@ -58,6 +61,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   const [confirmClearCloud, setConfirmClearCloud] = useState(false);
   const [report, setReport] = useState<SyncReport>(getSyncReport());
   const [clientIdInput, setClientIdInput] = useState<string>(getCustomGoogleClientId() || '');
+  const [romSyncOn, setRomSyncOn] = useState<boolean>(() => isRomSyncEnabled());
 
   // Manual Backup state
   const [backupBusy, setBackupBusy] = useState(false);
@@ -75,6 +79,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     setReport(getSyncReport());
     setConfirmDisconnect(false);
     setConfirmClearCloud(false);
+    setRomSyncOn(isRomSyncEnabled());
 
     const unsub = subscribeSyncStatus((status, details) => {
       setSyncStatus(status);
@@ -133,6 +138,17 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
       }
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  const handleToggleRomSync = () => {
+    const next = !romSyncOn;
+    setRomSyncOn(next);
+    setRomSyncEnabled(next);
+    if (next) {
+      showToast('ROM sync ON — uploading library to Drive in background');
+    } else {
+      showToast('ROM sync OFF — files already in Drive are kept until you clear them');
     }
   };
 
@@ -345,6 +361,38 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                     {confirmDisconnect ? 'Tap to Confirm' : 'Sign Out'}
                   </button>
                 </div>
+
+                {/* ROM Files Sync toggle (opt-in — uploads/downloads can be large) */}
+                <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-zinc-900/70 border border-zinc-800/80">
+                  <div className="flex items-start gap-2.5 min-w-0">
+                    <Gamepad2 className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <div className="text-[11px] font-extrabold text-white flex items-center gap-1.5">
+                        ROM Files {romSyncOn ? 'Synced' : 'Not Synced'}
+                      </div>
+                      <p className="text-[10px] text-zinc-400 leading-relaxed">
+                        {romSyncOn
+                          ? 'ROMs upload to your private Drive and restore automatically on a new device. Use Wi-Fi for large libraries.'
+                          : 'Turn this on to upload imported ROM files, so a new device downloads them automatically instead of re-finding and re-downloading each ROM.'}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleToggleRomSync}
+                    role="switch"
+                    aria-checked={romSyncOn}
+                    aria-label="Sync ROM files to Google Drive"
+                    className={`relative w-11 h-6 rounded-full shrink-0 transition-colors cursor-pointer focus:outline-none ${
+                      romSyncOn ? 'bg-emerald-500' : 'bg-zinc-700'
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform transform ${
+                        romSyncOn ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
               </div>
 
               {/* Sync Report Panel */}
@@ -399,9 +447,10 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                   Option 1: Google Drive Auto-Sync
                 </h3>
                 <p className="text-xs text-zinc-400 leading-relaxed">
-                  Sign in with Google to automatically sync your save states, battery saves
-                  (.srm), and game library to your private Google Drive{' '}
-                  <span className="text-zinc-200 font-semibold">appDataFolder</span>.
+                  Sign in with Google to automatically sync save states, battery saves (.srm),
+                  settings (theme, controls, shaders), and your game library to your private
+                  Google Drive <span className="text-zinc-200 font-semibold">appDataFolder</span>.
+                  Turn on "ROM Files" (shown once linked) to sync the ROM binaries too.
                 </p>
               </div>
               <button
@@ -488,10 +537,17 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
               <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
               <p className="leading-relaxed">
                 <span className="text-zinc-200 font-bold">Zero Server Bills & Private:</span>{' '}
-                Saves are stored in your own Google Drive or exported as a local file.{' '}
-                <span className="text-zinc-200 font-semibold">ROM binaries are not uploaded</span>{' '}
-                (simply re-select your ROM file on a new device and your saves attach
-                automatically).
+                Everything lives in your own Google Drive hidden{' '}
+                <span className="text-zinc-200 font-semibold">appDataFolder</span>: saves, settings
+                {romSyncOn ? ', and your imported ROM files' : ''}.{' '}
+                {!romSyncOn && (
+                  <>
+                    <span className="text-zinc-200 font-semibold">ROM binaries are not uploaded</span>{' '}
+                    (turn on "ROM Files" above to sync them).{' '}
+                  </>
+                )}
+                On a new device: sign in once and your library, saves, settings
+                {romSyncOn ? ' and ROMs' : ''} restore automatically.
               </p>
             </div>
           </div>

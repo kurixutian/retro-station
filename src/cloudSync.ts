@@ -82,10 +82,150 @@ const TOMBSTONES_DRIVE_FILENAME = 'rs_v2___tombstones__.json';
 const CAP_STATE_BYTES = 10 * 1024 * 1024; // 10 MB state payload
 const CAP_SRAM_BYTES = 5 * 1024 * 1024;   // 5 MB SRAM/RTC bytes
 const CAP_COVER_BYTES = 1024 * 1024;      // 1 MB cover data URL
+const CAP_ROM_BYTES = 150 * 1024 * 1024;  // 150 MB per ROM binary (covers SNES/Genesis comfortably)
 const MAX_CONCURRENT_PULLS = 4;
+const ROM_UPLOAD_CHUNK_BYTES = 6 * 1024 * 1024; // resumable-upload chunk size
 
 // Demo-only pseudo-games are never synced
 const DEMO_GAME_IDS = new Set(['pokemon_gold']);
+
+// ============================================================================
+// SETTINGS SYNC (theme, shaders, on-screen pad layout, haptics)
+// ----------------------------------------------------------------------------
+// One bundled Drive item (`retro_settings`) holding every player-facing
+// preference as key -> raw JSON string value (exactly what localStorage holds
+// locally). Device/session keys (tokens, client id, sync meta, device id)
+// are intentionally NOT included.
+// ============================================================================
+
+export const SETTINGS_SYNC_KEY = 'retro_settings';
+
+const SETTINGS_SYNC_KEYS: string[] = [
+  'retro_theme',
+  'retro_shaders',
+  'retro_haptics',
+  // On-screen pad configuration (layout JSON, layout names, active slot)
+  'retro_pad_layout',
+  'retro_pad_layout_portrait',
+  'retro_pad_layout_landscape',
+  'retro_pad_layout_portrait_1',
+  'retro_pad_layout_portrait_2',
+  'retro_pad_layout_portrait_3',
+  'retro_pad_layout_landscape_1',
+  'retro_pad_layout_landscape_2',
+  'retro_pad_layout_landscape_3',
+  'retro_layout_names_portrait',
+  'retro_layout_names_landscape',
+  'retro_pad_slot_portrait',
+  'retro_pad_slot_landscape',
+];
+
+export function collectSettingsSnapshot(): Record<string, string> {
+  const snap: Record<string, string> = {};
+  try {
+    for (const k of SETTINGS_SYNC_KEYS) {
+      const v = localStorage.getItem(k);
+      if (v != null) snap[k] = v;
+    }
+  } catch (e) {}
+  return snap;
+}
+
+/**
+ * Writes a remote settings snapshot back to localStorage. Only keys present in
+ * the snapshot are touched, and only when their value actually differs — this
+ * prevents pull→mark→push ping-pong loops across devices.
+ */
+export function applySettingsSnapshot(snapshot: any): boolean {
+  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return false;
+  let changed = false;
+  try {
+    for (const k of SETTINGS_SYNC_KEYS) {
+      const incoming = (snapshot as Record<string, any>)[k];
+      if (typeof incoming !== 'string') continue;
+      if (localStorage.getItem(k) !== incoming) {
+        localStorage.setItem(k, incoming);
+        changed = true;
+      }
+    }
+  } catch (e) {}
+  return changed;
+}
+
+// ============================================================================
+// ROM BINARY SYNC (opt-in)
+// ----------------------------------------------------------------------------
+// ROM files live locally in IndexedDB under the bare game id. On Drive they
+// are uploaded as RAW BINARY files (`rs_v2_rom%3A<gameId>.bin`) using the
+// resumable upload protocol — never base64-inflated, so a 20 MB ROM is 20 MB
+// on the wire. Syncing is opt-in because uploads/downloads can be large.
+// ============================================================================
+
+const ROM_SYNC_ENABLED_KEY = 'retro_sync_roms';
+
+export function isRomSyncEnabled(): boolean {
+  try {
+    return localStorage.getItem(ROM_SYNC_ENABLED_KEY) === '1';
+  } catch (e) {
+    return false;
+  }
+}
+
+export function setRomSyncEnabled(enabled: boolean): void {
+  try {
+    localStorage.setItem(ROM_SYNC_ENABLED_KEY, enabled ? '1' : '0');
+  } catch (e) {}
+  if (enabled) {
+    markAllRomsForUpload();
+  }
+  triggerDebouncedCloudSync(enabled ? 2500 : 500);
+}
+
+/** Queue every library ROM currently on this device for upload. */
+export function markAllRomsForUpload(): string[] {
+  const out: string[] = [];
+  if (!isRomSyncEnabled()) return out;
+  try {
+    const raw = localStorage.getItem('retro_games');
+    const list: any[] = raw ? JSON.parse(raw) || [] : [];
+    const ids = new Set(
+      (Array.isArray(list) ? list : [])
+        .filter((g) => g && g.id && g.real && !DEMO_GAME_IDS.has(String(g.id)))
+        .map((g) => String(g.id))
+    );
+    for (const id of ids) {
+      markLocalSaveModified(`rom:${id}`).catch(() => {});
+      out.push(`rom:${id}`);
+    }
+  } catch (e) {}
+  return out;
+}
+
+const isRomKey = (key: string) => key.startsWith('rom:') && key.length > 'rom:'.length;
+
+/** Cloud sync key `rom:<gameId>` -> local IndexedDB key `<gameId>`. */
+export function romLocalIdbKey(key: string): string | null {
+  return isRomKey(key) ? key.slice('rom:'.length) : null;
+};
+
+function findLocalGame(gameId: string): any {
+  try {
+    const list: any[] = JSON.parse(localStorage.getItem('retro_games') || '[]') || [];
+    return list.find((g) => g && String(g.id) === gameId) || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function blobSizeOf(v: any): number | null {
+  if (v == null) return null;
+  if (typeof v === 'number') return null; // plain numbers are never binaries
+  if (typeof Blob !== 'undefined' && v instanceof Blob) return v.size;
+  if (v instanceof Uint8Array) return v.byteLength;
+  if (v instanceof ArrayBuffer) return v.byteLength;
+  if (ArrayBuffer.isView(v)) return v.byteLength;
+  return null;
+}
 
 export const DEFAULT_GOOGLE_CLIENT_ID =
   '812701015700-srefneer1disk609pa2s4pqj7s2c8ln0.apps.googleusercontent.com';
@@ -542,17 +682,19 @@ export function isSyncableKey(key: string): boolean {
     key === 'retro_games' ||
     key === 'library_games' ||
     key === 'retro_deleted_games' ||
+    key === SETTINGS_SYNC_KEY ||
     key.startsWith('state:') ||
     key.startsWith('srm:') ||
     key.startsWith('rtc:') ||
-    key.startsWith('cover:')
+    key.startsWith('cover:') ||
+    key.startsWith('rom:')
   );
 }
 
 const isStateLikeKey = (key: string) => key.startsWith('state:');
 const isBinaryKey = (key: string) => key.startsWith('srm:') || key.startsWith('rtc:');
 const isItemKey = (key: string) =>
-  isStateLikeKey(key) || isBinaryKey(key) || key.startsWith('cover:');
+  isStateLikeKey(key) || isBinaryKey(key) || key.startsWith('cover:') || isRomKey(key);
 
 function gameIdFromItemKey(key: string): string | null {
   if (key.startsWith('state:')) {
@@ -561,6 +703,9 @@ function gameIdFromItemKey(key: string): string | null {
   }
   if (key.startsWith('srm:') || key.startsWith('rtc:') || key.startsWith('cover:')) {
     return key.slice(key.indexOf(':') + 1) || null;
+  }
+  if (isRomKey(key)) {
+    return romLocalIdbKey(key);
   }
   return null;
 }
@@ -574,6 +719,15 @@ export function driveFilenameToKey(filename: string): string | null {
   if (filename.startsWith('rs_v2_') && filename.endsWith('.json')) {
     try {
       const k = decodeURIComponent(filename.slice('rs_v2_'.length, -'.json'.length));
+      return isSyncableKey(k) ? k : null;
+    } catch (e) {
+      return null;
+    }
+  }
+  // Raw ROM binaries are stored as `.bin` files (never base64-inflated)
+  if (filename.startsWith('rs_v2_') && filename.endsWith('.bin')) {
+    try {
+      const k = decodeURIComponent(filename.slice('rs_v2_'.length, -'.bin'.length));
       return isSyncableKey(k) ? k : null;
     } catch (e) {
       return null;
@@ -804,7 +958,11 @@ function saveLocalMetaMap(map: Record<string, SyncMeta>) {
 }
 
 export async function markLocalSaveModified(key: string): Promise<void> {
-  if (key.startsWith('autosave:') || key.startsWith('rom:') || key.startsWith('rom_')) return;
+  if (key.startsWith('autosave:')) return;
+  if (key.startsWith('rom:')) {
+    // ROM binaries only sync when the user opted in (they can be large)
+    if (!isRomSyncEnabled()) return;
+  } else if (key.startsWith('rom_')) return;
   const map = getLocalMetaMap();
   map[key] = {
     ...map[key],
@@ -963,6 +1121,148 @@ async function downloadDriveJson(token: string, fileId: string): Promise<any> {
     throw new Error(`Download failed: HTTP ${res.status}`);
   }
   return await res.json();
+}
+
+/** Raw binary download (used for ROM files). 404 -> null. */
+async function downloadDriveBinary(token: string, fileId: string): Promise<Uint8Array | null> {
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    }
+  );
+  if (res.status === 401) {
+    inMemoryAccessToken = null;
+    saveStoredToken(null, 0);
+    setStatus('needs_reauth', 'Session expired — tap Reconnect');
+    throw new Error('Google Drive session expired. Please tap Reconnect.');
+  }
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(`ROM download failed (HTTP ${res.status})`);
+  }
+  const buf = await res.arrayBuffer();
+  return new Uint8Array(buf);
+}
+
+type UploadedFileInfo = { id: string; updatedAt: number };
+
+/**
+ * Resumable raw-binary upload (Drive uploadType=resumable).
+ * Sends the payload in chunks so large ROMs survive flaky mobile connections,
+ * and keeps the browser's memory footprint small (no base64, no full JSON copy).
+ */
+async function uploadDriveBinary(
+  token: string,
+  filename: string,
+  data: Blob | Uint8Array | ArrayBuffer,
+  existingFileId?: string
+): Promise<UploadedFileInfo> {
+  const mimeType = 'application/octet-stream';
+  const part: BlobPart =
+    data instanceof Uint8Array ? (data as unknown as BlobPart) : (new Uint8Array(data as ArrayBuffer) as BlobPart);
+  const blob =
+    typeof Blob !== 'undefined' && data instanceof Blob
+      ? data
+      : new Blob([part], { type: mimeType });
+  const totalSize = blob.size;
+  if (totalSize <= 0) throw new Error('No ROM data to upload');
+
+  // 1. Initiate the resumable session
+  const metadata: Record<string, any> = existingFileId
+    ? { name: filename, mimeType }
+    : { name: filename, parents: ['appDataFolder'], mimeType };
+  const initUrl = existingFileId
+    ? `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(
+        existingFileId
+      )}?uploadType=resumable&fields=id,modifiedTime`
+    : `https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,modifiedTime`;
+
+  const initRes = await fetch(initUrl, {
+    method: existingFileId ? 'PATCH' : 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json; charset=UTF-8',
+      'X-Upload-Content-Type': mimeType,
+      'X-Upload-Content-Length': String(totalSize),
+    },
+    body: JSON.stringify(metadata),
+  });
+
+  if (initRes.status === 404 && existingFileId) {
+    return uploadDriveBinary(token, filename, blob, undefined);
+  }
+  if (initRes.ok === false && existingFileId && [400, 405].includes(initRes.status)) {
+    // Some proxies/API revisions reject resumable PATCH; re-create the file
+    // (duplicate files for the same key are deduped by the sync engine) —
+    return uploadDriveBinary(token, filename, blob, undefined);
+  }
+  if (!initRes.ok) {
+    const txt = await initRes.text().catch(() => '');
+    throw new Error(`ROM upload failed to start (HTTP ${initRes.status}): ${txt.slice(0, 120)}`);
+  }
+  const uploadUrl = initRes.headers.get('Location') || initRes.headers.get('location') || '';
+  if (!uploadUrl) throw new Error('ROM upload session missing URL');
+
+  // 2. Chunked PUT loop
+  const parseRangeReceived = (res: Response): number => {
+    const rs = res.headers.get('Range') || ''; // "bytes=0-N" -> N+1 received
+    if (rs.includes('-')) {
+      const top = Number(rs.split('=')[1].split('-')[1]);
+      if (!Number.isNaN(top)) return top + 1;
+    }
+    return 0;
+  };
+
+  let offset = 0;
+  for (let rounds = 0; rounds < 8196; rounds++) {
+    const end = Math.min(offset + ROM_UPLOAD_CHUNK_BYTES, totalSize);
+    if (offset >= totalSize) {
+      throw new Error('ROM upload stalled');
+    }
+    const chunk = blob.slice(offset, end, mimeType);
+
+    const finalize = async (res: Response): Promise<UploadedFileInfo> => {
+      const body = await res.json().catch(() => ({} as any));
+      return {
+        id: body?.id || existingFileId || filename,
+        updatedAt: Date.parse(body?.modifiedTime) || Date.now(),
+      };
+    };
+
+    const res = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Range': `bytes ${offset}-${end - 1}/${totalSize}` },
+      body: chunk,
+    });
+
+    if (res.status === 200 || res.status === 201) {
+      return await finalize(res);
+    }
+    if (res.status === 308) {
+      const received = parseRangeReceived(res);
+      offset = Math.max(offset + 1, received); // always guarantee forward progress
+      continue;
+    }
+    if (res.status === 500 || res.status === 502 || res.status === 503) {
+      // Transient: probe how much the server actually has, then resume there
+      const probe = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Range': `bytes */${totalSize}` },
+      });
+      if (probe.status === 200 || probe.status === 201) return await finalize(probe);
+      if (probe.status === 308) {
+        const received = parseRangeReceived(probe);
+        offset = Math.max(offset + 1, received);
+        continue;
+      }
+      continue; // otherwise retry the same chunk next round
+    }
+    const txt = await res.text().catch(() => '');
+    throw new Error(`ROM upload failed (HTTP ${res.status}): ${txt.slice(0, 120)}`);
+  }
+  throw new Error('ROM upload exceeded retry limit');
 }
 
 async function uploadDriveJson(
@@ -1177,6 +1477,8 @@ async function executeSync(interactive = false): Promise<{
     const pullKeys = Object.keys(remoteItems).filter((k) => {
       const owningGame = isItemKey(k) ? gameIdFromItemKey(k) : null;
       if (owningGame && mergedDeletedGames.has(owningGame)) return false;
+      // ROM binaries only travel when the user opted in
+      if (isRomKey(k) && !isRomSyncEnabled()) return false;
       const rItem = remoteItems[k];
       const tombTs = remoteTombstones.deletedItems[k] || 0;
       if (tombTs > rItem.updatedAt) return false;
@@ -1198,6 +1500,7 @@ async function executeSync(interactive = false): Promise<{
 
     // -------- 3. Push & Reconcile phase --------
     const candidates = new Set<string>(['retro_games', 'library_games', DELETED_GAMES_KEY]);
+    candidates.add(SETTINGS_SYNC_KEY);
     for (const k of Object.keys(metaMap)) if (isSyncableKey(k)) candidates.add(k);
     for (const k of Object.keys(remoteItems)) if (isSyncableKey(k)) candidates.add(k);
     try {
@@ -1233,6 +1536,11 @@ async function executeSync(interactive = false): Promise<{
         } catch (e) {}
       } else if (key === DELETED_GAMES_KEY) {
         localVal = Array.from(mergedDeletedGames);
+      } else if (key === SETTINGS_SYNC_KEY) {
+        const snap = collectSettingsSnapshot();
+        localVal = Object.keys(snap).length > 0 ? snap : null;
+      } else if (isRomKey(key)) {
+        localVal = await idbGet(romLocalIdbKey(key) || '').catch(() => null);
       } else if (key === 'library_games' || isItemKey(key)) {
         localVal = await idbGet(key).catch(() => null);
       }
@@ -1245,7 +1553,8 @@ async function executeSync(interactive = false): Promise<{
           tombstonesDirty = true;
         } else {
           if (localVal != null && isItemKey(key)) {
-            await idbDelete(key).catch(() => {});
+            const localIdbKey = isRomKey(key) ? romLocalIdbKey(key) : key;
+            if (localIdbKey) await idbDelete(localIdbKey).catch(() => {});
             delete metaMap[key];
             updatedLocalKeys.push(key);
           }
@@ -1253,6 +1562,9 @@ async function executeSync(interactive = false): Promise<{
           continue;
         }
       }
+
+      // ROM binaries only push/pull when the user opted in
+      if (isRomKey(key) && !isRomSyncEnabled()) continue;
 
       // Local item was deleted on this device (we have localMeta, no localVal, and remote exists)
       if (remote && localVal == null && localMeta && isItemKey(key)) {
@@ -1279,15 +1591,23 @@ async function executeSync(interactive = false): Promise<{
 
       // For game list keys, merge with remote list before pushing
       let remoteListForMerge: any[] | null = null;
+      let remoteSettingsForMerge: any = null;
       if ((key === 'retro_games' || key === 'library_games') && remote) {
         try {
           const rList = await downloadDriveJson(token, remote.id);
           if (Array.isArray(rList)) remoteListForMerge = rList;
         } catch (e) {}
+      } else if (key === SETTINGS_SYNC_KEY && remote) {
+        try {
+          const rSnap = await downloadDriveJson(token, remote.id);
+          if (rSnap && typeof rSnap === 'object' && !Array.isArray(rSnap)) {
+            remoteSettingsForMerge = rSnap;
+          }
+        } catch (e) {}
       }
 
-      const prepared = prepareDrivePayload(key, localVal, remoteListForMerge);
-      if (!prepared.ok || !prepared.jsonString) {
+      const prepared = prepareDrivePayload(key, localVal, remoteListForMerge, remoteSettingsForMerge);
+      if (!prepared.ok || (!prepared.jsonString && !prepared.raw)) {
         if (prepared.reason && prepared.reason !== 'no local value') {
           skipped.push({ key, size: prepared.size || 0, reason: prepared.reason });
         }
@@ -1295,13 +1615,14 @@ async function executeSync(interactive = false): Promise<{
       }
 
       try {
-        const driveFilename = keyToDriveFilename(key);
-        const uploaded = await uploadDriveJson(
-          token,
-          driveFilename,
-          prepared.jsonString,
-          remote?.id
-        );
+        const uploaded = isRomKey(key)
+          ? await uploadDriveBinary(
+              token,
+              `rs_v2_${encodeURIComponent(key)}.bin`,
+              prepared.raw!,
+              remote?.id
+            )
+          : await uploadDriveJson(token, keyToDriveFilename(key), prepared.jsonString!, remote?.id);
         metaMap[key] = {
           updatedAt: uploaded.updatedAt,
           pendingUpload: false,
@@ -1384,8 +1705,15 @@ async function executeSync(interactive = false): Promise<{
 function prepareDrivePayload(
   key: string,
   localVal: any,
-  remoteListForMerge: any[] | null
-): { ok: boolean; jsonString?: string; size?: number; reason?: string } {
+  remoteListForMerge: any[] | null,
+  remoteSettingsForMerge: any = null
+): {
+  ok: boolean;
+  jsonString?: string;
+  raw?: Blob | Uint8Array | ArrayBuffer;
+  size?: number;
+  reason?: string;
+} {
   if (localVal == null) return { ok: false, reason: 'no local value' };
 
   if (key === DELETED_GAMES_KEY) {
@@ -1393,6 +1721,36 @@ function prepareDrivePayload(
     const merged = Array.from(new Set([...(remoteListForMerge || []), ...ids]));
     const jsonString = JSON.stringify(merged);
     return { ok: true, jsonString, size: jsonString.length };
+  }
+
+  if (key === SETTINGS_SYNC_KEY) {
+    if (typeof localVal !== 'object' || Array.isArray(localVal)) {
+      return { ok: false, reason: 'local settings snapshot malformed' };
+    }
+    if (Object.keys(localVal).length === 0) {
+      return { ok: false, reason: 'no local settings recorded yet' };
+    }
+    // Local always wins (we only push when local is fresher), but keep any
+    // settings that were discovered remotely and not set on this device.
+    const merged = { ...(remoteSettingsForMerge || {}), ...localVal };
+    const jsonString = JSON.stringify(merged);
+    return { ok: true, jsonString, size: jsonString.length };
+  }
+
+  if (isRomKey(key)) {
+    const size = blobSizeOf(localVal);
+    if (!size || size <= 0) {
+      return { ok: false, reason: 'no local ROM data' };
+    }
+    if (size > CAP_ROM_BYTES) {
+      return {
+        ok: false,
+        reason: `ROM too large (${Math.round(size / 1048576)} MB > ${Math.round(CAP_ROM_BYTES / 1048576)} MB)`,
+        size,
+      };
+    }
+    // Uploaded as RAW BINARY (resumable) — no base64 inflation for big files
+    return { ok: true, raw: localVal, size };
   }
 
   if (key === 'retro_games' || key === 'library_games') {
@@ -1511,7 +1869,46 @@ async function pullItemsFromDrive(opts: {
     const entry = remoteItems[rKey];
     if (!entry) return;
     try {
-      const data = await downloadDriveJson(token, entry.id);
+      // ROM fast-path: a device that already has the ROM never re-downloads it.
+      // Same size  -> treat as already synced (no bytes moved).
+      // Diff. size -> keep the local copy and queue IT for upload (local wins).
+      if (isRomKey(rKey)) {
+        const gameId = romLocalIdbKey(rKey) || '';
+        const localRom = gameId ? await idbGet(gameId).catch(() => null) : null;
+        const localSize = blobSizeOf(localRom);
+        if (localSize && localSize > 0) {
+          if (entry.size && localSize === entry.size) {
+            metaMap[rKey] = {
+              updatedAt: entry.updatedAt || Date.now(),
+              pendingUpload: false,
+              fileId: entry.id,
+            };
+            skipped.push({
+              key: rKey,
+              size: localSize,
+              reason: 'ROM already on device — skipped re-download',
+            });
+            return;
+          }
+          // Keep the local copy and let this same sync run re-upload it
+          // (NOT added to touchedThisRun, so the push phase picks it up now)
+          metaMap[rKey] = {
+            updatedAt: entry.updatedAt || Date.now(),
+            pendingUpload: true,
+            fileId: entry.id,
+          };
+          skipped.push({
+            key: rKey,
+            size: localSize,
+            reason: 'kept local ROM copy (different size than Drive)',
+          });
+          return;
+        }
+      }
+
+      const data = isRomKey(rKey)
+        ? await downloadDriveBinary(token, entry.id)
+        : await downloadDriveJson(token, entry.id);
       if (data == null) return;
 
       await applyPulledItem(rKey, data, updatedLocalKeys, skipped);
@@ -1554,6 +1951,36 @@ async function applyPulledItem(
       const merged = Array.from(new Set([...getDeletedGameIds(), ...data]));
       localStorage.setItem(DELETED_GAMES_KEY, JSON.stringify(merged));
       updatedLocalKeys.push(DELETED_GAMES_KEY);
+    }
+    return;
+  }
+
+  if (isRomKey(rKey)) {
+    if (!data || !(data instanceof Uint8Array) || data.length === 0) {
+      skipped.push({ key: rKey, size: 0, reason: 'corrupt or empty ROM on Drive' });
+      return;
+    }
+    const gameId = romLocalIdbKey(rKey) || '';
+    const meta = findLocalGame(gameId);
+    const fileName =
+      (meta?.fileName && String(meta.fileName)) || `${gameId}.rom`;
+    const file = new File([data as unknown as BlobPart], fileName, {
+      type: 'application/octet-stream',
+    });
+    await idbPut(gameId, file).catch(() => {});
+    updatedLocalKeys.push(rKey);
+    return;
+  }
+
+  if (rKey === SETTINGS_SYNC_KEY) {
+    if (applySettingsSnapshot(data)) {
+      updatedLocalKeys.push(SETTINGS_SYNC_KEY);
+    } else {
+      skipped.push({
+        key: rKey,
+        size: 0,
+        reason: 'settings snapshot malformed — left local values intact',
+      });
     }
     return;
   }

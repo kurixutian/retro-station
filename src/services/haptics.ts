@@ -26,6 +26,13 @@ class HapticsService {
     try {
       localStorage.setItem('retro_haptics', String(val));
     } catch {}
+    if (typeof window !== 'undefined') {
+      import('../cloudSync')
+        .then(({ markLocalSaveModified, SETTINGS_SYNC_KEY }) =>
+          markLocalSaveModified(SETTINGS_SYNC_KEY)
+        )
+        .catch(() => {});
+    }
     if (val) {
       this.trigger(15);
     }

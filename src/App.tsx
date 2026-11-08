@@ -29,6 +29,7 @@ import {
   unrecordDeletedGame,
   getDeletedGameIds,
   setGameplayActive,
+  SETTINGS_SYNC_KEY,
 } from './cloudSync';
 import { onBackupApplied } from './services/backup';
 
@@ -293,6 +294,23 @@ export default function App() {
         keys.includes('deleted_games')
       ) {
         refreshGameList();
+      }
+      // Live settings application when preferences arrive from Drive
+      if (keys.includes(SETTINGS_SYNC_KEY)) {
+        try {
+          const t = localStorage.getItem('retro_theme');
+          if (t) setThemeId(t);
+        } catch (e) {}
+        setShaders((prev: Record<string, any>) => {
+          try {
+            const saved = localStorage.getItem('retro_shaders');
+            if (!saved) return prev;
+            const incoming = { ...prev, ...JSON.parse(saved) };
+            return JSON.stringify(incoming) === JSON.stringify(prev) ? prev : incoming;
+          } catch (err) {
+            return prev;
+          }
+        });
       }
       const stateKeys = keys.filter((k) => k.startsWith('state:'));
       if (stateKeys.length > 0) {
@@ -669,6 +687,7 @@ export default function App() {
   const applyTheme = (id: string) => {
     setThemeId(id);
     try { localStorage.setItem('retro_theme', id); } catch (e) {}
+    markLocalSaveModified(SETTINGS_SYNC_KEY).catch(() => {});
     showToast(`Theme Applied: ${THEMES[id]?.name || id}`);
   };
 
@@ -685,6 +704,7 @@ export default function App() {
       }
       return next;
     });
+    markLocalSaveModified(SETTINGS_SYNC_KEY).catch(() => {});
   };
 
   const setColorProfile = (profile: string) => {
@@ -694,6 +714,7 @@ export default function App() {
       showToast(`Color Profile: ${profile.toUpperCase()}`);
       return next;
     });
+    markLocalSaveModified(SETTINGS_SYNC_KEY).catch(() => {});
   };
 
   const toggleAudio = () => {
@@ -738,6 +759,8 @@ export default function App() {
       }
 
       await idbPut(game.id, romFile);
+      // Make the restored ROM available in the cloud vault (if ROM sync is on)
+      markLocalSaveModified(`rom:${game.id}`).catch(() => {});
       setMissingRomData(null);
       showToast(`Linked ROM for ${game.title}! Launching...`);
       launchGame(game, optionalStateData);
@@ -857,6 +880,8 @@ export default function App() {
 
       try {
         await idbPut(newGame.id, file);
+        // Queue the ROM binary itself for the cloud vault (if ROM sync is on)
+        markLocalSaveModified(`rom:${newGame.id}`).catch(() => {});
       } catch (err) {
         showToast('Could not store ROM for offline use');
       }
