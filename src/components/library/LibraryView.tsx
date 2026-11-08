@@ -37,46 +37,12 @@ interface LibraryViewProps {
 }
 
 const AmbientBackdropTile: React.FC<{ game: Game; theme: Theme }> = ({ game, theme }) => {
-  const [coverUrl, setCoverUrl] = React.useState<string | null>(() => {
-    return game.customCover || game.cover || (getBoxartUrls(game)[0] ?? null);
-  });
-  const [failed, setFailed] = React.useState(false);
-
-  React.useEffect(() => {
-    let active = true;
-    if (game?.id) {
-      idbGet(`cover:${game.id}`)
-        .then((saved) => {
-          if (active && saved && typeof saved === 'string') {
-            setCoverUrl(saved);
-          }
-        })
-        .catch(() => {});
-    }
-    return () => {
-      active = false;
-    };
-  }, [game?.id]);
-
-  if (!coverUrl || failed) {
-    return (
-      <div
-        className="w-full h-full"
-        style={{
-          background: `linear-gradient(135deg, ${theme.hex}33 0%, #18181b 100%)`,
-        }}
-      />
-    );
-  }
-
   return (
     <div className="w-full h-full overflow-hidden relative">
-      <img
-        src={coverUrl}
-        alt=""
-        aria-hidden="true"
-        className="w-full h-full object-cover"
-        onError={() => setFailed(true)}
+      <GameCoverImage
+        game={game}
+        className="w-full h-full border-0 !bg-transparent"
+        imgClassName="w-full h-full object-cover"
       />
     </div>
   );
@@ -253,14 +219,14 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       <main className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 pt-5 space-y-7">
         {/* Slot-1 Active Cartridge Deck Bay */}
         {featuredGame && (
-          <div className="relative rounded-3xl overflow-hidden border border-zinc-800/90 shadow-2xl p-4 sm:p-6 hardware-panel bg-zinc-950">
+          <div className="relative rounded-3xl overflow-hidden border border-zinc-800/90 shadow-2xl p-4 sm:p-6 hardware-panel bg-zinc-950/70">
             {/* Ambient Cartridge Art Backdrop */}
             <div className="absolute inset-0 pointer-events-none overflow-hidden select-none z-0">
-              <div className="w-full h-full opacity-25 sm:opacity-30 blur-xl hero-art-pan scale-110">
+              <div className="w-full h-full opacity-45 sm:opacity-50 blur-lg hero-art-pan scale-110">
                 <AmbientBackdropTile game={featuredGame} theme={theme} />
               </div>
-              <div className="absolute inset-0 bg-gradient-to-r from-zinc-950/95 via-zinc-950/80 to-zinc-950/90" />
-              <div className="absolute inset-0 bg-gradient-to-t from-zinc-950/95 via-transparent to-zinc-950/50" />
+              <div className="absolute inset-0 bg-gradient-to-r from-zinc-950/90 via-zinc-950/65 to-zinc-950/80" />
+              <div className="absolute inset-0 bg-gradient-to-t from-zinc-950/90 via-transparent to-zinc-950/40" />
             </div>
 
             {/* Molded Cartridge Slot Top Grip Rib */}
