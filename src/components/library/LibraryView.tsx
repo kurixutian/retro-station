@@ -11,6 +11,7 @@ import {
   Coffee,
   Sun,
   Moon,
+  MoreVertical,
 } from 'lucide-react';
 import { Game, Theme } from '../../types';
 import { formatGameTitle, getBoxartUrls } from '../../constants/cores';
@@ -119,6 +120,28 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     return selected;
   }, [games, featuredIndex]);
 
+  // ── Mobile Overflow Menu (secondary header actions) ──────────────────────
+  const [actionsMenuOpen, setActionsMenuOpen] = React.useState(false);
+  const actionsMenuRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!actionsMenuOpen) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (actionsMenuRef.current && !actionsMenuRef.current.contains(e.target as Node)) {
+        setActionsMenuOpen(false);
+      }
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setActionsMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [actionsMenuOpen]);
+
   return (
     <div className="relative pb-16 min-h-[100vh] min-h-[100lvh]">
       {/* Ambient Animated Blurred ROM Backdrop */}
@@ -181,7 +204,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 
             <button
               onClick={onOpenCloudSync}
-              className={`p-2 sm:p-2.5 rounded-xl border tactile-btn transition flex items-center gap-1.5 ${
+              className={`p-2 sm:p-2.5 rounded-xl border tactile-btn transition hidden sm:flex items-center gap-1.5 ${
                 cloudStatus === 'idle'
                   ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
                   : cloudStatus === 'syncing'
@@ -200,7 +223,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             {onOpenControls && (
               <button
                 onClick={onOpenControls}
-                className="p-2 sm:p-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 tactile-btn transition"
+                className="p-2 sm:p-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 tactile-btn transition hidden sm:block"
                 title="Controls & Keybindings Guide"
                 aria-label="Controls and keybindings"
               >
@@ -211,7 +234,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             {onToggleLightDark && (
               <button
                 onClick={onToggleLightDark}
-                className="p-2 sm:p-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 tactile-btn transition"
+                className="p-2 sm:p-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 tactile-btn transition hidden sm:block"
                 title={theme.isLight ? 'Switch to Vader Obsidian (Dark Mode)' : 'Switch to Trooper White (Light Mode)'}
                 aria-label="Toggle Light/Dark Theme"
               >
@@ -225,12 +248,79 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 
             <button
               onClick={onOpenSettings}
-              className="p-2 sm:p-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 tactile-btn transition"
+              className="p-2 sm:p-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 tactile-btn transition hidden sm:block"
               title="Configuration"
               aria-label="Configuration Settings"
             >
               <Settings className="w-4 h-4 text-emerald-400" />
             </button>
+
+            {/* Mobile Overflow Menu: Cloud Vault / Controls / Theme / Configuration */}
+            <div className="relative sm:hidden" ref={actionsMenuRef}>
+              <button
+                onClick={() => setActionsMenuOpen((o) => !o)}
+                className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 tactile-btn transition"
+                title="More actions"
+                aria-label="More actions"
+                aria-haspopup="menu"
+                aria-expanded={actionsMenuOpen}
+              >
+                <MoreVertical className="w-4 h-4" />
+              </button>
+
+              {actionsMenuOpen && (
+                <div
+                  role="menu"
+                  className="absolute right-0 top-[calc(100%+10px)] w-56 rounded-2xl border border-zinc-800 bg-zinc-950/95 backdrop-blur-xl shadow-2xl hardware-panel p-1.5"
+                >
+                  <button
+                    role="menuitem"
+                    onClick={() => { setActionsMenuOpen(false); onOpenCloudSync(); }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-zinc-200 hover:bg-zinc-800/70 transition text-left"
+                  >
+                    <Cloud className={`w-4 h-4 ${cloudStatus === 'syncing' ? 'text-sky-400' : cloudStatus === 'idle' ? 'text-emerald-400' : 'text-zinc-400'}`} />
+                    <span className="flex-1">Cloud Save Vault</span>
+                    {cloudStatus === 'idle' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />}
+                    {cloudStatus === 'syncing' && <span className="w-1.5 h-1.5 rounded-full bg-sky-400 shrink-0" />}
+                  </button>
+
+                  {onOpenControls && (
+                    <button
+                      role="menuitem"
+                      onClick={() => { setActionsMenuOpen(false); onOpenControls(); }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-zinc-200 hover:bg-zinc-800/70 transition text-left"
+                    >
+                      <Gamepad2 className="w-4 h-4 text-sky-400" />
+                      <span className="flex-1">Controls</span>
+                    </button>
+                  )}
+
+                  {onToggleLightDark && (
+                    <button
+                      role="menuitem"
+                      onClick={() => { setActionsMenuOpen(false); onToggleLightDark(); }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-zinc-200 hover:bg-zinc-800/70 transition text-left"
+                    >
+                      {theme.isLight ? (
+                        <Moon className="w-4 h-4 text-indigo-400" />
+                      ) : (
+                        <Sun className="w-4 h-4 text-amber-400" />
+                      )}
+                      <span className="flex-1">{theme.isLight ? 'Dark Mode' : 'Light Mode'}</span>
+                    </button>
+                  )}
+
+                  <button
+                    role="menuitem"
+                    onClick={() => { setActionsMenuOpen(false); onOpenSettings(); }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-zinc-200 hover:bg-zinc-800/70 transition text-left"
+                  >
+                    <Settings className="w-4 h-4 text-emerald-400" />
+                    <span className="flex-1">Configuration</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </header>

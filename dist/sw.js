@@ -1,11 +1,11 @@
-const CACHE_NAME = 'retro-station-v10';
+const CACHE_NAME = 'retro-station-v12';
 const PRECACHE_ASSETS = [
   './',
   './index.html',
   './manifest.json',
-  './icon.svg',
   './icon-192.png',
   './icon-512.png',
+  './icon-maskable-512.png',
   'https://cdn.emulatorjs.org/stable/data/loader.js',
   'https://cdn.emulatorjs.org/stable/data/emulator.min.js',
   'https://cdn.emulatorjs.org/stable/data/emulator.min.css'

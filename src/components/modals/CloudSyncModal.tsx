@@ -95,6 +95,16 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     return () => unsub();
   }, [isOpen]);
 
+  // Escape-to-close: must sit above the isOpen guard so hook order stays stable
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const handleSignInAndSync = async () => {
@@ -223,17 +233,6 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
       setBackupBusy(false);
     }
   };
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
 
   const statusColor =
     syncStatus === 'syncing' || isSyncing
