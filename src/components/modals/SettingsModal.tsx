@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Sliders, X, Tv, Palette, Check, Vibrate, Cloud, ChevronRight, Sparkles, Gamepad2, Download, Upload, HardDrive, Coffee, Maximize } from 'lucide-react';
 import { THEMES } from '../../constants/themes';
 import { COLOR_PROFILES } from '../../constants/shaders';

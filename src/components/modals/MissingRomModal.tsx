@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { HardDrive, X, FolderPlus, Gamepad2, ShieldCheck } from 'lucide-react';
 import { Game, Theme } from '../../types';
 import { formatGameTitle } from '../../constants/cores';

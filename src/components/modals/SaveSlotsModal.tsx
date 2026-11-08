@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Play, Download, Trash2, Layers, Camera, X, AlertTriangle } from 'lucide-react';
 import { Game, SaveSlot } from '../../types';
 import { GameCoverImage } from '../common/GameCoverImage';
