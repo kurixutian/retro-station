@@ -518,7 +518,7 @@ export default function App() {
   };
 
   const sendKey = useCallback((name: string, down: boolean) => {
-    if (down) {
+    if (down && !hasUserInteractedRef.current) {
       hasUserInteractedRef.current = true;
       try {
         const win = emuFrameRef.current?.contentWindow as any;
@@ -540,9 +540,12 @@ export default function App() {
       }
       if (idx !== undefined) {
         const emu = win.EJS_emulator;
-        if (emu?.gameManager && typeof emu.gameManager.simulateInput === 'function') {
-          emu.gameManager.simulateInput(0, idx, down ? 1 : 0);
-          return;
+        if (emu?.gameManager) {
+          const fn = (emu.gameManager.functions && emu.gameManager.functions.simulateInput) || emu.gameManager.simulateInput;
+          if (typeof fn === 'function') {
+            fn(0, idx, down ? 1 : 0);
+            return;
+          }
         }
       }
     } catch (e) {
