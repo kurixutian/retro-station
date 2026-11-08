@@ -118,12 +118,12 @@ input, textarea {
   -webkit-user-select: none;
   -webkit-touch-callout: none;
   box-shadow: 0 3px 0 0 rgba(0, 0, 0, 0.45), inset 0 1px 0 0 rgba(255, 255, 255, 0.2);
+  transition: transform 0.05s var(--ease-out);
 }
 
 .tactile-btn:active,
 .tactile-btn[data-pressed="true"] {
   transform: translateY(2px) scale(0.96);
-  transition: none !important;
 }
 
 .dpad-cross {
@@ -135,14 +135,13 @@ input, textarea {
 }
 
 .dpad-arm {
-  /* visual indicators on Dpad */
+  transition: transform 0.04s ease, opacity 0.04s ease;
 }
 
 .dpad-arm:active,
 .dpad-arm[data-pressed="true"] {
   transform: scale(0.93);
   opacity: 0.85;
-  transition: none !important;
 }
 
 .hardware-led {
