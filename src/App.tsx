@@ -41,6 +41,7 @@ import { CloudSyncModal } from './components/modals/CloudSyncModal';
 import { ControlsModal } from './components/modals/ControlsModal';
 import { MissingRomModal } from './components/modals/MissingRomModal';
 import { isZipFile, isZipBuffer, extractRomsFromZip } from './services/romArchive';
+import { useGamepadInput } from './hooks/useGamepadInput';
 
 const INITIAL_GAMES: Game[] = [];
 
@@ -519,6 +520,10 @@ export default function App() {
   const isFirstMountRef = useRef(true);
 
   useEffect(() => {
+    // Durable backup to IndexedDB so libraries exceeding localStorage 5MB quota never get lost
+    const userImportedOnly = games.filter((g) => g.real && g.id !== 'pokemon_gold');
+    idbPut('library_games', userImportedOnly).catch(() => {});
+
     try {
       localStorage.setItem('retro_games', JSON.stringify(games));
       if (isFirstMountRef.current) {
@@ -526,9 +531,12 @@ export default function App() {
         return;
       }
       if (games.length > 0) {
+        markLocalSaveModified('library_games');
         markLocalSaveModified('retro_games');
       }
-    } catch (e) {}
+    } catch (e) {
+      console.warn('[Storage] localStorage quota reached; library preserved in IndexedDB');
+    }
   }, [games]);
 
   const getEmu = () => {
@@ -1404,99 +1412,13 @@ export default function App() {
     };
   }, [currentView, setButtonDown, setButtonUp, activeGame, toggleAudio, saveStateToGameSlot, loadStateFromGameSlot]);
 
-  // Gamepad API integration (Event-driven: zero rAF / Mojo IPC overhead when no controller is connected)
-  const prevGamepadButtonsRef = useRef<Record<string, boolean>>({});
-  useEffect(() => {
-    let animId = 0;
-
-    const hasConnectedGamepad = () => {
-      try {
-        const list = navigator.getGamepads ? navigator.getGamepads() : [];
-        return Boolean(list && (list[0] || list[1] || list[2] || list[3]));
-      } catch {
-        return false;
-      }
-    };
-
-    const pollGamepads = () => {
-      animId = 0;
-      if (currentView !== 'ingame') return;
-      const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
-      const gp = gamepads[0] || gamepads[1] || gamepads[2] || gamepads[3];
-      if (!gp) {
-        // Release any held gamepad buttons and stop polling until gamepadconnected fires
-        for (const key of Object.keys(prevGamepadButtonsRef.current)) {
-          if (prevGamepadButtonsRef.current[key]) {
-            setButtonUp(key as any);
-          }
-        }
-        prevGamepadButtonsRef.current = {};
-        return;
-      }
-
-      const btn = (idx: number) => Boolean(gp.buttons[idx]?.pressed);
-      const axis = (idx: number) => gp.axes[idx] || 0;
-
-      const curState: Record<string, boolean> = {
-        up: btn(12) || axis(1) < -0.45,
-        down: btn(13) || axis(1) > 0.45,
-        left: btn(14) || axis(0) < -0.45,
-        right: btn(15) || axis(0) > 0.45,
-        actionA: btn(0),
-        actionB: btn(1),
-        actionX: btn(2),
-        actionY: btn(3),
-        btnL: btn(4),
-        btnR: btn(5),
-        select: btn(8),
-        start: btn(9)
-      };
-
-      for (const key of Object.keys(curState)) {
-        const wasDown = prevGamepadButtonsRef.current[key];
-        const isDown = curState[key];
-        if (isDown && !wasDown) {
-          setButtonDown(key as any);
-        } else if (!isDown && wasDown) {
-          setButtonUp(key as any);
-        }
-      }
-      prevGamepadButtonsRef.current = curState;
-      animId = requestAnimationFrame(pollGamepads);
-    };
-
-    const startPollingIfNeeded = () => {
-      if (currentView === 'ingame' && !animId && hasConnectedGamepad()) {
-        animId = requestAnimationFrame(pollGamepads);
-      }
-    };
-
-    const handleGamepadConnected = (e: GamepadEvent) => {
-      showToast(`🎮 Controller Connected: ${e.gamepad.id.slice(0, 24)}`);
-      soundFX.save();
-      if (currentView === 'ingame' && !animId) {
-        animId = requestAnimationFrame(pollGamepads);
-      }
-    };
-
-    const handleGamepadDisconnected = () => {
-      showToast('🎮 Controller Disconnected');
-      if (!hasConnectedGamepad() && animId) {
-        cancelAnimationFrame(animId);
-        animId = 0;
-      }
-    };
-
-    window.addEventListener('gamepadconnected', handleGamepadConnected);
-    window.addEventListener('gamepaddisconnected', handleGamepadDisconnected);
-    startPollingIfNeeded();
-
-    return () => {
-      if (animId) cancelAnimationFrame(animId);
-      window.removeEventListener('gamepadconnected', handleGamepadConnected);
-      window.removeEventListener('gamepaddisconnected', handleGamepadDisconnected);
-    };
-  }, [currentView, setButtonDown, setButtonUp, showToast]);
+  // Gamepad API integration hook (isolated 60fps RAF polling)
+  useGamepadInput({
+    isActive: currentView === 'ingame',
+    onButtonDown: setButtonDown,
+    onButtonUp: setButtonUp,
+    onShowToast: showToast,
+  });
 
   // Real WASM Core FPS Readback — strictly gated to when Top HUD Bar is visible (zero renders during normal play)
   useEffect(() => {

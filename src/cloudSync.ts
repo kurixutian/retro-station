@@ -901,28 +901,13 @@ export function normalizeBinaryData(val: any): Uint8Array | null {
   return bytes && bytes.length > 0 ? bytes : null;
 }
 
-export function uint8ToBase64(bytes: Uint8Array): string {
-  const chunkSize = 0x8000;
-  const len = bytes.length;
-  let binary = '';
-  for (let i = 0; i < len; i += chunkSize) {
-    binary += String.fromCharCode.apply(
-      null,
-      bytes.subarray(i, Math.min(i + chunkSize, len)) as any
-    );
-  }
-  return btoa(binary);
-}
+import {
+  base64ToUint8Array as base64ToUint8,
+  uint8ArrayToBase64 as uint8ToBase64,
+  normalizeBinaryData as sharedNormalizeBinary,
+} from './services/storage/binary';
 
-export function base64ToUint8(str: string): Uint8Array {
-  const bin = atob(str);
-  const len = bin.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    bytes[i] = bin.charCodeAt(i);
-  }
-  return bytes;
-}
+export { base64ToUint8, uint8ToBase64 };
 
 export function areByteArraysEqual(a: Uint8Array | null, b: Uint8Array | null): boolean {
   if (!a || !b) return a === b;
@@ -1105,7 +1090,25 @@ async function listAppDataFiles(token: string): Promise<DriveFileEntry[]> {
     pageToken = data.nextPageToken;
   } while (pageToken);
 
-  return results;
+  // Group by filename to deduplicate stray files sharing the exact same name
+  const deduped: DriveFileEntry[] = [];
+  const byName = new Map<string, DriveFileEntry>();
+  for (const item of results) {
+    const existing = byName.get(item.name);
+    if (!existing) {
+      byName.set(item.name, item);
+      deduped.push(item);
+    } else if (item.updatedAt > existing.updatedAt) {
+      deleteDriveFile(token, existing.id).catch(() => {});
+      byName.set(item.name, item);
+      const idx = deduped.indexOf(existing);
+      if (idx !== -1) deduped[idx] = item;
+    } else {
+      deleteDriveFile(token, item.id).catch(() => {});
+    }
+  }
+
+  return deduped;
 }
 
 async function downloadDriveJson(token: string, fileId: string): Promise<any> {

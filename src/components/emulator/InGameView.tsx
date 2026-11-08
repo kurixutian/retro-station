@@ -405,12 +405,8 @@ export const InGameView: React.FC<InGameViewProps> = ({
   }, []);
 
   const updateDpadByCoords = React.useCallback((clientX: number, clientY: number) => {
-    let rect = dpadRectRef.current;
-    if (!rect || rect.width === 0) {
-      rect = dpadContainerRef.current?.getBoundingClientRect() || null;
-      dpadRectRef.current = rect;
-    }
-    if (!rect) return;
+    const rect = dpadRectRef.current;
+    if (!rect || rect.width === 0) return;
     const cx = rect.left + rect.width * 0.5;
     const cy = rect.top + rect.height * 0.5;
     const dx = clientX - cx;
