@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Sliders, X, Tv, Palette, Check, Vibrate, Cloud, ChevronRight, Sparkles, Gamepad2, Download, Upload, HardDrive, Coffee, Maximize } from 'lucide-react';
-import { THEMES } from '../../constants/themes';
+import { Sliders, X, Tv, Palette, Check, Vibrate, Cloud, ChevronRight, ChevronLeft, Sparkles, Gamepad2, Download, Upload, HardDrive, Coffee, Maximize, Moon } from 'lucide-react';
 import { COLOR_PROFILES } from '../../constants/shaders';
 import { Theme } from '../../types';
 import { haptics } from '../../services/haptics';
@@ -22,6 +21,15 @@ interface SettingsModalProps {
   onOpenControls?: () => void;
 }
 
+type SettingsPanel = 'menu' | 'display' | 'controls' | 'themes' | 'vault';
+
+const SETTINGS_PANELS: { id: SettingsPanel; label: string; desc: string; icon: React.FC<{ className?: string }> }[] = [
+  { id: 'display', label: 'Display & CRT', desc: 'Screen filters, color profiles & CRT effects', icon: Tv },
+  { id: 'controls', label: 'Controls & Haptic', desc: 'Haptics, gamepad & keyboard shortcuts', icon: Vibrate },
+  { id: 'themes', label: 'Themes', desc: 'Dark or light app appearance', icon: Palette },
+  { id: 'vault', label: 'Cloud Vault', desc: 'Drive sync & manual backup file', icon: Cloud },
+];
+
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
   onClose,
@@ -36,7 +44,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onOpenCloudSync,
   onOpenControls,
 }) => {
-  const [activeTab, setActiveTab] = useState<'display' | 'controls' | 'themes' | 'vault'>('display');
+  const [activePanel, setActivePanel] = useState<SettingsPanel>('menu');
   const [backupBusy, setBackupBusy] = useState(false);
   const [backupMsg, setBackupMsg] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -75,13 +83,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   useEffect(() => {
+    if (isOpen) setActivePanel('menu');
+  }, [isOpen]);
+
+  useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        if (activePanel !== 'menu') setActivePanel('menu');
+        else onClose();
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, activePanel, onClose]);
 
   if (!isOpen) return null;
   const syncCode = getSyncCode();
@@ -102,8 +117,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       <div className="w-full max-w-xl max-h-[88vh] flex flex-col rounded-3xl bg-zinc-950 border border-zinc-800 shadow-2xl overflow-hidden my-auto hardware-panel">
         <div className="flex-none flex items-center justify-between px-5 py-4 border-b border-zinc-800 bg-zinc-950">
           <div className="flex items-center gap-2.5">
+            {activePanel !== 'menu' && (
+              <button
+                onClick={() => setActivePanel('menu')}
+                className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white tactile-btn border border-zinc-800"
+                aria-label="Back to Configuration"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+            )}
             <Sliders className={`w-5 h-5 ${theme.accentText}`} />
-            <h2 id="settings-dialog-title" className="text-base font-black text-white">Configuration</h2>
+            <h2 id="settings-dialog-title" className="text-base font-black text-white">
+              {activePanel === 'menu' ? 'Configuration' : SETTINGS_PANELS.find((p) => p.id === activePanel)?.label}
+            </h2>
           </div>
           <button
             onClick={onClose}
@@ -114,49 +140,34 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </button>
         </div>
 
-        {/* Segmented Category Navigation */}
-        <div
-          role="tablist"
-          aria-label="Configuration categories"
-          className="flex-none px-4 pt-3 pb-2.5 border-b border-zinc-800/80 bg-zinc-950/90 flex items-center gap-1.5 overflow-x-auto no-scrollbar"
-        >
-          {[
-            { id: 'display', label: 'Display & CRT', icon: Tv },
-            { id: 'controls', label: 'Controls & Haptic', icon: Vibrate },
-            { id: 'themes', label: 'Themes', icon: Palette },
-            { id: 'vault', label: 'Cloud Vault', icon: Cloud },
-          ].map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                role="tab"
-                id={`settings-tab-${tab.id}`}
-                aria-selected={isActive}
-                aria-controls={`settings-tabpanel-${tab.id}`}
-                onClick={() => setActiveTab(tab.id as any)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
-                  isActive
-                    ? 'bg-zinc-800 text-white shadow-sm border border-zinc-700'
-                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60 border border-transparent'
-                }`}
-              >
-                <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-emerald-400' : 'text-zinc-500'}`} />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
-        </div>
+        <div className="flex-1 overflow-y-auto modal-scroll p-5 space-y-6">
+          {/* CATEGORY PICKER: choose which settings to open */}
+          {activePanel === 'menu' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {SETTINGS_PANELS.map((panel) => {
+                const Icon = panel.icon;
+                return (
+                  <button
+                    key={panel.id}
+                    onClick={() => setActivePanel(panel.id)}
+                    className="text-left p-4 rounded-2xl border bg-zinc-900/70 border-zinc-800 hover:bg-zinc-900 hover:border-zinc-700 transition flex items-center gap-3 min-h-[74px] tacti tactile-btn focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+                  >
+                    <div className="w-10 h-10 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center shrink-0">
+                      <Icon className="w-5 h-5 text-emerald-400" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-extrabold text-white truncate">{panel.label}</div>
+                      <div className="text-[11px] text-zinc-400 truncate">{panel.desc}</div>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-zinc-600 shrink-0" />
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
-        <div
-          role="tabpanel"
-          id={`settings-tabpanel-${activeTab}`}
-          aria-labelledby={`settings-tab-${activeTab}`}
-          className="flex-1 overflow-y-auto modal-scroll p-5 space-y-6"
-        >
-          {/* TAB 1: DISPLAY & CRT */}
-          {activeTab === 'display' && (
+          {/* PANEL 1: DISPLAY & CRT */}
+          {activePanel === 'display' && (
             <div className="space-y-6">
               {/* AMOLED Battery Saver Dedicated Toggle Card */}
               <button
@@ -327,8 +338,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           )}
 
-          {/* TAB 2: CONTROLS & HAPTIC */}
-          {activeTab === 'controls' && (
+          {/* PANEL 2: CONTROLS & HAPTIC */}
+          {activePanel === 'controls' && (
             <div className="space-y-6">
               {/* Controls & Haptic Feedback Toggle Card */}
               <button
@@ -375,10 +386,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <span>Physical Gamepad Support</span>
                 </div>
                 <p className="text-xs text-zinc-400 leading-relaxed">
-                  Bluetooth & USB controllers (Xbox, DualShock, DualSense, 8BitDo) connect automatically via the standard HTML5 Gamepad API with zero idle battery overhead.
+                  Bluetooth & USB controllers connect automatically via HTML5 Gamepad API with zero battery overhead.
                 </p>
                 <div className="text-[11px] text-zinc-500 font-mono pt-1">
-                  Keyboard Quick Save: <span className="text-amber-300 font-bold">Shift + F1</span> • Quick Load: <span className="text-cyan-300 font-bold">F3</span>
+                  Quick Save: <span className="text-amber-300 font-bold">Shift + F1</span> • Quick Load: <span className="text-cyan-300 font-bold">F3</span>
                 </div>
               </div>
 
@@ -403,44 +414,51 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           )}
 
-          {/* TAB 3: THEMES */}
-          {activeTab === 'themes' && (
-            <div className="space-y-2.5">
+          {/* PANEL 3: THEMES (Clean Dark/Light toggle) */}
+          {activePanel === 'themes' && (
+            <div className="space-y-4">
               <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
                 <Palette className="w-4 h-4 text-amber-400" />
-                <span>COLOR THEMES</span>
+                <span>APPEARANCE</span>
               </h3>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {Object.values(THEMES).map((t) => {
-                  const active = themeId === t.id;
-                  return (
-                    <button
-                      key={t.id}
-                      onClick={() => applyTheme(t.id)}
-                      className={`p-3 rounded-2xl border text-left transition flex items-center justify-between ${
-                        active
-                          ? 'bg-zinc-900 border-emerald-400 text-white shadow-lg'
-                          : 'bg-zinc-900/50 border-zinc-800 text-zinc-300 hover:bg-zinc-900'
-                      }`}
-                    >
-                      <div className="text-xs font-bold flex items-center gap-2">
-                        <span
-                          className="w-3.5 h-3.5 rounded-full inline-block border border-white/20"
-                          style={{ backgroundColor: t.hex }}
-                        />
-                        <span>{t.name}</span>
-                      </div>
-                      {active && <Check className="w-4 h-4 text-emerald-400 shrink-0" />}
-                    </button>
-                  );
-                })}
-              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={!theme.isLight}
+                onClick={() => applyTheme(theme.isLight ? 'midnight' : 'trooper')}
+                className={`w-full text-left p-4 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 tactile-btn focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
+                  !theme.isLight
+                    ? 'bg-zinc-900 border-zinc-700 text-white'
+                    : 'bg-zinc-900/60 border-zinc-800 text-zinc-300 hover:bg-zinc-900'
+                }`}
+              >
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Moon className="w-4 h-4 text-emerald-400" />
+                    <span className="text-sm font-extrabold text-white">Dark Mode</span>
+                    <span className="px-2 py-0.5 rounded-md text-[9px] font-black tracking-wider uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      {theme.isLight ? 'Light' : 'Dark'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-400 leading-snug">
+                    Toggle between dark and light appearance across the entire app and in-game console shell.
+                  </p>
+                </div>
+
+                <div
+                  className={`shrink-0 w-12 h-6 rounded-full transition-colors p-0.5 flex items-center ${
+                    !theme.isLight ? 'bg-emerald-500 justify-end' : 'bg-zinc-800 border border-zinc-700 justify-start'
+                  }`}
+                >
+                  <div className="w-5 h-5 rounded-full bg-white shadow-md" />
+                </div>
+              </button>
             </div>
           )}
 
-          {/* TAB 4: CLOUD VAULT */}
-          {activeTab === 'vault' && (
+          {/* PANEL 4: CLOUD VAULT */}
+          {activePanel === 'vault' && (
             <div className="space-y-4">
               <button
                 type="button"

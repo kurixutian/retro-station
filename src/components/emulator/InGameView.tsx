@@ -226,6 +226,33 @@ export const InGameView: React.FC<InGameViewProps> = ({
   const padLayout = isLandscape ? padLayoutLandscape : padLayoutPortrait;
   const setPadLayout = isLandscape ? setPadLayoutLandscape : setPadLayoutPortrait;
 
+  // ── Auto-fit: shrink pads proportionally on small decks so they never clip ─
+  const [deckBox, setDeckBox] = React.useState({ w: 0, h: 0 });
+  React.useEffect(() => {
+    const el = (isLandscape ? landscapeDeckRef : deckRef).current;
+    if (!el) { setDeckBox({ w: 0, h: 0 }); return; }
+    const update = () => setDeckBox({ w: el.clientWidth, h: el.clientHeight });
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLandscape, hidePad, customizing, showCartridgeTools]);
+
+  const padFitScale = React.useMemo(() => {
+    if (!deckBox.w || !deckBox.h) return 1;
+    return Math.max(0.55, Math.min(1, Math.min(deckBox.w / 440, deckBox.h / 540)));
+  }, [deckBox]);
+
+  const scaledPadLayout = React.useMemo(() => {
+    if (padFitScale === 1) return padLayout;
+    const out = { ...padLayout } as PadLayout;
+    (Object.keys(out) as PadGroupId[]).forEach((k) => {
+      out[k] = { ...out[k], s: (out[k].s || 1) * padFitScale };
+    });
+    return out;
+  }, [padLayout, padFitScale]);
+
   const movePad = React.useCallback(
     (id: PadGroupId, x: number, y: number) => {
       setPadLayout((l) => ({ ...l, [id]: { ...l[id], x, y } }));
@@ -771,7 +798,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
         title={isFastForward ? `Fast Forward (${ffSpeed}x)` : 'Fast Forward'}
       >
         <FastForward className={compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} />
-        {!compact && <span>{isFastForward ? `${ffSpeed}x` : '1x'}</span>}
+        <span className={compact ? 'text-[9px] font-mono font-black' : ''}>{isFastForward ? `${ffSpeed}x` : '1x'}</span>
       </button>
     </div>
   );
@@ -867,7 +894,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
     );
   };
 
-  const transportScale = padLayout.transport?.s ?? 1;
+  const transportScale = (padLayout.transport?.s ?? 1) * padFitScale;
   const screenScale = padLayout.screen?.s ?? 1;
   const screenY = padLayout.screen?.y ?? 0.5;
 
@@ -1747,7 +1774,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
             {/* Movable D-Pad */}
             <PadGroup
               id="dpad"
-              layout={padLayout}
+              layout={scaledPadLayout}
               customizing={customizing}
               selected={customizing && selectedPad === 'dpad'}
               onSelect={setSelectedPad}
@@ -1763,7 +1790,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
             {/* Movable Actions */}
             <PadGroup
               id="actions"
-              layout={padLayout}
+              layout={scaledPadLayout}
               customizing={customizing}
               selected={customizing && selectedPad === 'actions'}
               onSelect={setSelectedPad}
@@ -1798,10 +1825,10 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 <button
                   type="button"
                   {...safeBindPadButton('btnL')}
-                  className={`w-20 h-10 rounded-xl font-mono font-black text-xs border-2 shadow-lg flex items-center justify-center tactile-btn cartridge-grip touch-none select-none ${
+                  className={`w-20 h-10 rounded-xl font-mono font-black text-xs shadow-lg flex items-center justify-center tactile-btn touch-none select-none ${
                     shaders.amoled
-                      ? 'bg-zinc-900 text-zinc-100 border-zinc-700'
-                      : 'bg-zinc-800/90 text-zinc-100 border-white/20'
+                      ? 'bg-zinc-950 text-zinc-200 border border-white/10 hover:bg-zinc-900'
+                      : 'bg-zinc-950/80 text-zinc-200 border border-white/10 hover:bg-zinc-900'
                   }`}
                   aria-label="L Shoulder"
                 >
@@ -1848,10 +1875,10 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 <button
                   type="button"
                   {...safeBindPadButton('btnR')}
-                  className={`w-20 h-10 rounded-xl font-mono font-black text-xs border-2 shadow-lg flex items-center justify-center tactile-btn cartridge-grip touch-none select-none ${
+                  className={`w-20 h-10 rounded-xl font-mono font-black text-xs shadow-lg flex items-center justify-center tactile-btn touch-none select-none ${
                     shaders.amoled
-                      ? 'bg-zinc-900 text-zinc-100 border-zinc-700'
-                      : 'bg-zinc-800/90 text-zinc-100 border-white/20'
+                      ? 'bg-zinc-950 text-zinc-200 border border-white/10 hover:bg-zinc-900'
+                      : 'bg-zinc-950/80 text-zinc-200 border border-white/10 hover:bg-zinc-900'
                   }`}
                   aria-label="R Shoulder"
                 >
@@ -1944,10 +1971,10 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 <button
                   type="button"
                   {...safeBindPadButton('btnL')}
-                  className={`w-16 h-8 rounded-xl font-mono font-black text-xs border shadow-md pointer-events-auto flex items-center justify-center tactile-btn cartridge-grip touch-none select-none ${
+                  className={`w-16 h-8 rounded-xl font-mono font-black text-xs shadow-md pointer-events-auto flex items-center justify-center tactile-btn touch-none select-none ${
                     shaders.amoled
-                      ? 'bg-zinc-900 text-zinc-200 border-zinc-800'
-                      : 'bg-zinc-800/90 text-zinc-100 border-white/10'
+                      ? 'bg-zinc-950 text-zinc-200 border border-white/10 hover:bg-zinc-900'
+                      : 'bg-zinc-950/80 text-zinc-200 border border-white/10 hover:bg-zinc-900'
                   }`}
                   aria-label="L Shoulder"
                 >
@@ -1956,10 +1983,10 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 <button
                   type="button"
                   {...safeBindPadButton('btnR')}
-                  className={`w-16 h-8 rounded-xl font-mono font-black text-xs border shadow-md pointer-events-auto flex items-center justify-center tactile-btn cartridge-grip touch-none select-none ${
+                  className={`w-16 h-8 rounded-xl font-mono font-black text-xs shadow-md pointer-events-auto flex items-center justify-center tactile-btn touch-none select-none ${
                     shaders.amoled
-                      ? 'bg-zinc-900 text-zinc-200 border-zinc-800'
-                      : 'bg-zinc-800/90 text-zinc-100 border-white/10'
+                      ? 'bg-zinc-950 text-zinc-200 border border-white/10 hover:bg-zinc-900'
+                      : 'bg-zinc-950/80 text-zinc-200 border border-white/10 hover:bg-zinc-900'
                   }`}
                   aria-label="R Shoulder"
                 >
@@ -1970,7 +1997,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
 
             <PadGroup
               id="transport"
-              layout={padLayout}
+              layout={scaledPadLayout}
               customizing={customizing}
               selected={customizing && selectedPad === 'transport'}
               onSelect={setSelectedPad}
@@ -1984,7 +2011,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
             {(!hidePad || customizing) && (
               <PadGroup
                 id="dpad"
-                layout={padLayout}
+                layout={scaledPadLayout}
                 customizing={customizing}
                 selected={customizing && selectedPad === 'dpad'}
                 onSelect={setSelectedPad}
@@ -1999,7 +2026,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
             {(!hidePad || customizing) && (
               <PadGroup
                 id="actions"
-                layout={padLayout}
+                layout={scaledPadLayout}
                 customizing={customizing}
                 selected={customizing && selectedPad === 'actions'}
                 onSelect={setSelectedPad}
@@ -2024,7 +2051,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
             {(!hidePad || customizing) && (
               <PadGroup
                 id="system"
-                layout={padLayout}
+                layout={scaledPadLayout}
                 customizing={customizing}
                 selected={customizing && selectedPad === 'system'}
                 onSelect={setSelectedPad}
@@ -2035,6 +2062,17 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 {renderSystem()}
               </PadGroup>
             )}
+          </div>
+        )}
+
+        {/* Persistent Fast-Forward Multiplier Indicator (both orientations) */}
+        {isFastForward && (
+          <div
+            className="absolute top-2.5 right-3 z-40 pointer-events-none select-none flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-400 text-zinc-950 text-[10px] font-mono font-black shadow-lg"
+            aria-label={`Fast forwarding at ${ffSpeed} times speed`}
+          >
+            <FastForward className="w-3 h-3" />
+            <span>{ffSpeed}x</span>
           </div>
         )}
 

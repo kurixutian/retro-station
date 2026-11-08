@@ -36,7 +36,7 @@ export const GameCard: React.FC<GameCardProps> = ({ game, theme, onSelect }) => 
       </div>
 
       {/* Recessed Cartridge Sticker Label Frame */}
-      <div className="relative h-40 sm:h-44 rounded-xl overflow-hidden bg-zinc-950 border-2 border-black/80 shadow-inner">
+      <div className="relative aspect-square rounded-xl overflow-hidden bg-zinc-950 border-2 border-black/80 shadow-inner">
         <GameCoverImage game={game} />
 
         {/* Quick Play Trigger Overlay */}

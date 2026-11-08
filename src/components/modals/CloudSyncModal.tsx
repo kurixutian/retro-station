@@ -30,7 +30,6 @@ import {
   setGoogleClientId,
   setRomSyncEnabled,
   isRomSyncEnabled,
-  DEFAULT_GOOGLE_CLIENT_ID,
   deleteAllCloudSaves,
   CloudSyncStatus,
   SyncReport,
@@ -249,16 +248,12 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
 
   const statusLabel =
     syncStatus === 'syncing' || isSyncing
-      ? 'Syncing...'
-      : syncStatus === 'error'
-        ? 'Sync Error'
-        : syncStatus === 'needs_reauth'
-          ? 'Reconnect Needed'
-          : syncStatus === 'offline'
-            ? 'Offline Mode'
-            : user
-              ? 'Google Drive Linked'
-              : 'Not Linked';
+      ? 'syncing'
+      : syncStatus === 'error' || syncStatus === 'needs_reauth' || syncStatus === 'offline'
+        ? 'not synced'
+        : user
+          ? 'synced'
+          : 'not linked';
 
   return (
     <div
@@ -287,9 +282,6 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                   {statusLabel}
                 </span>
               </h2>
-              <p className="text-xs text-zinc-400">
-                Google Drive Auto-Sync + Offline File Backup
-              </p>
             </div>
           </div>
           <button
@@ -503,7 +495,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                 <span>Option 2: Manual Backup File (.json)</span>
               </div>
               <span className="px-2 py-0.5 rounded-md text-[9px] font-black tracking-wider uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                100% Offline
+                Offline
               </span>
             </div>
 
@@ -525,7 +517,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                 className="py-2.5 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-zinc-950 transition active:scale-95 disabled:opacity-50 cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>{backupBusy ? 'Working...' : 'Export Backup'}</span>
+                <span>{backupBusy ? 'Working...' : 'Export'}</span>
               </button>
               <button
                 onClick={() => fileInputRef.current?.click()}
@@ -533,7 +525,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                 className="py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700 transition active:scale-95 disabled:opacity-50 cursor-pointer"
               >
                 <Upload className="w-3.5 h-3.5" />
-                <span>Import Backup</span>
+                <span>Import</span>
               </button>
             </div>
             <input
@@ -598,7 +590,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                       type="text"
                       value={clientIdInput}
                       onChange={(e) => setClientIdInput(e.target.value)}
-                      placeholder={DEFAULT_GOOGLE_CLIENT_ID}
+                      placeholder="Your Google OAuth Web Client ID"
                       className="flex-1 px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700/80 text-white font-mono text-xs focus:outline-none focus:border-emerald-500 focus-visible:ring-2 focus-visible:ring-emerald-400"
                     />
                     <button

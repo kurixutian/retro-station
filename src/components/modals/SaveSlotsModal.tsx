@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Download, Trash2, Layers, Camera, X, AlertTriangle } from 'lucide-react';
+import { Play, Download, Trash2, Layers, Camera, X, AlertTriangle, Pencil, Camera as SlotNameIcon } from 'lucide-react';
 import { Game, SaveSlot } from '../../types';
 import { GameCoverImage } from '../common/GameCoverImage';
 import { formatGameTitle } from '../../constants/cores';
@@ -18,7 +18,24 @@ interface SaveSlotsModalProps {
   loadStateFromGameSlot: (game: Game, slotNum: number) => void;
   saveStateToGameSlot: (game: Game, slotNum: number) => void | Promise<void>;
   deleteGameSlot: (gameId: string, slotNum: number) => void;
+  slotNames?: Record<number, string>;
+  onRenameSlot?: (slotNum: number, name: string) => void;
+  initialMode?: 'save' | 'load' | null;
 }
+
+// Grows the slot list: always show base slots; when every visible slot is
+// used, append one fresh empty slot so the player can keep saving.
+const emptySlot = (n: number): SaveSlot => ({
+  slot: n, empty: true, label: 'Empty Slot', timestamp: null,
+  score: 0, frame: 0, screenshot: null, stateData: null,
+});
+
+const buildSlots = (gameSlots: SaveSlot[]): SaveSlot[] => {
+  const used = gameSlots.filter((s) => !s.empty).length;
+  return used >= gameSlots.length && gameSlots.length > 0
+    ? [...gameSlots, emptySlot(gameSlots.length + 1)]
+    : gameSlots;
+};
 
 export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
   isOpen,
@@ -33,11 +50,28 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
   loadStateFromGameSlot,
   saveStateToGameSlot,
   deleteGameSlot,
+  slotNames = {},
+  onRenameSlot,
+  initialMode = null,
 }) => {
   const [confirmDeleteRom, setConfirmDeleteRom] = useState(false);
-  const [confirmOverwriteSlot, setConfirmOverwriteSlot] = useState<number | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ type: 'load' | 'overwrite'; slot: number } | null>(null);
   const [confirmDeleteSlot, setConfirmDeleteSlot] = useState<number | null>(null);
+  const [deleteTypeText, setDeleteTypeText] = useState('');
+  const [editingSlot, setEditingSlot] = useState<number | null>(null);
+  const [editValue, setEditValue] = useState('');
   const [saveFormat, setSaveFormat] = useState<'sav' | 'srm'>('sav');
+
+  useEffect(() => {
+    if (!isOpen) {
+      setConfirmDeleteRom(false);
+      setConfirmAction(null);
+      setConfirmDeleteSlot(null);
+      setDeleteTypeText('');
+      setEditingSlot(null);
+      setEditValue('');
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -50,7 +84,13 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
 
   if (!isOpen || !targetGame) return null;
 
-  const gameSlots = savesByGameId[targetGame.id] || createEmptySlotsForGame(targetGame.id);
+  const gameSlots = buildSlots(savesByGameId[targetGame.id] || createEmptySlotsForGame(targetGame.id));
+
+  const commitRename = (slotNum: number) => {
+    onRenameSlot?.(slotNum, editValue.trim());
+    setEditingSlot(null);
+    setEditValue('');
+  };
 
   return (
     <div
@@ -191,7 +231,7 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
           )}
         </div>
 
-        {/* Per-Game Save State Slots Grid (4 Isolated Slots per Game) */}
+        {/* Per-Game Save State Slots Grid (grows as slots fill up) */}
         <div className="p-5 space-y-3 flex-1 overflow-y-auto modal-scroll">
           <div className="flex items-center justify-between">
             <div>
@@ -200,13 +240,23 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
                 <span>State Slots</span>
               </h3>
               <p className="text-[11px] text-zinc-400">
-                Each game has its own dedicated save state slots. Switch or resume anytime.
+                {initialMode === 'save'
+                  ? 'Pick a slot to save into. Filled slots can be overwritten.'
+                  : initialMode === 'load'
+                    ? 'Pick a saved state to resume.'
+                    : 'Each game has its own dedicated save state slots. Switch or resume anytime.'}
+              </p>
+              <p className="text-[10px] text-zinc-500 mt-0.5">
+                When all slots are full, a new empty slot is added automatically.
               </p>
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {gameSlots.map((slotObj) => (
+            {gameSlots.map((slotObj) => {
+              const customName = slotNames[slotObj.slot];
+              const displayName = customName || slotObj.label;
+              return (
               <div
                 key={slotObj.slot}
                 className={`rounded-2xl border p-3 flex flex-col justify-between gap-2.5 transition ${
@@ -237,20 +287,44 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
                   </div>
 
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-black text-emerald-400 font-mono">
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-xs font-black text-emerald-400 font-mono shrink-0">
                         SLOT #{slotObj.slot}
                       </span>
-                      {slotObj.timestamp && (
-                        <span className="text-[10px] font-mono text-zinc-400">
-                          {slotObj.timestamp}
-                        </span>
-                      )}
+                      <button
+                        onClick={() => {
+                          setEditingSlot(slotObj.slot);
+                          setEditValue(customName || '');
+                        }}
+                        className="p-1 rounded-md text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition shrink-0"
+                        title="Rename slot"
+                        aria-label={`Rename slot ${slotObj.slot}`}
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
                     </div>
-                    <p className="text-xs font-bold text-zinc-100 truncate mt-0.5">
-                      {slotObj.label}
-                    </p>
-                    {!slotObj.empty && (slotObj.score > 0 || slotObj.frame > 0) && (
+                    {editingSlot === slotObj.slot ? (
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <input
+                          type="text"
+                          autoFocus
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === 'Escape') commitRename(slotObj.slot);
+                          }}
+                          onBlur={() => commitRename(slotObj.slot)}
+                          placeholder="Slot name"
+                          aria-label={`Name for slot ${slotObj.slot}`}
+                          className="flex-1 min-w-0 px-2 py-0.5 rounded-md bg-zinc-950 border border-zinc-700 text-[11px] font-bold text-zinc-100 outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                    ) : (
+                      <p className="text-xs font-bold text-zinc-100 truncate mt-0.5">
+                        {displayName}
+                      </p>
+                    )}
+                    {!slotObj.empty && !customName && (slotObj.score > 0 || slotObj.frame > 0) && (
                       <p className="text-[10px] font-mono text-zinc-400">
                         Score: {slotObj.score} • Frame: {slotObj.frame}
                       </p>
@@ -263,7 +337,13 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
                   {/* Load & Play Slot */}
                   <button
                     disabled={slotObj.empty}
-                    onClick={() => loadStateFromGameSlot(targetGame, slotObj.slot)}
+                    onClick={() => {
+                      if (currentView === 'ingame') {
+                        setConfirmAction({ type: 'load', slot: slotObj.slot });
+                      } else {
+                        loadStateFromGameSlot(targetGame, slotObj.slot);
+                      }
+                    }}
                     className={`flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg text-[11px] font-bold transition tactile-btn ${
                       slotObj.empty
                         ? 'bg-zinc-800/50 text-zinc-600 cursor-not-allowed'
@@ -276,81 +356,129 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
 
                   {/* Save Current Frame into Slot (When in-game on this game) */}
                   {currentView === 'ingame' && activeGame?.id === targetGame.id && (
-                    <>
-                      {confirmOverwriteSlot === slotObj.slot ? (
-                        <div className="flex-1 flex items-center gap-1">
-                          <button
-                            onClick={() => {
-                              setConfirmOverwriteSlot(null);
-                              saveStateToGameSlot(targetGame, slotObj.slot);
-                            }}
-                            className="flex-1 py-1.5 px-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-black transition tactile-btn"
-                          >
-                            Overwrite?
-                          </button>
-                          <button
-                            onClick={() => setConfirmOverwriteSlot(null)}
-                            className="py-1.5 px-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-semibold"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            if (slotObj.empty) {
-                              saveStateToGameSlot(targetGame, slotObj.slot);
-                            } else {
-                              setConfirmOverwriteSlot(slotObj.slot);
-                            }
-                          }}
-                          className="flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 text-[11px] font-bold transition tactile-btn"
-                        >
-                          <Camera className="w-3 h-3" />
-                          <span>{slotObj.empty ? 'Save Here' : 'Overwrite'}</span>
-                        </button>
-                      )}
-                    </>
+                    <button
+                      onClick={() => {
+                        if (slotObj.empty) {
+                          saveStateToGameSlot(targetGame, slotObj.slot);
+                        } else {
+                          setConfirmAction({ type: 'overwrite', slot: slotObj.slot });
+                        }
+                      }}
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 text-[11px] font-bold transition tactile-btn"
+                    >
+                      <Camera className="w-3 h-3" />
+                      <span>{slotObj.empty ? 'Save Here' : 'Overwrite'}</span>
+                    </button>
                   )}
 
                   {/* Clear Slot */}
                   {!slotObj.empty && (
-                    <>
-                      {confirmDeleteSlot === slotObj.slot ? (
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => {
-                              setConfirmDeleteSlot(null);
-                              deleteGameSlot(targetGame.id, slotObj.slot);
-                            }}
-                            className="px-2 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold tactile-btn"
-                          >
-                            Delete
-                          </button>
-                          <button
-                            onClick={() => setConfirmDeleteSlot(null)}
-                            className="p-1.5 rounded-lg bg-zinc-800 text-zinc-400 hover:text-white"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => setConfirmDeleteSlot(slotObj.slot)}
-                          className="p-1.5 rounded-lg bg-zinc-800 hover:bg-rose-500/30 text-rose-400 tactile-btn"
-                          title="Delete slot"
-                          aria-label="Delete slot"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </>
+                    <button
+                      onClick={() => {
+                        setConfirmDeleteSlot(slotObj.slot);
+                        setDeleteTypeText('');
+                      }}
+                      className="p-1.5 rounded-lg bg-zinc-800 hover:bg-rose-500/30 text-rose-400 tactile-btn"
+                      title="Delete slot"
+                      aria-label="Delete slot"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   )}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
+
+        {/* Load / Overwrite Confirmation Dialog */}
+        {confirmAction && (
+          <div className="absolute inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="w-full max-w-sm rounded-2xl bg-zinc-950 border border-zinc-700 shadow-2xl p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className={`w-4 h-4 shrink-0 ${confirmAction.type === 'load' ? 'text-cyan-400' : 'text-amber-400'}`} />
+                <span className="text-xs font-black text-white">
+                  {confirmAction.type === 'load' ? 'Load State Slot' : 'Overwrite State Slot'}
+                </span>
+              </div>
+              <p className="text-[11px] text-zinc-300 leading-snug">
+                {confirmAction.type === 'load'
+                  ? 'Load Slot #' + confirmAction.slot + '? Your current unsaved progress will be lost.'
+                  : 'Overwrite Slot #' + confirmAction.slot + ' with the current frame? The old save will be replaced.'}
+              </p>
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  onClick={() => {
+                    const { type, slot: n } = confirmAction;
+                    setConfirmAction(null);
+                    if (type === 'load') loadStateFromGameSlot(targetGame, n);
+                    else saveStateToGameSlot(targetGame, n);
+                  }}
+                  className="flex-1 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs tactile-btn"
+                >
+                  {confirmAction.type === 'load' ? 'Load State' : 'Overwrite'}
+                </button>
+                <button
+                  onClick={() => setConfirmAction(null)}
+                  className="flex-1 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-black text-xs tactile-btn"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Slot: type-to-confirm Dialog */}
+        {confirmDeleteSlot !== null && (
+          <div className="absolute inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="w-full max-w-sm rounded-2xl bg-zinc-950 border border-rose-500/50 shadow-2xl p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+                <span className="text-xs font-black text-white">Delete State Slot</span>
+              </div>
+              <p className="text-[11px] text-zinc-300 leading-snug">
+                Permanently delete the save in Slot #{confirmDeleteSlot}? This cannot be undone. Type <span className="font-mono font-bold text-rose-300">overwrite</span> to confirm.
+              </p>
+              <input
+                type="text"
+                autoFocus
+                value={deleteTypeText}
+                onChange={(e) => setDeleteTypeText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && deleteTypeText.trim().toLowerCase() === 'overwrite') {
+                    const n = confirmDeleteSlot;
+                    setConfirmDeleteSlot(null);
+                    deleteGameSlot(targetGame.id, n);
+                  }
+                }}
+                placeholder='Type "overwrite" to confirm'
+                aria-label='Type "overwrite" to confirm slot deletion'
+                className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs font-bold text-zinc-100 outline-none focus:border-rose-500"
+              />
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  disabled={deleteTypeText.trim().toLowerCase() !== 'overwrite'}
+                  onClick={() => {
+                    const n = confirmDeleteSlot;
+                    setConfirmDeleteSlot(null);
+                    deleteGameSlot(targetGame.id, n);
+                  }}
+                  className="flex-1 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black text-xs tactile-btn"
+                >
+                  Delete Slot
+                </button>
+                <button
+                  onClick={() => setConfirmDeleteSlot(null)}
+                  className="flex-1 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-black text-xs tactile-btn"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

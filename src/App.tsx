@@ -192,6 +192,27 @@ export default function App() {
     return initialMap;
   });
 
+  const [slotNamesByGameId, setSlotNamesByGameId] = useState<Record<string, Record<number, string>>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('retro_slot_names') || '{}') || {};
+    } catch (e) {
+      return {};
+    }
+  });
+
+  const renameGameSlot = useCallback((gameId: string, slotNum: number, name: string) => {
+    setSlotNamesByGameId((prev) => {
+      const forGame = { ...(prev[gameId] || {}) };
+      if (name) forGame[slotNum] = name;
+      else delete forGame[slotNum];
+      const next = { ...prev, [gameId]: forGame };
+      try {
+        localStorage.setItem('retro_slot_names', JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+  }, []);
+
   // Modals & Drawers
   const [detailGame, setDetailGame] = useState<Game | null>(null);
   const [globalSettingsOpen, setGlobalSettingsOpen] = useState(false);
@@ -1718,6 +1739,12 @@ export default function App() {
       {/* MODAL 1: SAVE SLOTS & CARTRIDGE MANAGER */}
       <SaveSlotsModal
         isOpen={Boolean(detailGame || (currentView === 'ingame' && inGameSaveModalMode))}
+        initialMode={currentView === 'ingame' ? inGameSaveModalMode : null}
+        slotNames={slotNamesByGameId[(detailGame || activeGame)?.id || ''] || {}}
+        onRenameSlot={(slotNum, name) => {
+          const g = detailGame || activeGame;
+          if (g) renameGameSlot(g.id, slotNum, name);
+        }}
         onClose={() => {
           setDetailGame(null);
           setInGameSaveModalMode(null);
