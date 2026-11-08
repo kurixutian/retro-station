@@ -680,6 +680,22 @@ export default function App() {
   });
 
   const romInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Hold watchdog: some browser/emulator paths silently drop a latched button
+  // mid-hold (tap works, hold dies). Re-assert every held key while playing;
+  // simulateInput with the same value is idempotent, so this can't mispress.
+  useEffect(() => {
+    if (currentView !== 'ingame') return;
+    const id = setInterval(() => {
+      const win = emuFrameRef.current?.contentWindow as any;
+      if (!win) return;
+      for (const [name, held] of Object.entries(keysRef.current)) {
+        if (held) sendKey(name, true);
+      }
+    }, 250);
+    return () => clearInterval(id);
+  }, [currentView, sendKey]);
+
   const theme = THEMES[themeId] || THEMES.midnight;
 
   const showToast = useCallback((msg: string) => {
