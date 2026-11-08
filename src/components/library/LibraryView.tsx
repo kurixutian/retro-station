@@ -11,7 +11,8 @@ import {
   Coffee,
 } from 'lucide-react';
 import { Game, Theme } from '../../types';
-import { formatGameTitle } from '../../constants/cores';
+import { formatGameTitle, getBoxartUrls } from '../../constants/cores';
+import { idbGet } from '../../services/storage/idb';
 import { GameCoverImage } from '../common/GameCoverImage';
 import { GameCard } from './GameCard';
 
@@ -34,6 +35,52 @@ interface LibraryViewProps {
   onOpenControls?: () => void;
   recentGameIds?: string[];
 }
+
+const AmbientBackdropTile: React.FC<{ game: Game; theme: Theme }> = ({ game, theme }) => {
+  const [coverUrl, setCoverUrl] = React.useState<string | null>(() => {
+    return game.customCover || game.cover || (getBoxartUrls(game)[0] ?? null);
+  });
+  const [failed, setFailed] = React.useState(false);
+
+  React.useEffect(() => {
+    let active = true;
+    if (game?.id) {
+      idbGet(`cover:${game.id}`)
+        .then((saved) => {
+          if (active && saved && typeof saved === 'string') {
+            setCoverUrl(saved);
+          }
+        })
+        .catch(() => {});
+    }
+    return () => {
+      active = false;
+    };
+  }, [game?.id]);
+
+  if (!coverUrl || failed) {
+    return (
+      <div
+        className="w-full h-full"
+        style={{
+          background: `linear-gradient(135deg, ${theme.hex}33 0%, #18181b 100%)`,
+        }}
+      />
+    );
+  }
+
+  return (
+    <div className="w-full h-full overflow-hidden relative">
+      <img
+        src={coverUrl}
+        alt=""
+        aria-hidden="true"
+        className="w-full h-full object-cover"
+        onError={() => setFailed(true)}
+      />
+    </div>
+  );
+};
 
 export const LibraryView: React.FC<LibraryViewProps> = ({
   games,
@@ -90,32 +137,30 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   // ── Blurred Background of Randomized Installed ROMs (GPU-capped 4 tiles) ──
   const bgGames = React.useMemo(() => {
     if (games.length === 0) return [];
-    const shuffled = [...games].sort(() => 0.5 - Math.random());
-    return shuffled.slice(0, 4);
+    const pool = [...games];
+    const featured = games[featuredIndex] || pool[0];
+    const rest = pool.filter((g) => g.id !== featured.id).sort(() => 0.5 - Math.random());
+    const combined = [featured, ...rest];
+    const selected: Game[] = [];
+    for (let i = 0; i < 4; i++) {
+      selected.push(combined[i % combined.length]);
+    }
+    return selected;
   }, [games, featuredIndex]);
 
   return (
     <div className="relative pb-16 min-h-[100vh] min-h-[100lvh]">
-      {/* Ambient Animated Blurred ROM Backdrop (GPU-composited drift, 12% opacity) */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0 select-none">
-        <div className="grid grid-cols-2 w-full h-full opacity-12 blur-2xl ambient-backdrop-pan">
-          {bgGames.map((g, idx) => {
-            const imgSrc = g.customCover || g.cover;
-            return (
-              <div
-                key={`${g.id}-${idx}`}
-                className="w-full h-full bg-cover bg-center"
-                style={{
-                  backgroundImage: imgSrc ? `url(${imgSrc})` : `linear-gradient(135deg, ${theme.hex}22, #09090b)`
-                }}
-              />
-            );
-          })}
+      {/* Ambient Animated Blurred ROM Backdrop */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0 select-none bg-zinc-950">
+        <div className="grid grid-cols-2 grid-rows-2 w-full h-full opacity-35 sm:opacity-45 blur-2xl sm:blur-3xl ambient-backdrop-pan scale-125">
+          {bgGames.map((g, idx) => (
+            <AmbientBackdropTile key={`bg-tile-${g.id}-${idx}`} game={g} theme={theme} />
+          ))}
         </div>
         <div
           className="absolute inset-0"
           style={{
-            background: `radial-gradient(circle at 20% 15%, ${theme.hex}14 0%, rgba(9,9,11,0.85) 55%, rgba(9,9,11,0.98) 100%)`
+            background: `radial-gradient(ellipse at 50% 30%, rgba(9,9,11,0.2) 0%, rgba(9,9,11,0.68) 65%, rgba(9,9,11,0.92) 100%)`
           }}
         />
       </div>
