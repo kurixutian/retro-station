@@ -524,6 +524,19 @@ export default function App() {
   const [slotLandscape, setSlotLandscape] = useState<LayoutSlot>(() => getActiveSlot(true, currentSystemKey));
   const [padLayoutPortrait, setPadLayoutPortrait] = useState<PadLayout>(() => loadPadLayout(false, getActiveSlot(false, currentSystemKey), currentSystemKey));
   const [padLayoutLandscape, setPadLayoutLandscape] = useState<PadLayout>(() => loadPadLayout(true, getActiveSlot(true, currentSystemKey), currentSystemKey));
+
+  // Landscape overlay button transparency (0.15–1.0), device-local
+  const [padOpacity, setPadOpacity] = useState<number>(() => {
+    try {
+      const v = parseFloat(localStorage.getItem('retro_pad_opacity') || '0.85');
+      return Number.isFinite(v) ? Math.min(1, Math.max(0.15, v)) : 0.85;
+    } catch (e) { return 0.85; }
+  });
+  const changePadOpacity = useCallback((v: number) => {
+    const clamped = Math.min(1, Math.max(0.15, v));
+    setPadOpacity(clamped);
+    try { localStorage.setItem('retro_pad_opacity', String(clamped)); } catch (e) {}
+  }, []);
   const [customizing, setCustomizing] = useState(false);
   const [selectedPad, setSelectedPad] = useState<PadGroupId>('dpad');
   const deckRef = useRef<HTMLDivElement | null>(null);
@@ -1800,6 +1813,8 @@ export default function App() {
           setPadLayoutPortrait={setPadLayoutPortrait}
           padLayoutLandscape={padLayoutLandscape}
           setPadLayoutLandscape={setPadLayoutLandscape}
+          padOpacity={padOpacity}
+          setPadOpacity={changePadOpacity}
           customizing={customizing}
           setCustomizing={setCustomizing}
           selectedPad={selectedPad}
