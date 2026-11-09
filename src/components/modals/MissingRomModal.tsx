@@ -45,7 +45,7 @@ export const MissingRomModal: React.FC<MissingRomModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="missing-rom-dialog-title"
-      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
+      className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
       style={{
         paddingTop: 'max(env(safe-area-inset-top, 0px) + 20px, 36px)',
         paddingBottom: 'max(env(safe-area-inset-bottom, 0px) + 20px, 36px)',

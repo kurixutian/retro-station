@@ -50,7 +50,7 @@ export const ControlsModal: React.FC<ControlsModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="controls-dialog-title"
-      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
+      className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
       style={{
         paddingTop: 'max(env(safe-area-inset-top, 0px) + 20px, 36px)',
         paddingBottom: 'max(env(safe-area-inset-bottom, 0px) + 20px, 36px)',
@@ -60,33 +60,33 @@ export const ControlsModal: React.FC<ControlsModalProps> = ({
       onClick={onClose}
     >
       <div
-        className={`w-full max-w-xl max-h-[88vh] flex flex-col rounded-3xl border shadow-2xl overflow-hidden my-auto hardware-panel ${
+        className={`w-full max-w-xl max-h-[88vh] flex flex-col rounded-3xl border shadow-xl overflow-hidden my-auto hardware-panel ${
           theme.isLight
-            ? 'bg-[#dedbd2] border-stone-300 text-zinc-900'
-            : 'bg-zinc-950 border-zinc-800 text-zinc-100'
+            ? 'bg-[#eae6dd] border-[#cfcac0] text-[#121214]'
+            : 'bg-[#131316] border-[#222227] text-[#f4f4f6]'
         }`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className={`flex-none flex items-center justify-between px-5 py-4 border-b ${
-          theme.isLight ? 'border-stone-300 bg-[#dedbd2]' : 'border-zinc-800 bg-zinc-950'
+          theme.isLight ? 'border-[#cfcac0] bg-[#dedad0]' : 'border-[#222227] bg-[#0a0a0c]'
         }`}>
           <div className="flex items-center gap-2.5">
             <Gamepad2 className={`w-5 h-5 ${theme.accentText}`} />
             <div>
-              <h2 id="controls-dialog-title" className={`text-sm font-black tracking-tight flex items-center gap-2 ${
-                theme.isLight ? 'text-zinc-900' : 'text-white'
+              <h2 id="controls-dialog-title" className={`text-sm font-bold tracking-tight flex items-center gap-2 ${
+                theme.isLight ? 'text-[#121214]' : 'text-[#f4f4f6]'
               }`}>
                 <span>Controls & Keybindings</span>
-                <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono border ${
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
                   theme.isLight
-                    ? 'bg-stone-200 text-stone-700 border-stone-300'
-                    : 'bg-zinc-800 text-zinc-300 border-white/10'
+                    ? 'bg-[#dedad0] text-[#575654] border-[#cfcac0]'
+                    : 'bg-[#1c1c21] text-[#8e8e93] border-[#222227]'
                 }`}>
                   Universal Map
                 </span>
               </h2>
-              <p className={`text-[11px] ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
+              <p className={`text-[11px] ${theme.isLight ? 'text-[#575654]' : 'text-[#8e8e93]'}`}>
                 Plug-and-play desktop keyboard and Bluetooth controller support.
               </p>
             </div>
@@ -95,8 +95,8 @@ export const ControlsModal: React.FC<ControlsModalProps> = ({
             onClick={onClose}
             className={`p-1.5 rounded-xl border transition ${
               theme.isLight
-                ? 'bg-stone-200 text-stone-700 hover:text-black border-stone-300'
-                : 'bg-zinc-900 text-zinc-400 hover:text-white border-zinc-800 hover:border-zinc-700'
+                ? 'bg-[#dedad0] text-[#121214] border-[#cfcac0] hover:bg-[#d5d0c5]'
+                : 'bg-[#1c1c21] text-[#8e8e93] hover:text-[#f4f4f6] border-[#222227]'
             }`}
             aria-label="Close controls modal"
           >

@@ -719,6 +719,28 @@ export default function App() {
 
   const theme = THEMES[themeId] || THEMES.midnight;
 
+  useEffect(() => {
+    const root = document.documentElement;
+    const isLight = !!theme.isLight;
+    if (isLight) {
+      root.classList.remove('dark');
+      root.classList.add('light');
+      root.style.colorScheme = 'light';
+    } else {
+      root.classList.remove('light');
+      root.classList.add('dark');
+      root.style.colorScheme = 'dark';
+    }
+
+    const themeColor = isLight ? '#eae6dd' : (shaders.amoled ? '#000000' : '#0a0a0c');
+    document.body.style.backgroundColor = themeColor;
+
+    const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+    if (metaThemeColor) {
+      metaThemeColor.setAttribute('content', themeColor);
+    }
+  }, [theme.isLight, shaders.amoled]);
+
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
   }, []);
@@ -856,11 +878,11 @@ export default function App() {
   const importRomFiles = async (files: File[]) => {
     if (!files.length) return;
 
-    const gradients = [
-      'from-emerald-600 via-teal-800 to-slate-950',
-      'from-indigo-600 via-purple-800 to-slate-950',
-      'from-amber-500 via-orange-700 to-red-950',
-      'from-cyan-500 via-blue-700 to-indigo-950'
+    const cartridgeTones = [
+      'bg-[#18181c]',
+      'bg-[#1c1a18]',
+      'bg-[#161a1a]',
+      'bg-[#1f1b20]'
     ];
 
     const coreToEngine: Record<string, string> = {
@@ -893,7 +915,7 @@ export default function App() {
       }
       const crcHex = '0x' + hash.toString(16).toUpperCase().padStart(8, '0');
       const engineType = coreToEngine[detected.core] || 'pokegold';
-      const coverGradient = gradients[(games.length + index) % gradients.length];
+      const coverGradient = cartridgeTones[(games.length + index) % cartridgeTones.length];
       const cleanTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ');
 
       const existingGame = games.find(
@@ -1641,7 +1663,11 @@ export default function App() {
         <div
           role="status"
           aria-live="polite"
-          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-zinc-950/95 border border-zinc-700/90 text-zinc-100 text-xs font-mono font-bold shadow-2xl backdrop-blur-xl hardware-panel"
+          className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-2.5 px-4 py-2 rounded-xl border text-xs font-semibold shadow-md hardware-panel ${
+            theme.isLight
+              ? 'bg-[#f3efe8] border-[#d2cdc3] text-[#121214]'
+              : 'bg-[#131316] border-[#222227] text-[#f4f4f6]'
+          }`}
         >
           <span className="w-2 h-2 rounded-full bg-emerald-400 hardware-led shrink-0" />
           <span>{toastMessage}</span>

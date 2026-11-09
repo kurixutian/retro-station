@@ -260,32 +260,32 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="cloud-sync-dialog-title"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fadeIn"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 animate-fadeIn"
       onClick={onClose}
     >
       <div
-        className={`relative w-full max-w-lg rounded-3xl border shadow-2xl overflow-hidden flex flex-col max-h-[90vh] hardware-panel ${
+        className={`relative w-full max-w-lg rounded-3xl border shadow-xl overflow-hidden flex flex-col max-h-[90vh] hardware-panel ${
           theme.isLight
-            ? 'bg-[#dedbd2] border-stone-300 text-zinc-900'
-            : 'bg-zinc-950 border-zinc-800 text-zinc-100'
+            ? 'bg-[#eae6dd] border-[#cfcac0] text-[#121214]'
+            : 'bg-[#131316] border-[#222227] text-[#f4f4f6]'
         }`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className={`flex items-center justify-between px-5 py-4 border-b ${
-          theme.isLight ? 'border-stone-300 bg-[#dedbd2]' : 'border-zinc-800/80 bg-zinc-900/50'
+          theme.isLight ? 'border-[#cfcac0] bg-[#dedad0]' : 'border-[#222227] bg-[#0a0a0c]'
         }`}>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-500">
               <Cloud className="w-5 h-5" />
             </div>
             <div>
-              <h2 id="cloud-sync-dialog-title" className={`text-base font-black tracking-tight flex items-center gap-2 ${
-                theme.isLight ? 'text-zinc-900' : 'text-white'
+              <h2 id="cloud-sync-dialog-title" className={`text-base font-bold tracking-tight flex items-center gap-2 ${
+                theme.isLight ? 'text-[#121214]' : 'text-[#f4f4f6]'
               }`}>
                 Cloud Save & Backup
                 <span
-                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${statusColor}`}
+                  className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${statusColor}`}
                 >
                   {statusLabel}
                 </span>
@@ -296,8 +296,8 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
             onClick={onClose}
             className={`p-2 rounded-xl transition cursor-pointer tactile-btn border ${
               theme.isLight
-                ? 'bg-stone-200 hover:bg-stone-300 text-stone-700 border-stone-300'
-                : 'bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 border-zinc-700'
+                ? 'bg-[#dedad0] hover:bg-[#d5d0c5] text-[#121214] border-[#cfcac0]'
+                : 'bg-[#1c1c21] hover:bg-[#25252c] text-[#f4f4f6] border-[#222227]'
             }`}
             title="Close"
             aria-label="Close"
@@ -463,7 +463,9 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
               )}
             </div>
           ) : (
-            <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-500/10 via-zinc-900/80 to-zinc-900 border border-emerald-500/25 space-y-3">
+            <div className={`p-4 rounded-2xl border space-y-3 ${
+              theme.isLight ? 'bg-[#dedad0]/60 border-[#cfcac0]' : 'bg-[#18181c] border-[#26262c]'
+            }`}>
               <div className="space-y-1">
                 <h3 className="text-sm font-extrabold text-white">
                   Option 1: Google Drive Auto-Sync

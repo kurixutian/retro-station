@@ -106,7 +106,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="settings-dialog-title"
-      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
+      className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
       style={{
         paddingTop: 'max(env(safe-area-inset-top, 0px) + 20px, 36px)',
         paddingBottom: 'max(env(safe-area-inset-bottom, 0px) + 20px, 36px)',
@@ -114,13 +114,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         paddingRight: 'max(env(safe-area-inset-right, 0px) + 12px, 16px)'
       }}
     >
-      <div className={`w-full max-w-xl max-h-[88vh] flex flex-col rounded-3xl border shadow-2xl overflow-hidden my-auto hardware-panel ${
+      <div className={`w-full max-w-xl max-h-[88vh] flex flex-col rounded-3xl border shadow-xl overflow-hidden my-auto hardware-panel ${
         theme.isLight
-          ? 'bg-[#dedbd2] border-stone-300 text-zinc-900'
-          : 'bg-zinc-950 border-zinc-800 text-zinc-100'
+          ? 'bg-[#eae6dd] border-[#cfcac0] text-[#121214]'
+          : 'bg-[#131316] border-[#222227] text-[#f4f4f6]'
       }`}>
         <div className={`flex-none flex items-center justify-between px-5 py-4 border-b ${
-          theme.isLight ? 'border-stone-300 bg-[#dedbd2]' : 'border-zinc-800 bg-zinc-950'
+          theme.isLight ? 'border-[#cfcac0] bg-[#dedad0]' : 'border-[#222227] bg-[#0a0a0c]'
         }`}>
           <div className="flex items-center gap-2.5">
             {activePanel !== 'menu' && (
@@ -128,8 +128,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 onClick={() => setActivePanel('menu')}
                 className={`p-2 rounded-xl tactile-btn border transition ${
                   theme.isLight
-                    ? 'bg-stone-200 hover:bg-stone-300 text-stone-700 border-stone-300'
-                    : 'bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white border-zinc-800'
+                    ? 'bg-[#dedad0] hover:bg-[#d5d0c5] text-[#121214] border-[#cfcac0]'
+                    : 'bg-[#1c1c21] hover:bg-[#25252c] text-[#f4f4f6] border-[#222227]'
                 }`}
                 aria-label="Back to Configuration"
               >
@@ -137,8 +137,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </button>
             )}
             <Sliders className={`w-5 h-5 ${theme.accentText}`} />
-            <h2 id="settings-dialog-title" className={`text-base font-black ${
-              theme.isLight ? 'text-zinc-900' : 'text-white'
+            <h2 id="settings-dialog-title" className={`text-base font-bold ${
+              theme.isLight ? 'text-[#121214]' : 'text-[#f4f4f6]'
             }`}>
               {activePanel === 'menu' ? 'Configuration' : SETTINGS_PANELS.find((p) => p.id === activePanel)?.label}
             </h2>
@@ -147,8 +147,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             onClick={onClose}
             className={`p-2 rounded-xl tactile-btn border transition ${
               theme.isLight
-                ? 'bg-stone-200 hover:bg-stone-300 text-stone-700 border-stone-300'
-                : 'bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white border-zinc-800'
+                ? 'bg-[#dedad0] hover:bg-[#d5d0c5] text-[#121214] border-[#cfcac0]'
+                : 'bg-[#1c1c21] hover:bg-[#25252c] text-[#f4f4f6] border-[#222227]'
             }`}
             aria-label="Close Settings"
           >
@@ -234,9 +234,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               {/* Section: COLOR ACCURACY & CONTRAST (RETROARCH) */}
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
-                    <Sparkles className="w-4 h-4 text-amber-400" />
-                    <span>COLOR ACCURACY & CONTRAST</span>
+                  <h3 className={`text-xs font-bold flex items-center gap-1.5 ${theme.isLight ? 'text-[#575654]' : 'text-[#8e8e93]'}`}>
+                    <Sparkles className="w-4 h-4 text-amber-500" />
+                    <span>Color Accuracy & Contrast</span>
                   </h3>
                   <button
                     onClick={() => toggleShader('colorCorrection')}
@@ -294,9 +294,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
               {/* Section 1: CRT & LCD SHADER FILTER */}
               <div className="space-y-2.5">
-                <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                <h3 className={`text-xs font-bold flex items-center gap-1.5 ${theme.isLight ? 'text-[#575654]' : 'text-[#8e8e93]'}`}>
                   <Tv className="w-4 h-4 text-emerald-400" />
-                  <span>CRT & LCD SHADER FILTER</span>
+                  <span>CRT & LCD Shader Filters</span>
                 </h3>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -446,11 +446,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {activePanel === 'themes' && (
             <div className="space-y-5">
               <div>
-                <h3 className={`text-xs font-extrabold uppercase tracking-wider flex items-center gap-1.5 mb-3 ${
-                  theme.isLight ? 'text-stone-600' : 'text-zinc-400'
+                <h3 className={`text-xs font-bold flex items-center gap-1.5 mb-3 ${
+                  theme.isLight ? 'text-[#575654]' : 'text-[#8e8e93]'
                 }`}>
                   <Palette className="w-4 h-4 text-amber-500" />
-                  <span>APPEARANCE & THEME</span>
+                  <span>Appearance & Theme</span>
                 </h3>
 
                 <button
@@ -562,7 +562,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       backupBusy ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed' : 'bg-amber-500 text-zinc-950 hover:bg-amber-400'
                     }`}
                   >
-                    {backupBusy ? <Download className="w-3.5 h-3.5 animate-pulse" /> : <Download className="w-3.5 h-3.5" />}
+                    <Download className="w-3.5 h-3.5" />
                     <span>{backupBusy ? 'Building backup...' : 'Export Backup'}</span>
                   </button>
                   <button

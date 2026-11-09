@@ -99,7 +99,7 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="save-slots-title"
-      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
+      className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
       style={{
         paddingTop: 'max(env(safe-area-inset-top, 0px) + 20px, 36px)',
         paddingBottom: 'max(env(safe-area-inset-bottom, 0px) + 20px, 36px)',
@@ -109,15 +109,15 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
       onClick={onClose}
     >
       <div
-        className={`w-full max-w-2xl max-h-[88vh] flex flex-col rounded-3xl border shadow-2xl overflow-hidden my-auto hardware-panel ${
+        className={`w-full max-w-2xl max-h-[88vh] flex flex-col rounded-3xl border shadow-xl overflow-hidden my-auto hardware-panel ${
           theme?.isLight
-            ? 'bg-[#dedbd2] border-stone-300 text-zinc-900'
-            : 'bg-zinc-950 border-zinc-800 text-zinc-100'
+            ? 'bg-[#eae6dd] border-[#cfcac0] text-[#121214]'
+            : 'bg-[#131316] border-[#222227] text-[#f4f4f6]'
         }`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Dialog Header Banner */}
-        <div className={`relative p-5 bg-gradient-to-r ${targetGame.coverGradient || 'from-zinc-800 to-zinc-950'} flex-none border-b border-black/40`}>
+        <div className="relative p-5 bg-[#18181c] flex-none border-b border-black/40">
           <div className="absolute inset-0">
             <GameCoverImage game={targetGame} imgClassName="w-full h-full object-cover opacity-65" />
           </div>
@@ -444,8 +444,8 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
 
         {/* Load / Overwrite Confirmation Dialog */}
         {confirmAction && (
-          <div className="absolute inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="w-full max-w-sm rounded-2xl bg-zinc-950 border border-zinc-700 shadow-2xl p-4 space-y-3">
+          <div className="absolute inset-0 z-50 bg-black/75 flex items-center justify-center p-4">
+            <div className="w-full max-w-sm rounded-2xl bg-zinc-950 border border-zinc-700 shadow-xl p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <AlertTriangle className={`w-4 h-4 shrink-0 ${confirmAction.type === 'load' ? 'text-cyan-400' : 'text-amber-400'}`} />
                 <span className="text-xs font-black text-white">
@@ -482,8 +482,8 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
 
         {/* Delete Slot: type-to-confirm Dialog */}
         {confirmDeleteSlot !== null && (
-          <div className="absolute inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="w-full max-w-sm rounded-2xl bg-zinc-950 border border-rose-500/50 shadow-2xl p-4 space-y-3">
+          <div className="absolute inset-0 z-50 bg-black/75 flex items-center justify-center p-4">
+            <div className="w-full max-w-sm rounded-2xl bg-zinc-950 border border-rose-500/50 shadow-xl p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
                 <span className="text-xs font-black text-white">Delete State Slot</span>

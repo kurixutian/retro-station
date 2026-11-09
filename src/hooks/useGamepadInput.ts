@@ -81,7 +81,7 @@ export function useGamepadInput({
     };
 
     const handleGamepadConnected = (e: GamepadEvent) => {
-      onShowToast(`🎮 Controller Connected: ${e.gamepad.id.slice(0, 24)}`);
+      onShowToast(`Gamepad Connected: ${e.gamepad.id.slice(0, 24)}`);
       soundFX.save();
       if (isActive && !animId) {
         animId = requestAnimationFrame(pollGamepads);
@@ -89,7 +89,7 @@ export function useGamepadInput({
     };
 
     const handleGamepadDisconnected = () => {
-      onShowToast('🎮 Controller Disconnected');
+      onShowToast('Gamepad Disconnected');
       if (!hasConnectedGamepad() && animId) {
         cancelAnimationFrame(animId);
         animId = 0;

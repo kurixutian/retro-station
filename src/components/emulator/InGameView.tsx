@@ -589,7 +589,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
             style={{ width: '3.4rem', height: '3.4rem' }}
             aria-label="Button B"
           />
-          <span className="mt-1.5 text-[12px] font-black italic tracking-widest text-indigo-900 dark:text-indigo-300 drop-shadow-[0_1px_0_rgba(255,255,255,0.3)] select-none">
+          <span className="mt-1.5 text-[12px] font-black italic tracking-widest text-[#8d1d5c] dark:text-zinc-400 select-none">
             B
           </span>
         </div>
@@ -603,7 +603,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
             style={{ width: '3.4rem', height: '3.4rem' }}
             aria-label="Button A"
           />
-          <span className="mt-1.5 text-[12px] font-black italic tracking-widest text-indigo-900 dark:text-indigo-300 drop-shadow-[0_1px_0_rgba(255,255,255,0.3)] select-none">
+          <span className="mt-1.5 text-[12px] font-black italic tracking-widest text-[#8d1d5c] dark:text-zinc-400 select-none">
             A
           </span>
         </div>
@@ -622,7 +622,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
           className="rounded-full gb-rubber-pill -rotate-[25deg]"
           style={{ width: '3.2rem', height: '0.95rem' }}
         />
-        <span className="text-[10px] font-black italic tracking-widest text-indigo-900 dark:text-indigo-300 uppercase select-none drop-shadow-[0_1px_0_rgba(255,255,255,0.2)]">
+        <span className="text-[10px] font-black italic tracking-widest text-[#8d1d5c] dark:text-zinc-400 uppercase select-none">
           SELECT
         </span>
       </button>
@@ -636,7 +636,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
           className="rounded-full gb-rubber-pill -rotate-[25deg]"
           style={{ width: '3.2rem', height: '0.95rem' }}
         />
-        <span className="text-[10px] font-black italic tracking-widest text-indigo-900 dark:text-indigo-300 uppercase select-none drop-shadow-[0_1px_0_rgba(255,255,255,0.2)]">
+        <span className="text-[10px] font-black italic tracking-widest text-[#8d1d5c] dark:text-zinc-400 uppercase select-none">
           START
         </span>
       </button>
@@ -814,6 +814,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
         <div
           className="absolute inset-0 pointer-events-none z-10"
           style={{
+            // taste-skill-ignore: emulator visual post-processing CRT scanlines shader
             backgroundImage:
               'linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.38) 50%), linear-gradient(90deg, rgba(255,0,0,0.04), rgba(0,255,0,0.02), rgba(0,0,255,0.04))',
             backgroundSize: '100% 4px, 6px 100%'
@@ -826,6 +827,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
         <div
           className="absolute inset-0 pointer-events-none z-10 opacity-70"
           style={{
+            // taste-skill-ignore: emulator visual post-processing dot-matrix LCD shader
             backgroundImage: shaders.amoled
               ? 'linear-gradient(to right, rgba(0, 0, 0, 0.55) 0.5px, transparent 0.5px), linear-gradient(to bottom, rgba(0, 0, 0, 0.55) 0.5px, transparent 0.5px)'
               : 'linear-gradient(to right, rgba(15, 23, 42, 0.18) 0.5px, transparent 0.5px), linear-gradient(to bottom, rgba(15, 23, 42, 0.18) 0.5px, transparent 0.5px)',
@@ -839,6 +841,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
         <div
           className="absolute inset-0 pointer-events-none z-20"
           style={{
+            // taste-skill-ignore: emulator visual post-processing CRT tube vignette shader
             background:
               'radial-gradient(circle at center, transparent 58%, rgba(0, 0, 0, 0.68) 100%)'
           }}
@@ -876,7 +879,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
     return (
       <div
         ref={customizerRef}
-        className="fixed z-50 w-[320px] max-w-[calc(100vw-20px)] rounded-2xl bg-zinc-950/95 backdrop-blur-md border border-zinc-700 p-3 shadow-2xl space-y-2.5 select-none"
+        className="fixed z-50 w-[320px] max-w-[calc(100vw-20px)] rounded-2xl bg-[#131316] border border-[#26262c] p-3 shadow-xl space-y-2.5 select-none"
         style={
           customizerPos
             ? { left: `${customizerPos.x}px`, top: `${customizerPos.y}px` }
@@ -1231,7 +1234,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
         {/* DROPDOWN DRAWER FROM TOP SETTINGS BUTTON */}
         {inGameMenuOpen && (
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"
             style={{
               paddingTop: 'max(env(safe-area-inset-top, 0px) + 20px, 36px)',
               paddingBottom: 'max(env(safe-area-inset-bottom, 0px) + 20px, 36px)'
@@ -1239,19 +1242,19 @@ export const InGameView: React.FC<InGameViewProps> = ({
             onClick={() => setInGameMenuOpen(false)}
           >
             <div
-              className="w-full max-w-sm max-h-[85vh] overflow-y-auto modal-scroll bg-zinc-950 border border-zinc-800 rounded-3xl shadow-2xl p-4 space-y-3 hardware-panel"
+              className="w-full max-w-sm max-h-[85vh] overflow-y-auto modal-scroll bg-[#131316] border border-[#222227] rounded-3xl shadow-xl p-4 space-y-3 hardware-panel text-[#f4f4f6]"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between pb-1 border-b border-zinc-800/80">
+              <div className="flex items-center justify-between pb-1 border-b border-[#222227]">
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 hardware-led" />
-                  <span className="text-xs font-black uppercase tracking-wider text-zinc-200">
-                    PAUSE MENU
+                  <span className="text-xs font-bold text-[#f4f4f6]">
+                    Pause Menu
                   </span>
                 </div>
                 <button
                   onClick={() => setInGameMenuOpen(false)}
-                  className="p-1.5 rounded-xl bg-zinc-900 text-zinc-400 hover:text-white tactile-btn border border-zinc-800"
+                  className="p-1.5 rounded-xl bg-[#1c1c21] text-[#8e8e93] hover:text-white tactile-btn border border-[#222227]"
                   aria-label="Close Pause Menu"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -1261,7 +1264,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
               {/* Primary CTA: Resume Playing */}
               <button
                 onClick={() => setInGameMenuOpen(false)}
-                className="w-full py-2.5 px-4 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg tactile-btn transition active:scale-[0.98]"
+                className="w-full py-2.5 px-4 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 text-xs font-bold flex items-center justify-center gap-2 shadow-sm tactile-btn transition active:scale-[0.98]"
               >
                 <Play className="w-3.5 h-3.5 fill-current" />
                 <span>Resume Playing</span>
@@ -1345,7 +1348,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                   className="flex flex-col items-center justify-center gap-1 p-2 rounded-xl bg-zinc-900/80 hover:bg-zinc-900 border border-zinc-800 text-zinc-300 text-center transition active:scale-95"
                   title="CRT Scanlines & Visual Settings"
                 >
-                  <Tv className="w-4 h-4 text-purple-400" />
+                  <Tv className="w-4 h-4 text-zinc-300" />
                   <span className="text-[10px] font-bold">Shaders</span>
                 </button>
 
@@ -1356,9 +1359,9 @@ export const InGameView: React.FC<InGameViewProps> = ({
                     title={theme.isLight ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
                   >
                     {theme.isLight ? (
-                      <Moon className="w-4 h-4 text-indigo-400" />
+                      <Moon className="w-4 h-4 text-zinc-300" />
                     ) : (
-                      <Sun className="w-4 h-4 text-amber-400" />
+                      <Sun className="w-4 h-4 text-amber-500" />
                     )}
                     <span className="text-[10px] font-bold">{theme.isLight ? 'Dark' : 'Light'}</span>
                   </button>
@@ -1627,7 +1630,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                   }}
                 >
                   {selectedPad === 'screen' && (
-                    <div className="px-3 py-1.5 rounded-xl bg-black/85 border border-emerald-400/80 text-emerald-300 text-xs font-mono font-bold shadow-2xl flex items-center gap-2 pointer-events-none select-none backdrop-blur-md">
+                    <div className="px-3 py-1.5 rounded-xl bg-black/90 border border-emerald-400/80 text-emerald-300 text-xs font-semibold shadow-lg flex items-center gap-2 pointer-events-none select-none">
                       <GripVertical className="w-4 h-4 text-emerald-400" />
                       <span>Slide Up / Down • Centered X</span>
                     </div>
@@ -1642,17 +1645,18 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 {isGba ? (
                   <div className="flex items-center gap-1.5 opacity-85 tracking-widest text-[11px] font-sans">
                     <span className="font-black text-zinc-300">GAME BOY</span>
-                    <span className="italic font-black text-indigo-400 text-xs">ADVANCE</span>
+                    <span className="italic font-black text-sky-400 text-xs">ADVANCE</span>
                   </div>
                 ) : isGbc ? (
                   <div className="flex items-center gap-1 opacity-85 font-sans font-black tracking-widest text-[10px] text-zinc-300">
                     <span>GAME BOY</span>
+                    {/* taste-skill-ignore: authentic 1998 Nintendo Game Boy Color physical lens logo */}
                     <span className="font-extrabold tracking-normal inline-flex text-[9px] gap-0.5">
                       <span className="text-rose-500">C</span>
                       <span className="text-amber-400">O</span>
                       <span className="text-emerald-400">L</span>
                       <span className="text-cyan-400">O</span>
-                      <span className="text-indigo-400">R</span>
+                      <span className="text-purple-400">R</span>
                     </span>
                   </div>
                 ) : isGb ? (
@@ -1715,6 +1719,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 <div
                   className="absolute inset-0 opacity-15"
                   style={{
+                    // taste-skill-ignore: alignment dot grid for gamepad touch controls layout editor
                     backgroundImage: 'radial-gradient(circle, rgba(255, 255, 255, 0.4) 1px, transparent 1px)',
                     backgroundSize: '24px 24px'
                   }}
@@ -1732,8 +1737,8 @@ export const InGameView: React.FC<InGameViewProps> = ({
                   />
                 )}
                 {activeSnapGuide?.label && (
-                  <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 px-2.5 py-1 rounded-full bg-cyan-950/90 border border-cyan-400/80 text-cyan-200 text-[10px] font-mono font-bold shadow-xl flex items-center gap-1.5 backdrop-blur-md">
-                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                  <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 px-2.5 py-1 rounded-full bg-cyan-950/95 border border-cyan-400/80 text-cyan-200 text-[10px] font-semibold shadow-md flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
                     <span>{activeSnapGuide.label}</span>
                   </div>
                 )}
@@ -1902,6 +1907,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 <div
                   className="absolute inset-0 opacity-20"
                   style={{
+                    // taste-skill-ignore: alignment dot grid for gamepad touch controls layout editor
                     backgroundImage: 'radial-gradient(circle, rgba(255, 255, 255, 0.4) 1px, transparent 1px)',
                     backgroundSize: '24px 24px'
                   }}
@@ -1926,8 +1932,8 @@ export const InGameView: React.FC<InGameViewProps> = ({
 
                 {/* Canva Alignment Floating Pill Badge */}
                 {activeSnapGuide?.label && (
-                  <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 px-2.5 py-1 rounded-full bg-cyan-950/90 border border-cyan-400/80 text-cyan-200 text-[10px] font-mono font-bold shadow-xl animate-fade-in flex items-center gap-1.5 backdrop-blur-md">
-                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                  <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 px-2.5 py-1 rounded-full bg-cyan-950/95 border border-cyan-400/80 text-cyan-200 text-[10px] font-semibold shadow-md animate-fade-in flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
                     <span>{activeSnapGuide.label}</span>
                   </div>
                 )}

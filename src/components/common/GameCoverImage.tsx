@@ -89,13 +89,13 @@ export const GameCoverImage: React.FC<GameCoverImageProps> = ({
   if (!currentUrl || failedAll) {
     return (
       <div
-        className={`relative w-full h-full bg-gradient-to-br ${
-          game?.coverGradient || 'from-zinc-900 to-zinc-950'
+        className={`relative w-full h-full ${
+          game?.coverGradient?.startsWith('bg-') ? game.coverGradient : 'bg-[#141418]'
         } flex flex-col justify-between p-3 overflow-hidden border border-black/40 ${className}`}
       >
         <div className="absolute inset-0 cartridge-grip opacity-30 pointer-events-none" />
         {showBadge && (
-          <span className="self-start relative z-10 px-2 py-0.5 rounded-md text-[10px] font-black bg-black/60 text-white backdrop-blur-sm border border-white/15">
+          <span className="self-start relative z-10 px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#0a0a0c]/90 text-white border border-white/15">
             {game?.shortSystem || 'ROM'}
           </span>
         )}
@@ -108,7 +108,7 @@ export const GameCoverImage: React.FC<GameCoverImageProps> = ({
 
   return (
     <div
-      className={`relative w-full h-full overflow-hidden flex items-center justify-center bg-zinc-950 ${className}`}
+      className={`relative w-full h-full overflow-hidden flex items-center justify-center bg-black ${className}`}
     >
       <img
         src={currentUrl}
@@ -148,7 +148,7 @@ export const GameCoverImage: React.FC<GameCoverImageProps> = ({
         loading="lazy"
       />
       {showBadge && (
-        <span className="absolute top-2 left-2 px-2 py-0.5 rounded-md text-[10px] font-black bg-black/60 text-white backdrop-blur-sm border border-white/15">
+        <span className="absolute top-2 left-2 px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#0a0a0c]/90 text-white border border-white/15">
           {game?.shortSystem || 'ROM'}
         </span>
       )}
