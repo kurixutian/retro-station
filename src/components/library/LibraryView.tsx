@@ -6,7 +6,6 @@ import {
   Settings,
   Play,
   Cloud,
-  Shuffle,
   History,
   Coffee,
   Sun,
@@ -15,6 +14,7 @@ import {
   Search,
   X,
 } from 'lucide-react';
+import { haptics } from '../../services/haptics';
 import { Game, Theme } from '../../types';
 import { formatGameTitle, getBoxartUrls } from '../../constants/cores';
 import { idbGet } from '../../services/storage/idb';
@@ -49,7 +49,7 @@ const AmbientBackdropTile: React.FC<{ game: Game }> = ({ game }) => {
       <GameCoverImage
         game={game}
         className="w-full h-full border-0 !bg-transparent"
-        imgClassName="w-full h-full object-cover"
+        imgClassName=""
       />
     </div>
   );
@@ -75,29 +75,85 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   recentGameIds,
   onToggleLightDark,
 }) => {
-  // ── Random Featured Cartridge ──────────────────────────────────────────
+  // ── Featured Game Hero Carousel ──────────────────────────────────────────
   const [featuredIndex, setFeaturedIndex] = React.useState<number>(() => {
     return games.length > 0 ? Math.floor(Math.random() * games.length) : 0;
   });
+  const [deckHovered, setDeckHovered] = React.useState(false);
+  const [deckDragging, setDeckDragging] = React.useState(false);
+  const [tabVisible, setTabVisible] = React.useState(() => !document.hidden);
 
+  // Keep the carousel index valid as the library grows/shrinks
   React.useEffect(() => {
     if (games.length > 0) {
-      setFeaturedIndex(Math.floor(Math.random() * games.length));
+      setFeaturedIndex((prev) => prev % games.length);
     }
   }, [games.length]);
 
+  React.useEffect(() => {
+    const onVisibility = () => setTabVisible(!document.hidden);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
+
   const featuredGame = games[featuredIndex] || games[0] || null;
 
-  const handleShuffleFeatured = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const cycleFeatured = React.useCallback((step: number) => {
+    if (games.length === 0) return;
+    setFeaturedIndex((prev) => (prev + step + games.length) % games.length);
+  }, [games.length]);
+
+  // Auto-advance the hero carousel. Pauses on hover, drag, hidden tab, and
+  // prefers-reduced-motion; re-creating the interval on featuredIndex change
+  // also resets the timer after every manual navigation.
+  React.useEffect(() => {
+    if (games.length <= 1 || deckHovered || deckDragging || !tabVisible) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const t = window.setInterval(() => cycleFeatured(1), 6000);
+    return () => window.clearInterval(t);
+  }, [featuredIndex, deckHovered, deckDragging, tabVisible, games.length, cycleFeatured]);
+
+  // ── Hero Card Swipe (horizontal drag cycles featured game) ───────────────
+  // touch-action: pan-y keeps vertical page scroll native (pointercancel
+  // ends the gesture); only horizontal intent gets captured.
+  const [featuredDrag, setFeaturedDrag] = React.useState(0);
+  const dragRef = React.useRef<{ x: number; y: number; horizontal: boolean; dx: number } | null>(null);
+
+  const endDeckDrag = (commit: boolean) => {
+    const start = dragRef.current;
+    dragRef.current = null;
+    setDeckDragging(false);
+    setFeaturedDrag(0);
+    if (commit && start && games.length > 1 && Math.abs(start.dx) > 60) {
+      haptics.selection();
+      cycleFeatured(start.dx < 0 ? 1 : -1);
+    }
+  };
+
+  const onDeckPointerDown = (e: React.PointerEvent) => {
     if (games.length <= 1) return;
-    setFeaturedIndex((prev) => {
-      let next = Math.floor(Math.random() * games.length);
-      while (next === prev && games.length > 1) {
-        next = Math.floor(Math.random() * games.length);
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    // Don't hijack taps on controls (dots, play) — capture breaks their click.
+    if ((e.target as HTMLElement).closest('button, a')) return;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    dragRef.current = { x: e.clientX, y: e.clientY, horizontal: false, dx: 0 };
+  };
+
+  const onDeckPointerMove = (e: React.PointerEvent) => {
+    const start = dragRef.current;
+    if (!start || games.length <= 1) return;
+    const dx = e.clientX - start.x;
+    if (!start.horizontal) {
+      if (Math.abs(dx) < 10 && Math.abs(e.clientY - start.y) < 10) return;
+      if (Math.abs(dx) <= Math.abs(e.clientY - start.y)) {
+        dragRef.current = null;
+        return;
       }
-      return next;
-    });
+      start.horizontal = true;
+      setDeckDragging(true);
+    }
+    start.dx = dx;
+    setFeaturedDrag(Math.max(-48, Math.min(48, dx * 0.55)));
   };
 
   // ── Recently Played Games ──────────────────────────────────────────────
@@ -109,18 +165,23 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   }, [recentGameIds, games]);
 
   // ── Blurred Background of Installed ROMs (GPU-capped 4 tiles) ──
+  // Pool is shuffled once per library change; rotating by featuredIndex makes
+  // the backdrop drift gently as the hero carousel cycles instead of flashing.
+  const shuffledPool = React.useMemo(() => {
+    return [...games].sort(() => 0.5 - Math.random());
+  }, [games]);
+
   const bgGames = React.useMemo(() => {
-    if (games.length === 0) return [];
-    const pool = [...games];
-    const featured = games[featuredIndex] || pool[0];
-    const rest = pool.filter((g) => g.id !== featured.id).sort(() => 0.5 - Math.random());
-    const combined = [featured, ...rest];
-    const selected: Game[] = [];
-    for (let i = 0; i < 4; i++) {
-      selected.push(combined[i % combined.length]);
+    if (games.length === 0 || !featuredGame) return [];
+    const rest = shuffledPool.filter((g) => g.id !== featuredGame.id);
+    const selected: Game[] = [featuredGame];
+    if (rest.length > 0) {
+      for (let i = 0; i < 3; i++) {
+        selected.push(rest[(featuredIndex + i) % rest.length]);
+      }
     }
     return selected;
-  }, [games, featuredIndex]);
+  }, [featuredGame, featuredIndex, shuffledPool]);
 
   // ── Mobile Overflow Menu (secondary header actions) ──────────────────────
   const [actionsMenuOpen, setActionsMenuOpen] = React.useState(false);
@@ -354,110 +415,104 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 
       {/* Main Content Container */}
       <main className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 pt-5 space-y-7">
-        {/* Slot-1 Active Cartridge Deck Bay */}
+        {/* Slot-1 Active Cartridge Deck Bay — full-bleed boxart hero card */}
         {featuredGame && (
-          <div className={`relative rounded-3xl overflow-hidden border p-4 sm:p-6 hardware-panel ${
-            theme.isLight
-              ? 'bg-[#dedad0] border-[#cfcac0]'
-              : 'bg-[#131316] border-[#222227]'
-          }`}>
-            {/* Molded Cartridge Slot Top Grip Rib */}
-            <div className={`h-4 w-full rounded-xl border-b mb-4 flex items-center justify-between px-3 ${
-              theme.isLight ? 'bg-[#cfcac0]/60 border-[#bfbaa8]' : 'bg-[#0a0a0c] border-[#222227]'
-            }`}>
-              <div className="w-24 h-full cartridge-grip opacity-40" />
-              <div className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 hardware-led" />
-                <span className={`text-[11px] font-semibold tracking-normal ${
-                  theme.isLight ? 'text-[#575654]' : 'text-[#8e8e93]'
-                }`}>
-                  Slot-1 Cartridge Deck
-                </span>
+          <div
+            className={`relative rounded-3xl overflow-hidden border hardware-panel select-none ${
+              games.length > 1 ? 'cursor-grab' : ''
+            } ${deckDragging ? 'cursor-grabbing' : ''} ${
+              theme.isLight ? 'border-[#cfcac0]' : 'border-[#222227]'
+            }`}
+            style={{ touchAction: 'pan-y' }}
+            onMouseEnter={() => setDeckHovered(true)}
+            onMouseLeave={() => setDeckHovered(false)}
+            onPointerDown={onDeckPointerDown}
+            onPointerMove={onDeckPointerMove}
+            onPointerUp={() => endDeckDrag(true)}
+            onPointerCancel={() => endDeckDrag(false)}
+            aria-label={games.length > 1 ? `Featured game carousel, game ${featuredIndex + 1} of ${games.length}. Swipe to change.` : 'Featured game'}
+          >
+            {/* Boxart Background (keyed per game for the swap crossfade) */}
+            <div
+              className="transition-transform"
+              style={{
+                transform: `translate3d(${featuredDrag}px, 0, 0)`,
+                transition: featuredDrag ? 'none' : 'transform 0.32s var(--ease-out)',
+              }}
+            >
+              <div className="relative min-h-[9rem] sm:min-h-[10rem]">
+                <div key={`featured-art-${featuredGame.id}`} className="absolute inset-0 featured-swap">
+                  <GameCoverImage
+                    game={featuredGame}
+                    className="w-full h-full"
+                    imgClassName="hero-art-pan"
+                  />
+                </div>
+
+                {/* Readability scrim — content is always light-on-dark over art */}
+                <div
+                  className="absolute inset-0 pointer-events-none"
+                  style={{
+                    background:
+                      'linear-gradient(to top, rgba(10,10,12,0.88) 0%, rgba(10,10,12,0.45) 40%, rgba(10,10,12,0.18) 75%, rgba(10,10,12,0.42) 100%)',
+                  }}
+                />
+
+                {/* Featured game title + system badge + play */}
+                <div className="relative z-10 flex items-start justify-between gap-4 p-4 sm:p-6 pt-8 sm:pt-10 pb-11">
+                  <div key={`featured-copy-${featuredGame.id}`} className="min-w-0 flex-1 featured-swap">
+                    <h1 className="text-lg sm:text-2xl font-bold tracking-tight truncate text-white drop-shadow-sm">
+                      {formatGameTitle(featuredGame.title)}
+                    </h1>
+                    <span className="mt-1.5 inline-block px-2 py-0.5 rounded-md text-[11px] font-semibold border bg-black/45 text-white/85 border-white/15">
+                      {featuredGame.system || featuredGame.shortSystem}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => onLaunchGame(featuredGame)}
+                    className={`shrink-0 p-3 rounded-xl tactile-btn transition shadow-sm active:scale-95 ${theme.accentBg}`}
+                    title={`Play ${formatGameTitle(featuredGame.title)}`}
+                    aria-label={`Play ${formatGameTitle(featuredGame.title)}`}
+                  >
+                    <Play className="w-5 h-5 fill-current" />
+                  </button>
+                </div>
+
+                {/* Carousel position indicator */}
+                {games.length > 1 && (
+                  <div className="absolute bottom-3 inset-x-0 z-10 flex items-center justify-center gap-1.5" role="group" aria-label="Featured game carousel position">
+                    {games.length <= 8 ? (
+                      games.map((g, i) => (
+                        <button
+                          key={`featured-dot-${g.id}`}
+                          onClick={() => setFeaturedIndex(i)}
+                          className={`rounded-full transition-all active:scale-90 ${
+                            i === featuredIndex ? 'w-3 h-1.5 bg-white' : 'w-1.5 h-1.5 bg-white/30 hover:bg-white/50'
+                          }`}
+                          title={`Featured: ${formatGameTitle(g.title)}`}
+                          aria-label={`Featured: ${formatGameTitle(g.title)}`}
+                          aria-current={i === featuredIndex ? 'true' : undefined}
+                        />
+                      ))
+                    ) : (
+                      <span
+                        className="px-1.5 py-0.5 rounded-md text-[10px] font-tabular border bg-black/45 text-white/85 border-white/20"
+                        aria-label={`${featuredIndex + 1} of ${games.length}`}
+                      >
+                        {featuredIndex + 1} / {games.length}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="relative flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-6">
-              {/* Physical Cartridge Unit Preview + Details */}
-              <div className="flex items-center gap-4 min-w-0 flex-1">
-                <div
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`Play cartridge ${formatGameTitle(featuredGame.title)}`}
-                  onClick={() => onSelectGame(featuredGame)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      onSelectGame(featuredGame);
-                    }
-                  }}
-                  className={`relative w-20 h-24 sm:w-24 sm:h-28 rounded-2xl overflow-hidden shrink-0 border p-1 flex flex-col cursor-pointer cartridge-card ${
-                    theme.isLight
-                      ? 'bg-[#eae6dd] border-[#cfcac0]'
-                      : 'bg-[#18181c] border-[#26262c]'
-                  }`}
-                >
-                  <div className={`h-2.5 w-full rounded-t-lg mb-1 flex items-center justify-center ${
-                    theme.isLight ? 'bg-[#dedad0]' : 'bg-[#0a0a0c]'
-                  }`}>
-                    <div className="w-10 h-full cartridge-grip opacity-50" />
-                  </div>
-                  <div className="flex-1 rounded-lg overflow-hidden bg-black relative">
-                    <GameCoverImage game={featuredGame} imgClassName="w-full h-full object-cover" />
-                  </div>
-                </div>
-
-                <div className="space-y-1.5 min-w-0 flex-1">
-                  <h1 className={`text-lg sm:text-2xl font-bold tracking-tight truncate ${
-                    theme.isLight ? 'text-[#121214]' : 'text-[#f4f4f6]'
-                  }`}>
-                    {formatGameTitle(featuredGame.title)}
-                  </h1>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className={`px-2 py-0.5 rounded-md text-[11px] font-semibold border ${
-                      theme.isLight
-                        ? 'bg-[#e5e1d7] text-[#575654] border-[#cfcac0]'
-                        : 'bg-[#1c1c21] text-[#8e8e93] border-[#2c2c34]'
-                    }`}>
-                      {featuredGame.system || featuredGame.shortSystem}
-                    </span>
-                    {games.length > 1 && (
-                      <button
-                        onClick={handleShuffleFeatured}
-                        className={`p-1 rounded-md border transition active:scale-95 ${
-                          theme.isLight
-                            ? 'bg-[#e5e1d7] hover:bg-[#dedad0] text-[#575654] border-[#cfcac0]'
-                            : 'bg-[#1c1c21] hover:bg-[#25252c] text-[#8e8e93] hover:text-[#f4f4f6] border-[#2c2c34]'
-                        }`}
-                        title="Cycle Next Cartridge in Deck"
-                        aria-label="Cycle next cartridge in deck"
-                      >
-                        <Shuffle className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Tactile Deck Controls */}
-              <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0">
-                <button
-                  onClick={() => onSelectGame(featuredGame)}
-                  className={`px-3.5 py-2.5 rounded-xl border text-xs font-semibold tactile-btn transition ${
-                    theme.isLight
-                      ? 'bg-[#e5e1d7] hover:bg-[#dedad0] text-[#121214] border-[#cfcac0]'
-                      : 'bg-[#18181c] hover:bg-[#222227] text-[#f4f4f6] border-[#222227]'
-                  }`}
-                >
-                  Save Slots
-                </button>
-                <button
-                  onClick={() => onLaunchGame(featuredGame)}
-                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs tactile-btn transition shadow-sm ${theme.accentBg}`}
-                  title={`Play ${formatGameTitle(featuredGame.title)}`}
-                >
-                  <Play className="w-4 h-4 fill-current" />
-                  <span>Insert & Play</span>
-                </button>
+            {/* Molded Cartridge Slot Top Grip Rib (static overlay above swiping art) */}
+            <div className="absolute inset-x-0 top-0 z-20 h-5 sm:h-6 flex items-center justify-between px-3 pointer-events-none bg-black/40 border-b border-white/10 rounded-t-[inherit]">
+              <div className="w-24 h-full cartridge-grip opacity-40" />
+              <div className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 hardware-led" />
+                <span className="text-[11px] font-semibold tracking-normal text-white/60">Slot-1 Cartridge Deck</span>
               </div>
             </div>
           </div>
@@ -507,7 +562,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                   }`}>
                     <GameCoverImage
                       game={game}
-                      imgClassName="w-full h-full object-cover group-hover:scale-105 transition duration-150"
+                      imgClassName="group-hover:scale-105 transition duration-150"
                     />
                   </div>
 

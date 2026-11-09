@@ -237,6 +237,84 @@ html.light :focus-visible {
   backface-visibility: hidden;
 }
 
+@keyframes featuredSwap {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.featured-swap {
+  animation: featuredSwap 0.26s var(--ease-out) both;
+}
+
+/* ── Modal enter/exit ── */
+@keyframes modalIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modalInPop {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes modalOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes modalOutPop {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+  }
+}
+
+.modal-in {
+  animation: modalIn 0.18s var(--ease-out) both;
+}
+
+.modal-pop {
+  animation: modalInPop 0.2s var(--ease-out) both;
+}
+
+.modal-out,
+.modal-pop-out {
+  animation-duration: 0.2s;
+  pointer-events: none;
+}
+
+.modal-out {
+  animation-name: modalOut;
+}
+
+.modal-pop-out {
+  animation-name: modalOutPop;
+}
+
 @keyframes ambientBackdropDrift {
   0% {
     transform: scale(1.10) translate3d(-1.5%, -1.5%, 0);
@@ -312,6 +390,10 @@ html.light :focus-visible {
   .ambient-backdrop-pan {
     animation: none !important;
     transform: none !important;
+  }
+
+  .featured-swap {
+    animation: none !important;
   }
 
   .cartridge-card,

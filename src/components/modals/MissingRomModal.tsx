@@ -2,6 +2,7 @@ import React, { useRef, useEffect } from 'react';
 import { HardDrive, X, FolderPlus, Gamepad2, ShieldCheck } from 'lucide-react';
 import { Game, Theme } from '../../types';
 import { formatGameTitle } from '../../constants/cores';
+import { ModalShell } from '../common/ModalShell';
 
 interface MissingRomModalProps {
   isOpen: boolean;
@@ -41,19 +42,12 @@ export const MissingRomModal: React.FC<MissingRomModalProps> = ({
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="missing-rom-dialog-title"
-      className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
-      style={{
-        paddingTop: 'max(env(safe-area-inset-top, 0px) + 20px, 36px)',
-        paddingBottom: 'max(env(safe-area-inset-bottom, 0px) + 20px, 36px)',
-        paddingLeft: 'max(env(safe-area-inset-left, 0px) + 12px, 16px)',
-        paddingRight: 'max(env(safe-area-inset-right, 0px) + 12px, 16px)',
-      }}
+    <ModalShell
+      isOpen={isOpen}
+      onClose={onClose}
+      labelledBy="missing-rom-dialog-title"
+      panelClassName="w-full max-w-md shadow-2xl bg-zinc-950 border-zinc-800"
     >
-      <div className="w-full max-w-md flex flex-col rounded-3xl bg-zinc-950 border border-zinc-800 shadow-2xl overflow-hidden my-auto hardware-panel">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800 bg-zinc-950">
           <div className="flex items-center gap-2.5">
@@ -62,7 +56,7 @@ export const MissingRomModal: React.FC<MissingRomModalProps> = ({
             </div>
             <div>
               <h2 id="missing-rom-dialog-title" className="text-sm sm:text-base font-black text-white">Locate Game ROM</h2>
-              <p className="text-[10px] text-zinc-400 font-medium">
+              <p className="text-[11px] text-zinc-400 font-medium">
                 Cloud saves ready • Link ROM file for this device
               </p>
             </div>
@@ -85,7 +79,7 @@ export const MissingRomModal: React.FC<MissingRomModalProps> = ({
             <div className="text-xs space-y-1">
               <div className="font-extrabold text-white flex items-center gap-1.5">
                 <span>Save Progress Synced</span>
-                <span className="text-[9px] px-1.5 py-0.5 rounded uppercase font-black tracking-wider bg-emerald-500/20 text-emerald-300">
+                <span className="text-[11px] px-1.5 py-0.5 rounded uppercase font-black tracking-wider bg-emerald-500/20 text-emerald-300">
                   Ready
                 </span>
               </div>
@@ -103,11 +97,11 @@ export const MissingRomModal: React.FC<MissingRomModalProps> = ({
               </span>
             </div>
             <div className="flex items-center gap-2 text-[11px] text-zinc-400">
-              <span className="px-2 py-0.5 rounded-md bg-zinc-800 text-zinc-300 font-mono text-[10px]">
+              <span className="px-2 py-0.5 rounded-md bg-zinc-800 text-zinc-300 font-mono text-[11px]">
                 {game.shortSystem || game.system}
               </span>
               <span>•</span>
-              <span className="font-mono text-[10px] text-zinc-400 truncate max-w-[200px]">
+              <span className="font-mono text-[11px] text-zinc-400 truncate max-w-[200px]">
                 {game.fileName || `${game.title}.rom`}
               </span>
             </div>
@@ -136,7 +130,6 @@ export const MissingRomModal: React.FC<MissingRomModalProps> = ({
             Cancel
           </button>
         </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 };

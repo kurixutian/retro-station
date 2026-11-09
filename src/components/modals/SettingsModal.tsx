@@ -3,6 +3,7 @@ import { Sliders, X, Tv, Palette, Check, Vibrate, Cloud, ChevronRight, ChevronLe
 import { COLOR_PROFILES } from '../../constants/shaders';
 import { Theme } from '../../types';
 import { haptics } from '../../services/haptics';
+import { ModalShell } from '../common/ModalShell';
 import { getSyncCode } from '../../cloudSync';
 import { createBackupFile, downloadBackup, importBackupFile } from '../../services/backup';
 
@@ -102,23 +103,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const syncCode = getSyncCode();
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="settings-dialog-title"
-      className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
-      style={{
-        paddingTop: 'max(env(safe-area-inset-top, 0px) + 20px, 36px)',
-        paddingBottom: 'max(env(safe-area-inset-bottom, 0px) + 20px, 36px)',
-        paddingLeft: 'max(env(safe-area-inset-left, 0px) + 12px, 16px)',
-        paddingRight: 'max(env(safe-area-inset-right, 0px) + 12px, 16px)'
-      }}
-    >
-      <div className={`w-full max-w-xl max-h-[88vh] flex flex-col rounded-3xl border shadow-xl overflow-hidden my-auto hardware-panel ${
+    <ModalShell
+      isOpen={isOpen}
+      onClose={onClose}
+      labelledBy="settings-dialog-title"
+      panelClassName={`w-full max-w-xl max-h-[88vh] shadow-xl ${
         theme.isLight
           ? 'bg-[#eae6dd] border-[#cfcac0] text-[#121214]'
           : 'bg-[#131316] border-[#222227] text-[#f4f4f6]'
-      }`}>
+      }`}
+    >
         <div className={`flex-none flex items-center justify-between px-5 py-4 border-b ${
           theme.isLight ? 'border-[#cfcac0] bg-[#dedad0]' : 'border-[#222227] bg-[#0a0a0c]'
         }`}>
@@ -590,21 +584,30 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             href="https://buymeacoffee.com/kurixutian"
             target="_blank"
             rel="noopener noreferrer"
-            className="w-full p-3.5 rounded-2xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-200 flex items-center justify-between gap-3 tactile-btn transition"
+            className={`w-full p-3.5 rounded-2xl border flex items-center justify-between gap-3 tactile-btn transition ${
+              theme.isLight
+                ? 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/40 text-amber-800'
+                : 'bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/30 text-amber-200'
+            }`}
           >
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-amber-400/20 border border-amber-400/40 flex items-center justify-center text-amber-300 shrink-0">
+              <div
+                className={`w-8 h-8 rounded-xl border flex items-center justify-center shrink-0 ${
+                  theme.isLight
+                    ? 'bg-amber-400/25 border-amber-400/50 text-amber-700'
+                    : 'bg-amber-400/20 border-amber-400/40 text-amber-300'
+                }`}
+              >
                 <Coffee className="w-4 h-4" />
               </div>
               <div>
-                <div className="text-xs font-extrabold text-white">Enjoying Retro Pocket?</div>
-                <div className="text-[11px] text-amber-300/90">Buy me a coffee to support development</div>
+                <div className={`text-xs font-extrabold ${theme.isLight ? 'text-[#121214]' : 'text-white'}`}>Enjoying Retro Pocket?</div>
+                <div className={`text-[11px] ${theme.isLight ? 'text-amber-700/90' : 'text-amber-300/90'}`}>Buy me a coffee to support development</div>
               </div>
             </div>
-            <ChevronRight className="w-4 h-4 text-amber-300 shrink-0" />
+            <ChevronRight className={`w-4 h-4 shrink-0 ${theme.isLight ? 'text-amber-600' : 'text-amber-300'}`} />
           </a>
         </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 };

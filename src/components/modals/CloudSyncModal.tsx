@@ -18,6 +18,7 @@ import {
   Gamepad2,
 } from 'lucide-react';
 import { Theme } from '../../types';
+import { ModalShell } from '../common/ModalShell';
 import {
   getSyncStatus,
   subscribeSyncStatus,
@@ -103,8 +104,6 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
 
   const handleSignInAndSync = async () => {
     setIsSyncing(true);
@@ -256,21 +255,17 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
           : 'not linked';
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="cloud-sync-dialog-title"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 animate-fadeIn"
-      onClick={onClose}
+    <ModalShell
+      isOpen={isOpen}
+      onClose={onClose}
+      labelledBy="cloud-sync-dialog-title"
+      closeOnScrim
+      panelClassName={`relative w-full max-w-lg max-h-[90vh] shadow-xl ${
+        theme.isLight
+          ? 'bg-[#eae6dd] border-[#cfcac0] text-[#121214]'
+          : 'bg-[#131316] border-[#222227] text-[#f4f4f6]'
+      }`}
     >
-      <div
-        className={`relative w-full max-w-lg rounded-3xl border shadow-xl overflow-hidden flex flex-col max-h-[90vh] hardware-panel ${
-          theme.isLight
-            ? 'bg-[#eae6dd] border-[#cfcac0] text-[#121214]'
-            : 'bg-[#131316] border-[#222227] text-[#f4f4f6]'
-        }`}
-        onClick={(e) => e.stopPropagation()}
-      >
         {/* Header */}
         <div className={`flex items-center justify-between px-5 py-4 border-b ${
           theme.isLight ? 'border-[#cfcac0] bg-[#dedad0]' : 'border-[#222227] bg-[#0a0a0c]'
@@ -650,7 +645,6 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
             )}
           </div>
         </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 };

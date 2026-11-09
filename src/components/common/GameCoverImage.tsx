@@ -23,11 +23,14 @@ export const GameCoverImage: React.FC<GameCoverImageProps> = ({
   const [resolvedSrc, setResolvedSrc] = useState<string | null>(null);
   const attemptedResolveRef = useRef<string | null>(null);
 
-  // Reset indices whenever the displayed game changes
+  // Reset cover state whenever the displayed game changes. cachedUrl MUST be
+  // cleared too, or a shuffle/reorder renders the previous game's cached art
+  // (and its onLoad would even re-save it under the new game's id).
   useEffect(() => {
     setSrcIndex(0);
     setFailedAll(false);
     setResolvedSrc(null);
+    setCachedUrl(null);
     attemptedResolveRef.current = null;
   }, [game?.id]);
 
@@ -95,7 +98,7 @@ export const GameCoverImage: React.FC<GameCoverImageProps> = ({
       >
         <div className="absolute inset-0 cartridge-grip opacity-30 pointer-events-none" />
         {showBadge && (
-          <span className="self-start relative z-10 px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#0a0a0c]/90 text-white border border-white/15">
+          <span className="self-start relative z-10 px-2 py-0.5 rounded-md text-[11px] font-bold bg-[#0a0a0c]/90 text-white border border-white/15">
             {game?.shortSystem || 'ROM'}
           </span>
         )}
@@ -148,7 +151,7 @@ export const GameCoverImage: React.FC<GameCoverImageProps> = ({
         loading="lazy"
       />
       {showBadge && (
-        <span className="absolute top-2 left-2 px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#0a0a0c]/90 text-white border border-white/15">
+        <span className="absolute top-2 left-2 px-2 py-0.5 rounded-md text-[11px] font-bold bg-[#0a0a0c]/90 text-white border border-white/15">
           {game?.shortSystem || 'ROM'}
         </span>
       )}

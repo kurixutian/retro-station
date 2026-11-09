@@ -36,7 +36,7 @@ export const GameCard: React.FC<GameCardProps> = ({ game, theme, onSelect }) => 
         theme.isLight ? 'bg-[#dedad0]/80 border-[#cfcac0]' : 'bg-[#0a0a0c] border-[#222227]'
       }`}>
         <div className="w-16 h-full cartridge-grip opacity-40" />
-        <span className={`text-[10px] font-bold ${
+        <span className={`text-[11px] font-bold ${
           theme.isLight ? 'text-[#575654]' : 'text-[#8e8e93]'
         }`}>
           {systemLabel}
@@ -47,7 +47,7 @@ export const GameCard: React.FC<GameCardProps> = ({ game, theme, onSelect }) => 
       <div className={`relative aspect-square rounded-xl overflow-hidden border ${
         theme.isLight ? 'bg-[#eae6dd] border-[#cfcac0]' : 'bg-[#0a0a0c] border-[#222227]'
       }`}>
-        <GameCoverImage game={game} />
+        <GameCoverImage game={game} imgClassName="group-hover:scale-[1.02] transition-transform duration-200" />
 
         {/* Quick Play Trigger Overlay */}
         <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-[opacity,transform] duration-150 transform translate-y-1 group-hover:translate-y-0 z-10">

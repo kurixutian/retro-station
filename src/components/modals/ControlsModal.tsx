@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Gamepad2, Keyboard, X, Sparkles, CheckCircle2 } from 'lucide-react';
 import { Theme } from '../../types';
 import { CONTROL_BINDINGS } from '../../constants/controls';
+import { ModalShell } from '../common/ModalShell';
 
 interface ControlsModalProps {
   isOpen: boolean;
@@ -46,27 +47,17 @@ export const ControlsModal: React.FC<ControlsModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="controls-dialog-title"
-      className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
-      style={{
-        paddingTop: 'max(env(safe-area-inset-top, 0px) + 20px, 36px)',
-        paddingBottom: 'max(env(safe-area-inset-bottom, 0px) + 20px, 36px)',
-        paddingLeft: 'max(env(safe-area-inset-left, 0px) + 12px, 16px)',
-        paddingRight: 'max(env(safe-area-inset-right, 0px) + 12px, 16px)'
-      }}
-      onClick={onClose}
+    <ModalShell
+      isOpen={isOpen}
+      onClose={onClose}
+      labelledBy="controls-dialog-title"
+      closeOnScrim
+      panelClassName={`w-full max-w-xl max-h-[88vh] shadow-xl ${
+        theme.isLight
+          ? 'bg-[#eae6dd] border-[#cfcac0] text-[#121214]'
+          : 'bg-[#131316] border-[#222227] text-[#f4f4f6]'
+      }`}
     >
-      <div
-        className={`w-full max-w-xl max-h-[88vh] flex flex-col rounded-3xl border shadow-xl overflow-hidden my-auto hardware-panel ${
-          theme.isLight
-            ? 'bg-[#eae6dd] border-[#cfcac0] text-[#121214]'
-            : 'bg-[#131316] border-[#222227] text-[#f4f4f6]'
-        }`}
-        onClick={(e) => e.stopPropagation()}
-      >
         {/* Header */}
         <div className={`flex-none flex items-center justify-between px-5 py-4 border-b ${
           theme.isLight ? 'border-[#cfcac0] bg-[#dedad0]' : 'border-[#222227] bg-[#0a0a0c]'
@@ -296,7 +287,6 @@ export const ControlsModal: React.FC<ControlsModalProps> = ({
             Got it
           </button>
         </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 };

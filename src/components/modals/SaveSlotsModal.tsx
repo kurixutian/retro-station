@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Play, Download, Trash2, Layers, Camera, X, AlertTriangle, Pencil, ImagePlus, RotateCcw } from 'lucide-react';
 import { Game, SaveSlot, Theme } from '../../types';
 import { GameCoverImage } from '../common/GameCoverImage';
+import { ModalShell } from '../common/ModalShell';
 import { formatGameTitle } from '../../constants/cores';
 import { createEmptySlotsForGame } from '../../services/storage/saveSlots';
 
@@ -93,7 +94,6 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
   const [confirmDeleteRom, setConfirmDeleteRom] = useState(false);
   const [confirmAction, setConfirmAction] = useState<{ type: 'load' | 'overwrite'; slot: number } | null>(null);
   const [confirmDeleteSlot, setConfirmDeleteSlot] = useState<number | null>(null);
-  const [deleteTypeText, setDeleteTypeText] = useState('');
   const [editingSlot, setEditingSlot] = useState<number | null>(null);
   const [editValue, setEditValue] = useState('');
   const [saveFormat, setSaveFormat] = useState<'sav' | 'srm'>('sav');
@@ -140,31 +140,21 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="save-slots-title"
-      className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
-      style={{
-        paddingTop: 'max(env(safe-area-inset-top, 0px) + 20px, 36px)',
-        paddingBottom: 'max(env(safe-area-inset-bottom, 0px) + 20px, 36px)',
-        paddingLeft: 'max(env(safe-area-inset-left, 0px) + 12px, 16px)',
-        paddingRight: 'max(env(safe-area-inset-right, 0px) + 12px, 16px)'
-      }}
-      onClick={onClose}
+    <ModalShell
+      isOpen={isOpen}
+      onClose={onClose}
+      labelledBy="save-slots-title"
+      closeOnScrim
+      panelClassName={`w-full max-w-2xl max-h-[88vh] shadow-xl ${
+        theme?.isLight
+          ? 'bg-[#eae6dd] border-[#cfcac0] text-[#121214]'
+          : 'bg-[#131316] border-[#222227] text-[#f4f4f6]'
+      }`}
     >
-      <div
-        className={`w-full max-w-2xl max-h-[88vh] flex flex-col rounded-3xl border shadow-xl overflow-hidden my-auto hardware-panel ${
-          theme?.isLight
-            ? 'bg-[#eae6dd] border-[#cfcac0] text-[#121214]'
-            : 'bg-[#131316] border-[#222227] text-[#f4f4f6]'
-        }`}
-        onClick={(e) => e.stopPropagation()}
-      >
         {/* Dialog Header Banner */}
         <div className="relative p-5 bg-[#18181c] flex-none border-b border-black/40">
           <div className="absolute inset-0">
-            <GameCoverImage game={targetGame} imgClassName="w-full h-full object-cover opacity-65" />
+            <GameCoverImage game={targetGame} imgClassName="opacity-65" />
           </div>
           <div className="absolute inset-0 bg-zinc-950/70" />
           <div className="relative z-10 flex items-start justify-between gap-3">
@@ -559,7 +549,7 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
           </div>
         )}
 
-        {/* Delete Slot: type-to-confirm Dialog */}
+        {/* Delete Slot Confirmation Dialog */}
         {confirmDeleteSlot !== null && (
           <div className="absolute inset-0 z-50 bg-black/75 flex items-center justify-center p-4">
             <div className="w-full max-w-sm rounded-2xl bg-zinc-950 border border-rose-500/50 shadow-xl p-4 space-y-3">
@@ -568,33 +558,16 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
                 <span className="text-xs font-black text-white">Delete State Slot</span>
               </div>
               <p className="text-[11px] text-zinc-300 leading-snug">
-                Permanently delete the save in Slot #{confirmDeleteSlot}? This cannot be undone. Type <span className="font-mono font-bold text-rose-300">overwrite</span> to confirm.
+                Permanently delete the save in Slot #{confirmDeleteSlot}? This cannot be undone.
               </p>
-              <input
-                type="text"
-                autoFocus
-                value={deleteTypeText}
-                onChange={(e) => setDeleteTypeText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && deleteTypeText.trim().toLowerCase() === 'overwrite') {
-                    const n = confirmDeleteSlot;
-                    setConfirmDeleteSlot(null);
-                    deleteGameSlot(targetGame.id, n);
-                  }
-                }}
-                placeholder='Type "overwrite" to confirm'
-                aria-label='Type "overwrite" to confirm slot deletion'
-                className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs font-bold text-zinc-100 outline-none focus:border-rose-500"
-              />
               <div className="flex items-center gap-2 pt-1">
                 <button
-                  disabled={deleteTypeText.trim().toLowerCase() !== 'overwrite'}
                   onClick={() => {
                     const n = confirmDeleteSlot;
                     setConfirmDeleteSlot(null);
                     deleteGameSlot(targetGame.id, n);
                   }}
-                  className="flex-1 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black text-xs tactile-btn"
+                  className="flex-1 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-black text-xs tactile-btn"
                 >
                   Delete Slot
                 </button>
@@ -608,7 +581,6 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
             </div>
           </div>
         )}
-      </div>
-    </div>
+    </ModalShell>
   );
 };
