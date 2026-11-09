@@ -1,9 +1,41 @@
-import React, { useState, useEffect } from 'react';
-import { Play, Download, Trash2, Layers, Camera, X, AlertTriangle, Pencil, Camera as SlotNameIcon } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Play, Download, Trash2, Layers, Camera, X, AlertTriangle, Pencil, ImagePlus, RotateCcw } from 'lucide-react';
 import { Game, SaveSlot, Theme } from '../../types';
 import { GameCoverImage } from '../common/GameCoverImage';
 import { formatGameTitle } from '../../constants/cores';
 import { createEmptySlotsForGame } from '../../services/storage/saveSlots';
+
+// Resize + compress a picked image into a small data URL (WebP, ~30-60KB).
+const processArtworkFile = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read file'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Not a valid image'));
+      img.onload = () => {
+        try {
+          const MAX = 384;
+          const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+          const w = Math.max(1, Math.round(img.width * scale));
+          const h = Math.max(1, Math.round(img.height * scale));
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return reject(new Error('Canvas unavailable'));
+          ctx.drawImage(img, 0, 0, w, h);
+          let url = canvas.toDataURL('image/webp', 0.85);
+          if (!url.startsWith('data:image/webp')) url = canvas.toDataURL('image/jpeg', 0.85);
+          resolve(url);
+        } catch (err) {
+          reject(err);
+        }
+      };
+      img.src = String(reader.result);
+    };
+    reader.readAsDataURL(file);
+  });
 
 interface SaveSlotsModalProps {
   isOpen: boolean;
@@ -22,6 +54,7 @@ interface SaveSlotsModalProps {
   slotNames?: Record<number, string>;
   onRenameSlot?: (slotNum: number, name: string) => void;
   initialMode?: 'save' | 'load' | null;
+  onChangeArtwork?: (gameId: string, dataUrl: string | null) => void;
 }
 
 // Grows the slot list: always show base slots; when every visible slot is
@@ -55,6 +88,7 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
   slotNames = {},
   onRenameSlot,
   initialMode = null,
+  onChangeArtwork,
 }) => {
   const [confirmDeleteRom, setConfirmDeleteRom] = useState(false);
   const [confirmAction, setConfirmAction] = useState<{ type: 'load' | 'overwrite'; slot: number } | null>(null);
@@ -63,6 +97,17 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
   const [editingSlot, setEditingSlot] = useState<number | null>(null);
   const [editValue, setEditValue] = useState('');
   const [saveFormat, setSaveFormat] = useState<'sav' | 'srm'>('sav');
+  const artInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleArtworkPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !targetGame) return;
+    try {
+      const url = await processArtworkFile(file);
+      onChangeArtwork?.(targetGame.id, url);
+    } catch (err) {}
+  };
 
   useEffect(() => {
     if (!isOpen) {
@@ -205,6 +250,40 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
                 </button>
               </div>
             </div>
+
+            {/* Custom Cartridge Artwork (supports ROM hacks that have no online boxart) */}
+            <label
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold tactile-btn transition cursor-pointer ${
+                theme?.isLight
+                  ? 'bg-stone-200/90 hover:bg-stone-300 text-stone-700 border-stone-300'
+                  : 'bg-zinc-900/90 hover:bg-zinc-800 text-zinc-300 hover:text-white border-zinc-800 hover:border-zinc-600'
+              }`}
+              title={targetGame.customCover ? 'Replace custom artwork' : 'Add custom artwork (great for ROM hacks)'}
+            >
+              <ImagePlus className="w-3.5 h-3.5" />
+              <span>Artwork</span>
+              <input
+                ref={artInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleArtworkPick}
+              />
+            </label>
+            {targetGame.customCover && (
+              <button
+                onClick={() => onChangeArtwork?.(targetGame.id, null)}
+                className={`p-2 rounded-xl border tactile-btn transition ${
+                  theme?.isLight
+                    ? 'bg-stone-200/90 hover:bg-stone-300 text-stone-600 border-stone-300'
+                    : 'bg-zinc-900/90 hover:bg-zinc-800 text-zinc-400 hover:text-white border-zinc-800'
+                }`}
+                title="Reset to online artwork"
+                aria-label="Reset artwork"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
+            )}
 
             <button
               onClick={() => setConfirmDeleteRom(true)}

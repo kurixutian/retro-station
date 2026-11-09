@@ -213,6 +213,48 @@ export default function App() {
     });
   }, []);
 
+  // Custom cartridge artwork override → idb `cover:` key (already wired into the
+  // cloud-sync + backup item pipeline) + immediate state for live render.
+  const setGameCustomCover = useCallback((gameId: string, dataUrl: string | null) => {
+    setGames((prev) =>
+      prev.map((g) => (g.id === gameId ? { ...g, customCover: dataUrl || undefined } : g))
+    );
+    if (dataUrl) {
+      idbPut(`cover:${gameId}`, dataUrl)
+        .then(() => markLocalSaveModified(`cover:${gameId}`))
+        .catch(() => {});
+    } else {
+      idbDelete(`cover:${gameId}`)
+        .then(() => markLocalSaveModified(`cover:${gameId}`))
+        .catch(() => {});
+    }
+  }, []);
+
+  // Boot hydration: pull synced covers for games without a runtime customCover.
+  const hydratedCoverIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const pending = games.filter((g) => !g.customCover && !hydratedCoverIdsRef.current.has(g.id));
+      if (pending.length === 0) return;
+      pending.forEach((g) => hydratedCoverIdsRef.current.add(g.id));
+      const found: Record<string, string> = {};
+      await Promise.all(
+        pending.map(async (g) => {
+          try {
+            const val = await idbGet(`cover:${g.id}`);
+            if (typeof val === 'string' && val.startsWith('data:image')) found[g.id] = val;
+          } catch (e) {}
+        })
+      );
+      if (cancelled || Object.keys(found).length === 0) return;
+      setGames((prev) =>
+        prev.map((g) => (found[g.id] && !g.customCover ? { ...g, customCover: found[g.id] } : g))
+      );
+    })();
+    return () => { cancelled = true; };
+  }, [games]);
+
   // Modals & Drawers
   const [detailGame, setDetailGame] = useState<Game | null>(null);
   const [globalSettingsOpen, setGlobalSettingsOpen] = useState(false);
@@ -1381,7 +1423,27 @@ export default function App() {
     const outName = `${baseName}.${ext}`;
     downloadBinaryFile(normalized, outName);
     soundFX.save();
-    showToast(`Exported ${outName} (${(normalized.length / 1024).toFixed(1)} KB)`);
+
+    // RTC sidecar: GB/GBC (gambatte) cartridges clock keeps real time between
+    // sessions; flash it next to the .sav so real-cart restores keep the clock.
+    const rtcEnabled = game.core === 'gambatte' || ['GB', 'GBC'].includes(game.shortSystem || '');
+    if (rtcEnabled) {
+      try {
+        let rtcBytes: any = null;
+        if (currentView === 'ingame' && activeGame?.id === game.id && win?.getRtcData) {
+          rtcBytes = win.getRtcData();
+        }
+        if (!rtcBytes || rtcBytes.length === 0) {
+          rtcBytes = await idbGet(`rtc:${game.id}`);
+        }
+        const rtcNormalized = normalizeBinaryData(rtcBytes);
+        if (rtcNormalized && rtcNormalized.length > 0) {
+          downloadBinaryFile(rtcNormalized, `${baseName}.rtc`);
+        }
+      } catch (e) {}
+    }
+
+    showToast(`Exported ${outName}${rtcEnabled ? ' (+ .rtc clock)' : ''} (${(normalized.length / 1024).toFixed(1)} KB)`);
   }, [activeGame?.id, currentView, showToast]);
 
   // Keyboard controls with zero collision & hotkeys
@@ -1771,6 +1833,7 @@ export default function App() {
           const g = detailGame || activeGame;
           if (g) renameGameSlot(g.id, slotNum, name);
         }}
+        onChangeArtwork={setGameCustomCover}
         onClose={() => {
           setDetailGame(null);
           setInGameSaveModalMode(null);
