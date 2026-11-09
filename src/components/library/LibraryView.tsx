@@ -43,6 +43,18 @@ interface LibraryViewProps {
   onToggleLightDark?: () => void;
 }
 
+const AmbientBackdropTile: React.FC<{ game: Game }> = ({ game }) => {
+  return (
+    <div className="w-full h-full overflow-hidden relative">
+      <GameCoverImage
+        game={game}
+        className="w-full h-full border-0 !bg-transparent"
+        imgClassName="w-full h-full object-cover"
+      />
+    </div>
+  );
+};
+
 export const LibraryView: React.FC<LibraryViewProps> = ({
   games,
   filteredGames,
@@ -96,6 +108,20 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       .filter((g): g is Game => Boolean(g));
   }, [recentGameIds, games]);
 
+  // ── Blurred Background of Installed ROMs (GPU-capped 4 tiles) ──
+  const bgGames = React.useMemo(() => {
+    if (games.length === 0) return [];
+    const pool = [...games];
+    const featured = games[featuredIndex] || pool[0];
+    const rest = pool.filter((g) => g.id !== featured.id).sort(() => 0.5 - Math.random());
+    const combined = [featured, ...rest];
+    const selected: Game[] = [];
+    for (let i = 0; i < 4; i++) {
+      selected.push(combined[i % combined.length]);
+    }
+    return selected;
+  }, [games, featuredIndex]);
+
   // ── Mobile Overflow Menu (secondary header actions) ──────────────────────
   const [actionsMenuOpen, setActionsMenuOpen] = React.useState(false);
   const actionsMenuRef = React.useRef<HTMLDivElement>(null);
@@ -120,8 +146,24 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 
   return (
     <div className={`relative pb-16 min-h-[100vh] min-h-[100lvh] ${theme.isLight ? 'text-zinc-900' : 'text-zinc-100'}`}>
-      {/* Matte Console Ground */}
-      <div className={`fixed inset-0 pointer-events-none overflow-hidden z-0 select-none ${theme.isLight ? 'bg-[#eae6dd]' : 'bg-[#0a0a0c]'}`} />
+      {/* Ambient Animated Blurred ROM Backdrop (Homescreen Only) */}
+      <div className={`fixed inset-0 pointer-events-none overflow-hidden z-0 select-none ${theme.isLight ? 'bg-[#eae6dd]' : 'bg-[#0a0a0c]'}`}>
+        {bgGames.length > 0 && (
+          <div className="grid grid-cols-2 grid-rows-2 w-full h-full opacity-25 sm:opacity-35 blur-xl ambient-backdrop-pan scale-115">
+            {bgGames.map((g, idx) => (
+              <AmbientBackdropTile key={`bg-tile-${g.id}-${idx}`} game={g} />
+            ))}
+          </div>
+        )}
+        <div
+          className="absolute inset-0"
+          style={{
+            background: theme.isLight
+              ? `radial-gradient(ellipse at 50% 30%, rgba(234,230,221,0.35) 0%, rgba(234,230,221,0.80) 65%, rgba(234,230,221,0.98) 100%)`
+              : `radial-gradient(ellipse at 50% 30%, rgba(10,10,12,0.25) 0%, rgba(10,10,12,0.72) 65%, rgba(10,10,12,0.95) 100%)`
+          }}
+        />
+      </div>
       {/* Sticky Top Navigation Bar */}
       <header
         className={`sticky top-0 z-30 backdrop-blur-md border-b px-4 sm:px-6 py-3 hardware-panel ${
