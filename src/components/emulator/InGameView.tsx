@@ -81,8 +81,6 @@ interface InGameViewProps {
   setPadLayoutPortrait: React.Dispatch<React.SetStateAction<PadLayout>>;
   padLayoutLandscape: PadLayout;
   setPadLayoutLandscape: React.Dispatch<React.SetStateAction<PadLayout>>;
-  padOpacity?: number;
-  setPadOpacity?: (v: number) => void;
   customizing: boolean;
   setCustomizing: (c: boolean) => void;
   selectedPad: PadGroupId;
@@ -138,8 +136,6 @@ export const InGameView: React.FC<InGameViewProps> = ({
   setPadLayoutPortrait,
   padLayoutLandscape,
   setPadLayoutLandscape,
-  padOpacity = 0.85,
-  setPadOpacity,
   customizing,
   setCustomizing,
   selectedPad,
@@ -1032,50 +1028,20 @@ export const InGameView: React.FC<InGameViewProps> = ({
           </button>
         </div>
 
-        {/* Landscape Overlay Button Opacity */}
-        {isLandscape && (
-          <div className="space-y-1 pt-1.5 border-t border-zinc-800/80">
-            <div className="flex items-center justify-between text-[11px] font-bold text-zinc-300">
-              <span>Button Opacity</span>
-              <span className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-emerald-400">
-                LANDSCAPE OVERLAY
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="range"
-                min="0.15"
-                max="1"
-                step="0.05"
-                value={padOpacity}
-                onChange={(e) => setPadOpacity?.(parseFloat(e.target.value))}
-                className="flex-1 accent-emerald-500 cursor-pointer"
-                aria-label="Landscape overlay button opacity"
-              />
-              <span className="w-9 text-right text-[11px] font-mono text-zinc-300">
-                {Math.round(padOpacity * 100)}%
-              </span>
-            </div>
-            <p className="text-[11px] text-zinc-400 leading-snug">
-              Buttons float over the edge-to-edge screen — lower opacity keeps the game visible.
-            </p>
-          </div>
-        )}
-
         {/* Screen Vertical Slide Position Slider (Centered X, Only Moves Y Up/Down) */}
         {isScreen && !isLandscape && (
           <div className="space-y-1 pt-1.5 border-t border-zinc-800/80">
             <div className="flex items-center justify-between text-[11px] font-bold text-zinc-300">
               <span className="flex items-center gap-1.5">
                 <span>Vertical Position</span>
-                <span className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-emerald-400">Centered X</span>
+                <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-zinc-800 text-emerald-400">Centered X</span>
               </span>
-              <span className="text-[11px] font-mono text-emerald-400">
+              <span className="text-[10px] font-mono text-emerald-400">
                 {screenY === 0.5 ? 'Center (0%)' : `${Math.round((screenY - 0.5) * 200)}%`}
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-[11px] font-mono text-zinc-400">Up</span>
+              <span className="text-[9px] font-mono text-zinc-500">Up</span>
               <input
                 type="range"
                 min="0.1"
@@ -1092,14 +1058,14 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 }}
                 className="flex-1 accent-emerald-500 cursor-pointer"
               />
-              <span className="text-[11px] font-mono text-zinc-400">Down</span>
+              <span className="text-[9px] font-mono text-zinc-500">Down</span>
               <button
                 type="button"
                 onClick={() => {
                   movePad('screen', 0.5, 0.5);
                   haptics.selection();
                 }}
-                className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[11px] font-bold transition active:scale-95"
+                className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[10px] font-bold transition active:scale-95"
                 title="Reset to center"
               >
                 Center
@@ -1114,7 +1080,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
             <button
               key={key}
               onClick={() => setSelectedPad(key)}
-              className={`py-1 px-1 rounded-lg text-[11px] font-bold border transition ${
+              className={`py-1 px-1 rounded-lg text-[10px] font-bold border transition ${
                 selectedPad === key
                   ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
                   : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'
@@ -1134,17 +1100,17 @@ export const InGameView: React.FC<InGameViewProps> = ({
         </div>
 
         {selectedPad === 'screen' && (
-          <div className="text-[11px] text-zinc-400 text-center">
+          <div className="text-[10px] text-zinc-400 text-center">
             Slide screen up/down or adjust scale. Screen stays strictly centered horizontally.
           </div>
         )}
         {selectedPad === 'transport' && (
-          <div className="text-[11px] text-zinc-400 text-center">
+          <div className="text-[10px] text-zinc-400 text-center">
             Resizing 3-button bar dynamically fits the controls
           </div>
         )}
         {selectedPad !== 'transport' && selectedPad !== 'screen' && (
-          <div className="text-[11px] text-zinc-400 text-center">
+          <div className="text-[10px] text-zinc-400 text-center">
             Drag the {PAD_LABELS[selectedPad]} on screen to move it
           </div>
         )}
@@ -1585,10 +1551,10 @@ export const InGameView: React.FC<InGameViewProps> = ({
                   ? '100%'
                   : `min(100%, calc(48lvh * ${screenRatio} * ${screenScale}))`,
                 maxHeight: isLandscape
-                  ? 'calc(100lvh - max(env(safe-area-inset-bottom, 0px), 12px) - 8px)'
+                  ? `calc((100lvh - ${Math.round(22 * transportScale + 10)}px) * ${screenScale})`
                   : `calc(48lvh * ${screenScale})`,
                 width: isLandscape
-                  ? 'min(100%, calc((100lvh - max(env(safe-area-inset-bottom, 0px), 12px) - 8px) * ' + screenRatio + ' * ' + screenScale + '))'
+                  ? `min(100%, calc((100lvh - ${Math.round(22 * transportScale + 10)}px) * ${screenRatio} * ${screenScale}))`
                   : shaders.edgeToEdge
                   ? `calc(100% * ${screenScale})`
                   : `min(100%, calc(48lvh * ${screenRatio} * ${screenScale}))`,
@@ -1708,13 +1674,13 @@ export const InGameView: React.FC<InGameViewProps> = ({
             )}
           </div>
 
-          {/* Compact Transport Bar in Landscape: OVERLAY floats above screen bottom edge */}
+          {/* Compact Transport Bar in Landscape: Positioned cleanly BELOW screen so it never obscures game content */}
           {isLandscape && (
             <div
-              className="absolute left-0 right-0 z-30 flex items-center justify-center pointer-events-none select-none"
+              className="relative z-30 flex items-center justify-center pointer-events-auto shrink-0 select-none"
               style={{
-                bottom: 'max(env(safe-area-inset-bottom, 0px) + 10px, 14px)',
-                opacity: padOpacity,
+                height: `${Math.round(22 * transportScale)}px`,
+                marginTop: '2px',
               }}
             >
               <div
@@ -1790,7 +1756,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
               onSnapGuide={setActiveSnapGuide}
               deckRef={landscapeDeckRef}
             >
-              <div className="pointer-events-auto" style={{ opacity: padOpacity }}>
+              <div className="pointer-events-auto">
                 {renderDpad()}
               </div>
             </PadGroup>
@@ -1806,21 +1772,23 @@ export const InGameView: React.FC<InGameViewProps> = ({
               onSnapGuide={setActiveSnapGuide}
               deckRef={landscapeDeckRef}
             >
-              <div className="pointer-events-auto" style={{ opacity: padOpacity }}>
+              <div className="pointer-events-auto">
                 {renderActions()}
               </div>
             </PadGroup>
           </div>
         )}
 
-        {/* 4. LANDSCAPE OVERLAY SHOULDERS & SYSTEM PILLS (float over edge-to-edge screen) */}
+        {/* 4. LANDSCAPE FLANKS: BEZELS, SHOULDERS & SYSTEM BUTTONS */}
         {isLandscape && (!hidePad || customizing) && (
           <>
-            {/* Left Overlay Flank (absolute -> no longer reserves width) */}
+            {/* Left Flank (order: -1 -> placed visually on the LEFT) */}
             <div
-              className={`absolute left-2 top-0 bottom-0 flex flex-col justify-between items-start py-2.5 px-1 select-none touch-none pointer-events-none z-30`}
+              className={`flex-none ${isGba ? 'w-[96px] sm:w-[110px] md:w-[124px]' : 'w-[112px] sm:w-[130px] md:w-[150px]'} h-full flex flex-col justify-between items-center py-3 px-2 select-none touch-none z-10 ${
+                shaders.amoled ? 'bg-black border-r border-zinc-900' : `${theme.deckBg} border-r border-white/5`
+              }`}
               style={{
-                opacity: padOpacity,
+                order: -1,
                 touchAction: 'none',
                 WebkitTouchCallout: 'none',
                 userSelect: 'none',
@@ -1864,11 +1832,13 @@ export const InGameView: React.FC<InGameViewProps> = ({
               </div>
             </div>
 
-            {/* Right Overlay Flank (absolute -> no longer reserves width) */}
+            {/* Right Flank (order: 1 -> placed visually on the RIGHT) */}
             <div
-              className={`absolute right-2 top-0 bottom-0 flex flex-col justify-between items-end py-2.5 px-1 select-none touch-none pointer-events-none z-30`}
+              className={`flex-none ${isGba ? 'w-[96px] sm:w-[110px] md:w-[124px]' : 'w-[112px] sm:w-[130px] md:w-[150px]'} h-full flex flex-col justify-between items-center py-3 px-2 select-none touch-none z-10 ${
+                shaders.amoled ? 'bg-black border-l border-zinc-900' : `${theme.deckBg} border-l border-white/5`
+              }`}
               style={{
-                opacity: padOpacity,
+                order: 1,
                 touchAction: 'none',
                 WebkitTouchCallout: 'none',
                 userSelect: 'none',
