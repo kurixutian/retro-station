@@ -114,7 +114,6 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
       setConfirmDeleteRom(false);
       setConfirmAction(null);
       setConfirmDeleteSlot(null);
-      setDeleteTypeText('');
       setEditingSlot(null);
       setEditValue('');
     }
@@ -491,7 +490,6 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
                     <button
                       onClick={() => {
                         setConfirmDeleteSlot(slotObj.slot);
-                        setDeleteTypeText('');
                       }}
                       className={`p-1.5 rounded-lg tactile-btn transition ${
                         theme?.isLight
