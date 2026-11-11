@@ -1,0 +1,263 @@
+name: Generate Demo Video
+
+on:
+  workflow_dispatch:
+    inputs:
+      demo_script:
+        description: 'Narration script for the demo video'
+        required: true
+        default: |
+          Welcome to Retro Station, a modern web-based emulator frontend.
+          Browse your game library with beautiful cover art and system badges.
+          Launch any game instantly with save state support.
+          Customize on-screen controls for portrait or landscape play.
+          Apply CRT shaders, color profiles, and AMOLED modes.
+          Sync your library and saves across devices with Google Drive.
+          Retro Station — your games, anywhere.
+
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'index.html'
+      - 'package.json'
+      - 'vite.config.js'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: demo-video-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build production bundle
+        run: npm run build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+          retention-days: 1
+
+      - name: Deploy to GitHub Pages
+        if: github.ref == 'refs/heads/main'
+        uses: actions/deploy-pages@v4
+        with:
+          path: dist
+
+  generate-video:
+    needs: build-and-deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Playwright and dependencies
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Install Python and edge-tts
+        run: |
+          sudo apt-get update && sudo apt-get install -y python3 python3-pip ffmpeg
+          pip3 install edge-tts
+
+      - name: Start preview server
+        run: |
+          npx serve -s dist -l 4173 &
+          sleep 3
+          echo "PREVIEW_URL=http://localhost:4173" >> $GITHUB_ENV
+
+      - name: Generate narration audio
+        id: narration
+        run: |
+          cat > /tmp/demo_script.txt << 'EOF'
+          ${{ github.event.inputs.demo_script }}
+          EOF
+          python3 -c "
+import asyncio
+import edge_tts
+import sys
+
+async def main():
+    with open('/tmp/demo_script.txt', 'r') as f:
+        text = f.read().strip()
+    communicate = edge_tts.Communicate(text, 'en-US-AriaNeural')
+    await communicate.save('/tmp/narration.mp3')
+
+asyncio.run(main())
+"
+
+      - name: Get audio duration
+        id: audio_duration
+        run: |
+          duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 /tmp/narration.mp3)
+          echo "duration=$duration" >> $GITHUB_OUTPUT
+
+      - name: Capture frames with Playwright
+        id: capture
+        run: |
+          cat > /tmp/capture_frames.py << 'PYEOF'
+import asyncio
+import os
+import math
+from playwright.async_api import async_playwright
+
+PREVIEW_URL = os.environ['PREVIEW_URL']
+AUDIO_DURATION = float(os.environ['AUDIO_DURATION'])
+OUTPUT_DIR = '/tmp/frames'
+FPS = 30
+
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+total_frames = math.ceil(AUDIO_DURATION * FPS)
+frame_interval = AUDIO_DURATION / total_frames
+
+async def main():
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page(viewport={'width': 1280, 'height': 720})
+        
+        await page.goto(PREVIEW_URL, wait_until='networkidle')
+        await page.wait_for_timeout(1000)
+        
+        # Demo sequence - adapt these selectors to your actual UI
+        demo_steps = [
+            (lambda pg: pg.wait_for_timeout(500), 1.0, "Initial load - library view"),
+            (lambda pg: pg.click('text=Add ROM') if pg.locator('text=Add ROM').is_visible() else pg.wait_for_timeout(500), 1.5, "Click Add ROM"),
+            (lambda pg: pg.wait_for_timeout(1000), 2.0, "Show file picker (simulated)"),
+            (lambda pg: pg.keyboard.press('Escape'), 0.5, "Close modal"),
+            (lambda pg: pg.locator('[data-game-id]').first.click() if pg.locator('[data-game-id]').count() > 0 else pg.wait_for_timeout(500), 1.5, "Select first game"),
+            (lambda pg: pg.wait_for_timeout(2000), 3.0, "Game launching - in-game view"),
+            (lambda pg: pg.keyboard.press('Escape'), 0.5, "Open in-game menu"),
+            (lambda pg: pg.wait_for_timeout(1000), 1.5, "Show save/load slots"),
+            (lambda pg: pg.keyboard.press('Escape'), 0.5, "Close menu"),
+            (lambda pg: pg.wait_for_timeout(500), 1.0, "Show gameplay"),
+            (lambda pg: pg.click('text=Settings') if pg.locator('text=Settings').is_visible() else pg.wait_for_timeout(500), 1.5, "Open settings"),
+            (lambda pg: pg.wait_for_timeout(1000), 2.0, "Show themes and shaders"),
+            (lambda pg: pg.keyboard.press('Escape'), 0.5, "Close settings"),
+            (lambda pg: pg.wait_for_timeout(500), 1.0, "Return to library"),
+        ]
+        
+        frame_count = 0
+        
+        for action_fn, step_duration, description in demo_steps:
+            step_frames = max(1, math.ceil(step_duration * FPS))
+            
+            print(f"Step: {description} ({step_frames} frames)")
+            
+            try:
+                await action_fn(page)
+            except Exception as e:
+                print(f"Action failed: {e}")
+                await page.wait_for_timeout(int(step_duration * 1000))
+            
+            for i in range(step_frames):
+                if frame_count >= total_frames:
+                    break
+                await page.screenshot(path=f'{OUTPUT_DIR}/frame_{frame_count:05d}.png')
+                frame_count += 1
+                await page.wait_for_timeout(int(frame_interval * 1000))
+        
+        while frame_count < total_frames:
+            import shutil
+            last_frame = f'{OUTPUT_DIR}/frame_{frame_count-1:05d}.png'
+            next_frame = f'{OUTPUT_DIR}/frame_{frame_count:05d}.png'
+            shutil.copy(last_frame, next_frame)
+            frame_count += 1
+        
+        await browser.close()
+        print(f"Captured {frame_count} frames")
+
+asyncio.run(main())
+PYEOF
+          python3 /tmp/capture_frames.py
+        env:
+          PREVIEW_URL: ${{ env.PREVIEW_URL }}
+          AUDIO_DURATION: ${{ steps.audio_duration.outputs.duration }}
+
+      - name: Assemble video with FFmpeg
+        run: |
+          ffmpeg -y \
+            -framerate 30 \
+            -i /tmp/frames/frame_%05d.png \
+            -i /tmp/narration.mp3 \
+            -c:v libx264 \
+            -preset medium \
+            -crf 20 \
+            -pix_fmt yuv420p \
+            -c:a aac \
+            -b:a 128k \
+            -shortest \
+            -movflags +faststart \
+            /tmp/retro-station-demo.mp4
+
+      - name: Upload demo video artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: retro-station-demo-video
+          path: /tmp/retro-station-demo.mp4
+          retention-days: 30
+
+      - name: Upload narration audio (for reference)
+        uses: actions/upload-artifact@v4
+        with:
+          name: narration-audio
+          path: /tmp/narration.mp3
+          retention-days: 30
+
+  notify:
+    needs: generate-video
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Download video artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: retro-station-demo-video
+          path: /tmp/video
+
+      - name: Show video info
+        run: |
+          ls -lh /tmp/video/
+          ffprobe /tmp/video/retro-station-demo.mp4
+
+      - name: Comment on workflow run
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "✅ Demo video generated successfully!"
+          echo "📥 Download from the workflow artifacts: 'retro-station-demo-video'"
+          echo "🎬 Video: retro-station-demo.mp4"
