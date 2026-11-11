@@ -239,32 +239,63 @@ export const InGameView: React.FC<InGameViewProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLandscape, hidePad, customizing, showCartridgeTools]);
 
+  // ── Pad Opacity / Transparency ───────────────────────────────────────────
+  const [padOpacity, setPadOpacityState] = React.useState<number>(() => {
+    try {
+      const v = parseFloat(localStorage.getItem('retro_pad_opacity') || '1');
+      return isNaN(v) ? 1 : v;
+    } catch {
+      return 1;
+    }
+  });
+  const setPadOpacity = React.useCallback((v: number) => {
+    setPadOpacityState(v);
+    try {
+      localStorage.setItem('retro_pad_opacity', String(v));
+    } catch {}
+  }, []);
+
   const padFitScale = React.useMemo(() => {
     if (!deckBox.w || !deckBox.h) return 1;
     return Math.max(0.55, Math.min(1, Math.min(deckBox.w / 440, deckBox.h / 540)));
   }, [deckBox]);
 
+  const activePadLayout = React.useMemo(() => {
+    const base = isLandscape ? DEFAULT_LANDSCAPE_PAD_LAYOUT : DEFAULT_PAD_LAYOUT;
+    return { ...base, ...padLayout };
+  }, [padLayout, isLandscape]);
+
   const scaledPadLayout = React.useMemo(() => {
-    if (padFitScale === 1) return padLayout;
-    const out = { ...padLayout } as PadLayout;
+    const merged = { ...(isLandscape ? DEFAULT_LANDSCAPE_PAD_LAYOUT : DEFAULT_PAD_LAYOUT), ...padLayout };
+    if (padFitScale >= 0.999) return merged;
+    const out = { ...merged } as PadLayout;
     (Object.keys(out) as PadGroupId[]).forEach((k) => {
-      out[k] = { ...out[k], s: (out[k].s || 1) * padFitScale };
+      const g = out[k];
+      if (g && k !== 'screen') {
+        out[k] = { ...g, s: (g.s || 1) * padFitScale };
+      }
     });
     return out;
-  }, [padLayout, padFitScale]);
+  }, [padLayout, padFitScale, isLandscape]);
 
   const movePad = React.useCallback(
     (id: PadGroupId, x: number, y: number) => {
-      setPadLayout((l) => ({ ...l, [id]: { ...l[id], x, y } }));
+      setPadLayout((l) => {
+        const curr = l[id] || (isLandscape ? DEFAULT_LANDSCAPE_PAD_LAYOUT[id] : DEFAULT_PAD_LAYOUT[id]) || { x: 0.5, y: 0.5, s: 1 };
+        return { ...l, [id]: { ...curr, x, y } };
+      });
     },
-    [setPadLayout]
+    [setPadLayout, isLandscape]
   );
 
   const scalePad = React.useCallback(
     (id: PadGroupId, s: number) => {
-      setPadLayout((l) => ({ ...l, [id]: { ...l[id], s } }));
+      setPadLayout((l) => {
+        const curr = l[id] || (isLandscape ? DEFAULT_LANDSCAPE_PAD_LAYOUT[id] : DEFAULT_PAD_LAYOUT[id]) || { x: 0.5, y: 0.5, s: 1 };
+        return { ...l, [id]: { ...curr, s } };
+      });
     },
-    [setPadLayout]
+    [setPadLayout, isLandscape]
   );
 
   const safeBindPadButton = React.useCallback(
@@ -304,9 +335,21 @@ export const InGameView: React.FC<InGameViewProps> = ({
   );
 
   React.useEffect(() => {
-    const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
+    const onFsChange = () => {
+      const isFs = !!(
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).mozFullScreenElement ||
+        (document as any).msFullscreenElement
+      );
+      setIsFullscreen(isFs);
+    };
     document.addEventListener('fullscreenchange', onFsChange);
-    return () => document.removeEventListener('fullscreenchange', onFsChange);
+    document.addEventListener('webkitfullscreenchange', onFsChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange);
+      document.removeEventListener('webkitfullscreenchange', onFsChange);
+    };
   }, []);
 
   React.useEffect(() => {
@@ -611,6 +654,122 @@ export const InGameView: React.FC<InGameViewProps> = ({
     </div>
   );
 
+  const renderBtnL = () => (
+    <div
+      onClick={() => {
+        if (customizing) setSelectedPad('btnL');
+      }}
+      className={`rounded-xl transition ${
+        customizing && selectedPad === 'btnL'
+          ? 'border-2 border-emerald-400 ring-2 ring-emerald-400/50 cursor-pointer'
+          : customizing
+          ? 'border-2 border-white/30 cursor-pointer'
+          : ''
+      }`}
+    >
+      <button
+        type="button"
+        {...safeBindPadButton('btnL')}
+        className={`${isLandscape ? 'w-20 h-10' : 'w-16 h-8'} rounded-xl font-mono font-black text-xs shadow-md flex items-center justify-center tactile-btn touch-none select-none ${
+          shaders.amoled
+            ? 'bg-zinc-950 text-zinc-200 border border-white/10 active:bg-emerald-500 active:text-zinc-950'
+            : 'bg-zinc-900/90 text-zinc-100 border border-white/15 active:bg-emerald-500 active:text-zinc-950 shadow-inner'
+        }`}
+        aria-label="L Shoulder"
+      >
+        L
+      </button>
+    </div>
+  );
+
+  const renderBtnR = () => (
+    <div
+      onClick={() => {
+        if (customizing) setSelectedPad('btnR');
+      }}
+      className={`rounded-xl transition ${
+        customizing && selectedPad === 'btnR'
+          ? 'border-2 border-emerald-400 ring-2 ring-emerald-400/50 cursor-pointer'
+          : customizing
+          ? 'border-2 border-white/30 cursor-pointer'
+          : ''
+      }`}
+    >
+      <button
+        type="button"
+        {...safeBindPadButton('btnR')}
+        className={`${isLandscape ? 'w-20 h-10' : 'w-16 h-8'} rounded-xl font-mono font-black text-xs shadow-md flex items-center justify-center tactile-btn touch-none select-none ${
+          shaders.amoled
+            ? 'bg-zinc-950 text-zinc-200 border border-white/10 active:bg-emerald-500 active:text-zinc-950'
+            : 'bg-zinc-900/90 text-zinc-100 border border-white/15 active:bg-emerald-500 active:text-zinc-950 shadow-inner'
+        }`}
+        aria-label="R Shoulder"
+      >
+        R
+      </button>
+    </div>
+  );
+
+  const renderSelect = () => (
+    <div
+      onClick={() => {
+        if (customizing) setSelectedPad('select');
+      }}
+      className={`p-1 rounded-xl transition ${
+        customizing && selectedPad === 'select'
+          ? 'border-2 border-emerald-400 ring-2 ring-emerald-400/50 cursor-pointer'
+          : customizing
+          ? 'border-2 border-white/30 cursor-pointer'
+          : ''
+      }`}
+    >
+      <button
+        type="button"
+        {...safeBindPadButton('select')}
+        className="flex flex-col items-center gap-1.5 group touch-none select-none"
+        aria-label="Select button"
+      >
+        <div
+          className="rounded-full gb-rubber-pill -rotate-[25deg]"
+          style={{ width: '3.2rem', height: '0.95rem' }}
+        />
+        <span className="text-[10px] font-black italic tracking-widest text-[#8d1d5c] dark:text-zinc-400 uppercase select-none">
+          SELECT
+        </span>
+      </button>
+    </div>
+  );
+
+  const renderStart = () => (
+    <div
+      onClick={() => {
+        if (customizing) setSelectedPad('start');
+      }}
+      className={`p-1 rounded-xl transition ${
+        customizing && selectedPad === 'start'
+          ? 'border-2 border-emerald-400 ring-2 ring-emerald-400/50 cursor-pointer'
+          : customizing
+          ? 'border-2 border-white/30 cursor-pointer'
+          : ''
+      }`}
+    >
+      <button
+        type="button"
+        {...safeBindPadButton('start')}
+        className="flex flex-col items-center gap-1.5 group touch-none select-none"
+        aria-label="Start button"
+      >
+        <div
+          className="rounded-full gb-rubber-pill -rotate-[25deg]"
+          style={{ width: '3.2rem', height: '0.95rem' }}
+        />
+        <span className="text-[10px] font-black italic tracking-widest text-[#8d1d5c] dark:text-zinc-400 uppercase select-none">
+          START
+        </span>
+      </button>
+    </div>
+  );
+
   const renderSystem = () => (
     <div className="flex items-center justify-center gap-7 pt-1 pb-1 select-none touch-none">
       <button
@@ -872,7 +1031,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
 
   const renderCustomizer = () => {
     const activeKey = selectedPad;
-    const currentScale = padLayout[activeKey]?.s || 1;
+    const currentScale = padLayout[activeKey]?.s ?? (isLandscape ? DEFAULT_LANDSCAPE_PAD_LAYOUT[activeKey]?.s : DEFAULT_PAD_LAYOUT[activeKey]?.s) ?? 1;
     const isTransport = activeKey === 'transport';
     const isScreen = activeKey === 'screen';
 
@@ -899,7 +1058,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
           <div className="flex items-center gap-1.5">
             <GripHorizontal className="w-4 h-4 text-emerald-400" />
             <span className="font-extrabold text-xs text-emerald-300">
-              {PAD_LABELS[selectedPad]}
+              {PAD_LABELS[selectedPad] || 'Controls'}
             </span>
           </div>
           <span className="text-[10px] text-zinc-400 font-mono">
@@ -1074,13 +1233,43 @@ export const InGameView: React.FC<InGameViewProps> = ({
           </div>
         )}
 
+        {/* Touch Controls Opacity / Transparency Slider */}
+        <div className="space-y-1 pt-1.5 border-t border-zinc-800/80">
+          <div className="flex items-center justify-between text-[11px] font-bold text-zinc-300">
+            <span>Button Opacity</span>
+            <span className="text-[10px] font-mono text-emerald-400">
+              {Math.round(padOpacity * 100)}%
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="range"
+              min="0.15"
+              max="1"
+              step="0.05"
+              value={padOpacity}
+              onChange={(e) => setPadOpacity(parseFloat(e.target.value))}
+              className="flex-1 accent-emerald-500 cursor-pointer"
+              aria-label="Touch controls opacity"
+            />
+            <button
+              type="button"
+              onClick={() => setPadOpacity(1)}
+              className="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-mono font-bold transition active:scale-95"
+              title="Reset opacity to 100%"
+            >
+              100%
+            </button>
+          </div>
+        </div>
+
         {/* Pad Selection Pills (both portrait and landscape) */}
-        <div className="grid grid-cols-5 gap-1 pt-1 border-t border-zinc-800/80">
-          {(['screen', 'dpad', 'actions', 'system', 'transport'] as PadGroupId[]).map((key) => (
+        <div className="flex flex-wrap gap-1 pt-1 border-t border-zinc-800/80">
+          {(['dpad', 'actions', 'btnL', 'btnR', 'select', 'start', 'transport', 'screen'] as PadGroupId[]).map((key) => (
             <button
               key={key}
               onClick={() => setSelectedPad(key)}
-              className={`py-1 px-1 rounded-lg text-[10px] font-bold border transition ${
+              className={`py-1 px-2 rounded-lg text-[10px] font-bold border transition ${
                 selectedPad === key
                   ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
                   : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'
@@ -1092,8 +1281,14 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 ? 'D-Pad'
                 : key === 'actions'
                 ? 'ABXY'
-                : key === 'system'
-                ? 'System'
+                : key === 'btnL'
+                ? 'L'
+                : key === 'btnR'
+                ? 'R'
+                : key === 'select'
+                ? 'Select'
+                : key === 'start'
+                ? 'Start'
                 : '3-Btn'}
             </button>
           ))}
@@ -1130,14 +1325,6 @@ export const InGameView: React.FC<InGameViewProps> = ({
         } overflow-hidden ${
           shaders.amoled ? 'bg-black border-zinc-900' : theme.shellBg
         }`}
-        style={
-          isLandscape
-            ? {
-                paddingLeft: 'max(env(safe-area-inset-left, 0px), 6px)',
-                paddingRight: 'max(env(safe-area-inset-right, 0px), 6px)',
-              }
-            : undefined
-        }
       >
         {/* Tap & Swipe zone at top: reveals the auto-hiding top bar */}
         <button
@@ -1218,15 +1405,16 @@ export const InGameView: React.FC<InGameViewProps> = ({
             </button>
             <button
               onClick={() => setInGameMenuOpen((o) => !o)}
-              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition active:scale-95 ${
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition active:scale-95 shadow-sm ${
                 inGameMenuOpen
-                  ? theme.accentBg
-                  : 'bg-zinc-900/90 hover:bg-zinc-800 text-zinc-100 border-white/10'
+                  ? `${theme.accentBg} text-white shadow-emerald-500/20`
+                  : 'bg-zinc-900/90 hover:bg-zinc-800 text-zinc-100 border-white/10 hover:border-white/20'
               }`}
-              aria-label="Menu"
-              title="Menu"
+              aria-label="Pause Menu & Controls"
+              title="Pause Menu & Controls"
             >
-              <Settings className="w-4 h-4" />
+              <Sliders className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="font-sans text-[11px] font-extrabold tracking-wide uppercase">Menu</span>
             </button>
           </div>
         </div>
@@ -1333,11 +1521,11 @@ export const InGameView: React.FC<InGameViewProps> = ({
                     setCustomizing(true);
                     setSelectedPad('dpad');
                   }}
-                  className="flex flex-col items-center justify-center gap-1 p-2 rounded-xl bg-zinc-900/80 hover:bg-zinc-900 border border-zinc-800 text-zinc-300 text-center transition active:scale-95"
-                  title="Reposition and scale touch controls"
+                  className="flex flex-col items-center justify-center gap-1 p-2 rounded-xl bg-zinc-900/80 hover:bg-zinc-900 border border-zinc-800 text-zinc-200 text-center transition active:scale-95 hover:border-emerald-500/40"
+                  title="Configure touch controls, opacity & layout"
                 >
-                  <Sliders className="w-4 h-4 text-sky-400" />
-                  <span className="text-[11px] font-bold">Edit Pad</span>
+                  <Sliders className="w-4 h-4 text-emerald-400" />
+                  <span className="text-[11px] font-bold">Controls</span>
                 </button>
 
                 <button
@@ -1492,7 +1680,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
               : `max(0px, max(env(safe-area-inset-top, 0px), calc(24px + ${(screenY - 0.5) * 35}vh)))`,
             paddingBottom: shaders.edgeToEdge
               ? (isLandscape ? '0px' : undefined)
-              : (isLandscape ? 'max(env(safe-area-inset-bottom, 0px), 6px)' : undefined),
+              : (isLandscape ? '6px' : undefined),
           }}
         >
           {/* Permanent Minimal Hardware Bezel Status Indicator (FPS LED + Mute Indicator) */}
@@ -1510,6 +1698,12 @@ export const InGameView: React.FC<InGameViewProps> = ({
               <span className="text-[9px] font-mono font-bold text-zinc-300">
                 {isGba ? 'GBA' : (fps || 60)}
               </span>
+              {isFastForward && (
+                <span className="flex items-center gap-0.5 text-sky-400 font-bold text-[9px] font-mono">
+                  <FastForward className="w-2.5 h-2.5" />
+                  <span>{ffSpeed}x</span>
+                </span>
+              )}
               {isMuted && <VolumeX className="w-2.5 h-2.5 text-rose-400" />}
             </div>
           )}
@@ -1567,6 +1761,17 @@ export const InGameView: React.FC<InGameViewProps> = ({
               }}
             >
               {renderGameScreen()}
+
+              {/* Top-Right On-Screen Fast-Forward Indicator */}
+              {isFastForward && (
+                <div
+                  className="absolute top-2 right-2 z-30 pointer-events-none select-none flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/85 border border-sky-400 text-sky-400 text-[10px] font-mono font-black shadow-lg backdrop-blur-sm animate-pulse"
+                  aria-label={`Fast forwarding at ${ffSpeed}x speed`}
+                >
+                  <FastForward className="w-3.5 h-3.5" />
+                  <span>{ffSpeed}x</span>
+                </div>
+              )}
 
               {/* Direct Vertical Screen Drag Handle in Customizing Mode (Strictly Centered Horizontally) */}
               {customizing && (
@@ -1755,6 +1960,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
               onMove={movePad}
               onSnapGuide={setActiveSnapGuide}
               deckRef={landscapeDeckRef}
+              opacity={padOpacity}
             >
               <div className="pointer-events-auto">
                 {renderDpad()}
@@ -1771,20 +1977,89 @@ export const InGameView: React.FC<InGameViewProps> = ({
               onMove={movePad}
               onSnapGuide={setActiveSnapGuide}
               deckRef={landscapeDeckRef}
+              opacity={padOpacity}
             >
               <div className="pointer-events-auto">
                 {renderActions()}
               </div>
             </PadGroup>
+
+            {/* Movable L Shoulder */}
+            <PadGroup
+              id="btnL"
+              layout={scaledPadLayout}
+              customizing={customizing}
+              selected={customizing && selectedPad === 'btnL'}
+              onSelect={setSelectedPad}
+              onMove={movePad}
+              onSnapGuide={setActiveSnapGuide}
+              deckRef={landscapeDeckRef}
+              opacity={padOpacity}
+            >
+              <div className="pointer-events-auto">
+                {renderBtnL()}
+              </div>
+            </PadGroup>
+
+            {/* Movable R Shoulder */}
+            <PadGroup
+              id="btnR"
+              layout={scaledPadLayout}
+              customizing={customizing}
+              selected={customizing && selectedPad === 'btnR'}
+              onSelect={setSelectedPad}
+              onMove={movePad}
+              onSnapGuide={setActiveSnapGuide}
+              deckRef={landscapeDeckRef}
+              opacity={padOpacity}
+            >
+              <div className="pointer-events-auto">
+                {renderBtnR()}
+              </div>
+            </PadGroup>
+
+            {/* Movable Select */}
+            <PadGroup
+              id="select"
+              layout={scaledPadLayout}
+              customizing={customizing}
+              selected={customizing && selectedPad === 'select'}
+              onSelect={setSelectedPad}
+              onMove={movePad}
+              onSnapGuide={setActiveSnapGuide}
+              deckRef={landscapeDeckRef}
+              opacity={padOpacity}
+            >
+              <div className="pointer-events-auto">
+                {renderSelect()}
+              </div>
+            </PadGroup>
+
+            {/* Movable Start */}
+            <PadGroup
+              id="start"
+              layout={scaledPadLayout}
+              customizing={customizing}
+              selected={customizing && selectedPad === 'start'}
+              onSelect={setSelectedPad}
+              onMove={movePad}
+              onSnapGuide={setActiveSnapGuide}
+              deckRef={landscapeDeckRef}
+              opacity={padOpacity}
+            >
+              <div className="pointer-events-auto">
+                {renderStart()}
+              </div>
+            </PadGroup>
           </div>
         )}
 
-        {/* 4. LANDSCAPE FLANKS: BEZELS, SHOULDERS & SYSTEM BUTTONS */}
+        {/* 4. LANDSCAPE FLANKS: BEZELS & GRIP ACCENTS */}
         {isLandscape && (!hidePad || customizing) && (
           <>
             {/* Left Flank (order: -1 -> placed visually on the LEFT) */}
             <div
-              className={`flex-none ${isGba ? 'w-[96px] sm:w-[110px] md:w-[124px]' : 'w-[112px] sm:w-[130px] md:w-[150px]'} h-full flex flex-col justify-between items-center py-3 px-2 select-none touch-none z-10 ${
+              className={`flex-none ${isGba ? 'w-[96px] sm:w-[110px] md:w-[124px]' : 'w-[112px] sm:w-[130px] md:w-[150px]'} h-full flex flex-col justify-between items-center py-3 px-2 select-none touch-none z-10 pointer-events-none ${
                 shaders.amoled ? 'bg-black border-r border-zinc-900' : `${theme.deckBg} border-r border-white/5`
               }`}
               style={{
@@ -1794,47 +2069,18 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 userSelect: 'none',
               }}
             >
-              {/* L Shoulder Button */}
-              <div className="w-full flex justify-start pl-1 pointer-events-auto">
-                <button
-                  type="button"
-                  {...safeBindPadButton('btnL')}
-                  className={`w-20 h-10 rounded-xl font-mono font-black text-xs shadow-lg flex items-center justify-center tactile-btn touch-none select-none ${
-                    shaders.amoled
-                      ? 'bg-zinc-950 text-zinc-200 border border-white/10 hover:bg-zinc-900'
-                      : 'bg-zinc-950/80 text-zinc-200 border border-white/10 hover:bg-zinc-900'
-                  }`}
-                  aria-label="L Shoulder"
-                >
-                  L
-                </button>
+              <div className="w-full flex items-center justify-start pl-2 pt-1 opacity-25 text-[10px] font-mono font-bold tracking-widest text-zinc-400 select-none">
+                L
               </div>
-
-              {/* Flex spacer for center area where D-pad floats */}
               <div className="flex-1" />
-
-              {/* SELECT Button */}
-              <div className="pb-1 pointer-events-auto" style={{ transform: `scale(${padLayout.system?.s || 1})` }}>
-                <button
-                  type="button"
-                  {...safeBindPadButton('select')}
-                  className="flex flex-col items-center gap-1 group touch-none select-none"
-                >
-                  <div
-                    className={`w-12 h-3.5 rounded-full ${
-                      shaders.amoled ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-800 border-zinc-600'
-                    } group-active:bg-emerald-400 border shadow-inner -rotate-12 transition`}
-                  />
-                  <span className="text-[9px] font-black tracking-widest text-zinc-400 uppercase">
-                    SELECT
-                  </span>
-                </button>
+              <div className="w-full flex items-center justify-start pl-2 pb-1 opacity-25 text-[9px] font-mono font-bold tracking-widest text-zinc-400 select-none">
+                SELECT
               </div>
             </div>
 
             {/* Right Flank (order: 1 -> placed visually on the RIGHT) */}
             <div
-              className={`flex-none ${isGba ? 'w-[96px] sm:w-[110px] md:w-[124px]' : 'w-[112px] sm:w-[130px] md:w-[150px]'} h-full flex flex-col justify-between items-center py-3 px-2 select-none touch-none z-10 ${
+              className={`flex-none ${isGba ? 'w-[96px] sm:w-[110px] md:w-[124px]' : 'w-[112px] sm:w-[130px] md:w-[150px]'} h-full flex flex-col justify-between items-center py-3 px-2 select-none touch-none z-10 pointer-events-none ${
                 shaders.amoled ? 'bg-black border-l border-zinc-900' : `${theme.deckBg} border-l border-white/5`
               }`}
               style={{
@@ -1844,41 +2090,12 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 userSelect: 'none',
               }}
             >
-              {/* R Shoulder Button */}
-              <div className="w-full flex justify-end pr-1 pointer-events-auto">
-                <button
-                  type="button"
-                  {...safeBindPadButton('btnR')}
-                  className={`w-20 h-10 rounded-xl font-mono font-black text-xs shadow-lg flex items-center justify-center tactile-btn touch-none select-none ${
-                    shaders.amoled
-                      ? 'bg-zinc-950 text-zinc-200 border border-white/10 hover:bg-zinc-900'
-                      : 'bg-zinc-950/80 text-zinc-200 border border-white/10 hover:bg-zinc-900'
-                  }`}
-                  aria-label="R Shoulder"
-                >
-                  R
-                </button>
+              <div className="w-full flex items-center justify-end pr-2 pt-1 opacity-25 text-[10px] font-mono font-bold tracking-widest text-zinc-400 select-none">
+                R
               </div>
-
-              {/* Flex spacer for center area where Actions float */}
               <div className="flex-1" />
-
-              {/* START Button */}
-              <div className="pb-1 pointer-events-auto" style={{ transform: `scale(${padLayout.system?.s || 1})` }}>
-                <button
-                  type="button"
-                  {...safeBindPadButton('start')}
-                  className="flex flex-col items-center gap-1 group touch-none select-none"
-                >
-                  <div
-                    className={`w-12 h-3.5 rounded-full ${
-                      shaders.amoled ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-800 border-zinc-600'
-                    } group-active:bg-emerald-400 border shadow-inner -rotate-12 transition`}
-                  />
-                  <span className="text-[9px] font-black tracking-widest text-zinc-400 uppercase">
-                    START
-                  </span>
-                </button>
+              <div className="w-full flex items-center justify-end pr-2 pb-1 opacity-25 text-[9px] font-mono font-bold tracking-widest text-zinc-400 select-none">
+                START
               </div>
             </div>
           </>
@@ -1940,34 +2157,42 @@ export const InGameView: React.FC<InGameViewProps> = ({
               </div>
             )}
 
-            {/* L & R Shoulder Buttons in Portrait */}
+            {/* Movable L Shoulder Button in Portrait */}
             {(!hidePad || customizing) && (
-              <div className="absolute top-2.5 left-4 right-4 z-20 flex justify-between pointer-events-none">
-                <button
-                  type="button"
-                  {...safeBindPadButton('btnL')}
-                  className={`w-16 h-8 rounded-xl font-mono font-black text-xs shadow-md pointer-events-auto flex items-center justify-center tactile-btn touch-none select-none ${
-                    shaders.amoled
-                      ? 'bg-zinc-950 text-zinc-200 border border-white/10 hover:bg-zinc-900'
-                      : 'bg-zinc-950/80 text-zinc-200 border border-white/10 hover:bg-zinc-900'
-                  }`}
-                  aria-label="L Shoulder"
-                >
-                  L
-                </button>
-                <button
-                  type="button"
-                  {...safeBindPadButton('btnR')}
-                  className={`w-16 h-8 rounded-xl font-mono font-black text-xs shadow-md pointer-events-auto flex items-center justify-center tactile-btn touch-none select-none ${
-                    shaders.amoled
-                      ? 'bg-zinc-950 text-zinc-200 border border-white/10 hover:bg-zinc-900'
-                      : 'bg-zinc-950/80 text-zinc-200 border border-white/10 hover:bg-zinc-900'
-                  }`}
-                  aria-label="R Shoulder"
-                >
-                  R
-                </button>
-              </div>
+              <PadGroup
+                id="btnL"
+                layout={activePadLayout}
+                customizing={customizing}
+                selected={customizing && selectedPad === 'btnL'}
+                onSelect={setSelectedPad}
+                onMove={movePad}
+                onSnapGuide={setActiveSnapGuide}
+                deckRef={deckRef}
+                opacity={padOpacity}
+              >
+                <div className="pointer-events-auto">
+                  {renderBtnL()}
+                </div>
+              </PadGroup>
+            )}
+
+            {/* Movable R Shoulder Button in Portrait */}
+            {(!hidePad || customizing) && (
+              <PadGroup
+                id="btnR"
+                layout={activePadLayout}
+                customizing={customizing}
+                selected={customizing && selectedPad === 'btnR'}
+                onSelect={setSelectedPad}
+                onMove={movePad}
+                onSnapGuide={setActiveSnapGuide}
+                deckRef={deckRef}
+                opacity={padOpacity}
+              >
+                <div className="pointer-events-auto">
+                  {renderBtnR()}
+                </div>
+              </PadGroup>
             )}
 
             <PadGroup
@@ -1979,6 +2204,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
               onMove={movePad}
               onSnapGuide={setActiveSnapGuide}
               deckRef={deckRef}
+              opacity={padOpacity}
             >
               {renderTransport(false)}
             </PadGroup>
@@ -1993,8 +2219,11 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 onMove={movePad}
                 onSnapGuide={setActiveSnapGuide}
                 deckRef={deckRef}
+                opacity={padOpacity}
               >
-                {renderDpad()}
+                <div className="pointer-events-auto">
+                  {renderDpad()}
+                </div>
               </PadGroup>
             )}
 
@@ -2008,8 +2237,11 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 onMove={movePad}
                 onSnapGuide={setActiveSnapGuide}
                 deckRef={deckRef}
+                opacity={padOpacity}
               >
-                {renderActions()}
+                <div className="pointer-events-auto">
+                  {renderActions()}
+                </div>
               </PadGroup>
             )}
 
@@ -2023,31 +2255,43 @@ export const InGameView: React.FC<InGameViewProps> = ({
               <div className="w-1.5 h-7 rounded-full bg-black/70 shadow-inner" />
             </div>
 
+            {/* Movable Select Button in Portrait */}
             {(!hidePad || customizing) && (
               <PadGroup
-                id="system"
-                layout={scaledPadLayout}
+                id="select"
+                layout={activePadLayout}
                 customizing={customizing}
-                selected={customizing && selectedPad === 'system'}
+                selected={customizing && selectedPad === 'select'}
                 onSelect={setSelectedPad}
                 onMove={movePad}
                 onSnapGuide={setActiveSnapGuide}
                 deckRef={deckRef}
+                opacity={padOpacity}
               >
-                {renderSystem()}
+                <div className="pointer-events-auto">
+                  {renderSelect()}
+                </div>
               </PadGroup>
             )}
-          </div>
-        )}
 
-        {/* Persistent Fast-Forward Multiplier Indicator (both orientations) */}
-        {isFastForward && (
-          <div
-            className="absolute top-2.5 right-3 z-40 pointer-events-none select-none flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-400 text-zinc-950 text-[10px] font-mono font-black shadow-lg"
-            aria-label={`Fast forwarding at ${ffSpeed} times speed`}
-          >
-            <FastForward className="w-3 h-3" />
-            <span>{ffSpeed}x</span>
+            {/* Movable Start Button in Portrait */}
+            {(!hidePad || customizing) && (
+              <PadGroup
+                id="start"
+                layout={activePadLayout}
+                customizing={customizing}
+                selected={customizing && selectedPad === 'start'}
+                onSelect={setSelectedPad}
+                onMove={movePad}
+                onSnapGuide={setActiveSnapGuide}
+                deckRef={deckRef}
+                opacity={padOpacity}
+              >
+                <div className="pointer-events-auto">
+                  {renderStart()}
+                </div>
+              </PadGroup>
+            )}
           </div>
         )}
 

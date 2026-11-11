@@ -65,7 +65,11 @@ export const DEFAULT_PAD_LAYOUT: PadLayout = {
   dpad: { x: 0.22, y: 0.44, s: 1 },
   actions: { x: 0.78, y: 0.42, s: 1 },
   system: { x: 0.5, y: 0.82, s: 1 },
-  screen: { x: 0.5, y: 0.5, s: 1 }
+  screen: { x: 0.5, y: 0.5, s: 1 },
+  btnL: { x: 0.15, y: 0.08, s: 1 },
+  btnR: { x: 0.85, y: 0.08, s: 1 },
+  select: { x: 0.40, y: 0.82, s: 1 },
+  start: { x: 0.60, y: 0.82, s: 1 }
 };
 
 export const DEFAULT_LANDSCAPE_PAD_LAYOUT: PadLayout = {
@@ -73,7 +77,11 @@ export const DEFAULT_LANDSCAPE_PAD_LAYOUT: PadLayout = {
   dpad: { x: 0.11, y: 0.52, s: 1 },
   actions: { x: 0.89, y: 0.52, s: 1 },
   system: { x: 0.5, y: 0.86, s: 1 },
-  screen: { x: 0.5, y: 0.5, s: 1 }
+  screen: { x: 0.5, y: 0.5, s: 1 },
+  btnL: { x: 0.05, y: 0.12, s: 1 },
+  btnR: { x: 0.95, y: 0.12, s: 1 },
+  select: { x: 0.05, y: 0.90, s: 1 },
+  start: { x: 0.95, y: 0.90, s: 1 }
 };
 
 export const PAD_LABELS: Record<keyof PadLayout, string> = {
@@ -81,7 +89,11 @@ export const PAD_LABELS: Record<keyof PadLayout, string> = {
   transport: 'Pause / Rewind / Speed',
   dpad: 'D-Pad',
   actions: 'Action Buttons (A / B)',
-  system: 'Select / Start'
+  system: 'Select / Start',
+  btnL: 'L Shoulder',
+  btnR: 'R Shoulder',
+  select: 'Select Button',
+  start: 'Start Button'
 };
 
 export type LayoutSlot = 1 | 2 | 3;

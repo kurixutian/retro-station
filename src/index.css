@@ -9,6 +9,12 @@
 }
 
 /* Safe-area insets for fullscreen notch & mobile home-bars */
+:fullscreen,
+:-webkit-full-screen {
+  margin: 0;
+  padding: 0;
+}
+
 html, body {
   height: 100%;
   min-height: 100%;

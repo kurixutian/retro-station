@@ -18,6 +18,7 @@ interface PadGroupProps {
   onMove: (id: PadGroupId, x: number, y: number) => void;
   deckRef: React.RefObject<HTMLDivElement | null>;
   onSnapGuide?: (guide: SnapGuide | null) => void;
+  opacity?: number;
   children: React.ReactNode;
 }
 
@@ -30,6 +31,7 @@ export function PadGroup({
   onMove,
   deckRef,
   onSnapGuide,
+  opacity,
   children
 }: PadGroupProps) {
   const g = layout?.[id] || DEFAULT_PAD_LAYOUT[id] || { x: 0.5, y: 0.5, s: 1 };
@@ -49,7 +51,10 @@ export function PadGroup({
         userSelect: 'none'
       }}
     >
-      <div className={customizing ? 'pointer-events-none select-none' : undefined}>
+      <div
+        className={customizing ? 'pointer-events-none select-none' : undefined}
+        style={opacity !== undefined ? { opacity: customizing ? Math.max(0.65, opacity) : opacity } : undefined}
+      >
         {children}
       </div>
       {customizing && (

@@ -69,6 +69,10 @@ export interface PadLayout {
   actions: PadGroupPosition;
   system: PadGroupPosition;
   screen?: PadGroupPosition;
+  btnL?: PadGroupPosition;
+  btnR?: PadGroupPosition;
+  select?: PadGroupPosition;
+  start?: PadGroupPosition;
 }
 
 export type PadGroupId = keyof PadLayout;

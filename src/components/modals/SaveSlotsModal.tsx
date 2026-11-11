@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Download, Trash2, Layers, Camera, X, AlertTriangle, Pencil, ImagePlus, RotateCcw } from 'lucide-react';
+import { Play, Trash2, Layers, Camera, X, AlertTriangle, Pencil, ImagePlus, RotateCcw } from 'lucide-react';
 import { Game, SaveSlot, Theme } from '../../types';
 import { GameCoverImage } from '../common/GameCoverImage';
 import { ModalShell } from '../common/ModalShell';
@@ -96,7 +96,6 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
   const [confirmDeleteSlot, setConfirmDeleteSlot] = useState<number | null>(null);
   const [editingSlot, setEditingSlot] = useState<number | null>(null);
   const [editValue, setEditValue] = useState('');
-  const [saveFormat, setSaveFormat] = useState<'sav' | 'srm'>('sav');
   const artInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleArtworkPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -188,104 +187,55 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
               </button>
             )}
 
-            <div className={`flex items-center rounded-xl p-0.5 shadow-sm border ${
-              theme?.isLight
-                ? 'bg-stone-200 border-amber-600/40 text-stone-900'
-                : 'bg-zinc-900/95 border-amber-500/30 text-amber-300'
-            }`}>
-              <button
-                onClick={() => exportBatterySave(targetGame, saveFormat)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition active:scale-95 ${
-                  theme?.isLight ? 'hover:bg-amber-500/20 text-amber-800' : 'hover:bg-amber-500/15 text-amber-300'
+            <div className="flex items-center gap-1.5 ml-auto">
+              {/* Custom Cartridge Artwork (icon-only beside delete button) */}
+              <label
+                className={`p-2 rounded-xl border tactile-btn transition cursor-pointer flex items-center justify-center ${
+                  theme?.isLight
+                    ? 'bg-stone-200/90 hover:bg-stone-300 text-stone-700 border-stone-300'
+                    : 'bg-zinc-900/90 hover:bg-zinc-800 text-zinc-300 hover:text-white border-zinc-800 hover:border-zinc-600'
                 }`}
-                title={
-                  saveFormat === 'sav'
-                    ? 'Download raw battery RAM (.sav) for cartridge flashers (GB Operator / FlashGBX)'
-                    : 'Download libretro battery RAM (.srm) for RetroArch'
-                }
+                title={targetGame.customCover ? 'Replace custom artwork' : 'Add custom artwork (great for ROM hacks)'}
+                aria-label={targetGame.customCover ? 'Replace custom artwork' : 'Add custom artwork'}
               >
-                <Download className="w-3.5 h-3.5" />
-                <span>Download Battery Save</span>
-              </button>
-              <div className={`h-4 w-px mx-0.5 ${theme?.isLight ? 'bg-stone-300' : 'bg-zinc-800'}`} />
-              <div className="flex items-center gap-0.5 pr-0.5" role="group" aria-label="Battery save format">
-                <button
-                  type="button"
-                  onClick={() => setSaveFormat('sav')}
-                  className={`px-2 py-1 rounded-md text-[10px] font-mono font-bold transition ${
-                    saveFormat === 'sav'
-                      ? 'bg-amber-400 text-zinc-950'
-                      : theme?.isLight
-                      ? 'text-stone-600 hover:text-stone-900'
-                      : 'text-zinc-400 hover:text-zinc-200'
-                  }`}
-                  title="Physical Flasher format (.sav)"
-                >
-                  .SAV
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSaveFormat('srm')}
-                  className={`px-2 py-1 rounded-md text-[10px] font-mono font-bold transition ${
-                    saveFormat === 'srm'
-                      ? 'bg-amber-400 text-zinc-950'
-                      : theme?.isLight
-                      ? 'text-stone-600 hover:text-stone-900'
-                      : 'text-zinc-400 hover:text-zinc-200'
-                  }`}
-                  title="RetroArch format (.srm)"
-                >
-                  .SRM
-                </button>
-              </div>
-            </div>
+                <ImagePlus className="w-4 h-4" />
+                <input
+                  ref={artInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleArtworkPick}
+                />
+              </label>
 
-            {/* Custom Cartridge Artwork (supports ROM hacks that have no online boxart) */}
-            <label
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold tactile-btn transition cursor-pointer ${
-                theme?.isLight
-                  ? 'bg-stone-200/90 hover:bg-stone-300 text-stone-700 border-stone-300'
-                  : 'bg-zinc-900/90 hover:bg-zinc-800 text-zinc-300 hover:text-white border-zinc-800 hover:border-zinc-600'
-              }`}
-              title={targetGame.customCover ? 'Replace custom artwork' : 'Add custom artwork (great for ROM hacks)'}
-            >
-              <ImagePlus className="w-3.5 h-3.5" />
-              <span>Artwork</span>
-              <input
-                ref={artInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleArtworkPick}
-              />
-            </label>
-            {targetGame.customCover && (
+              {targetGame.customCover && (
+                <button
+                  onClick={() => onChangeArtwork?.(targetGame.id, null)}
+                  className={`p-2 rounded-xl border tactile-btn transition ${
+                    theme?.isLight
+                      ? 'bg-stone-200/90 hover:bg-stone-300 text-stone-600 border-stone-300'
+                      : 'bg-zinc-900/90 hover:bg-zinc-800 text-zinc-400 hover:text-white border-zinc-800'
+                  }`}
+                  title="Reset to online artwork"
+                  aria-label="Reset artwork"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                </button>
+              )}
+
               <button
-                onClick={() => onChangeArtwork?.(targetGame.id, null)}
+                onClick={() => setConfirmDeleteRom(true)}
                 className={`p-2 rounded-xl border tactile-btn transition ${
                   theme?.isLight
-                    ? 'bg-stone-200/90 hover:bg-stone-300 text-stone-600 border-stone-300'
-                    : 'bg-zinc-900/90 hover:bg-zinc-800 text-zinc-400 hover:text-white border-zinc-800'
+                    ? 'bg-stone-200/90 hover:bg-rose-100 text-stone-600 hover:text-rose-600 border-stone-300 hover:border-rose-300'
+                    : 'bg-zinc-900/90 hover:bg-rose-900/30 text-zinc-400 hover:text-rose-400 border-zinc-800 hover:border-rose-500/40'
                 }`}
-                title="Reset to online artwork"
-                aria-label="Reset artwork"
+                title="Delete ROM"
+                aria-label="Delete ROM"
               >
-                <RotateCcw className="w-4 h-4" />
+                <Trash2 className="w-4 h-4" />
               </button>
-            )}
-
-            <button
-              onClick={() => setConfirmDeleteRom(true)}
-              className={`p-2 rounded-xl border tactile-btn transition ml-auto ${
-                theme?.isLight
-                  ? 'bg-stone-200/90 hover:bg-rose-100 text-stone-600 hover:text-rose-600 border-stone-300 hover:border-rose-300'
-                  : 'bg-zinc-900/90 hover:bg-rose-900/30 text-zinc-400 hover:text-rose-400 border-zinc-800 hover:border-rose-500/40'
-              }`}
-              title="Delete ROM"
-              aria-label="Delete ROM"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
+            </div>
           </div>
 
           {/* In-Modal Destructive ROM Delete Confirmation Banner */}
