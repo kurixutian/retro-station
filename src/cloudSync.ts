@@ -1158,6 +1158,11 @@ async function downloadDriveBinary(token: string, fileId: string): Promise<Uint8
   return new Uint8Array(buf);
 }
 
+export interface FetchRomResult {
+  file: File | null;
+  error?: string;
+}
+
 /**
  * On-demand single ROM download from Google Drive appDataFolder.
  * Used when a game is launched on a secondary device and the ROM hasn't been downloaded yet.
@@ -1167,26 +1172,71 @@ export async function fetchRomFromCloud(
   gameId: string,
   preferredFileName?: string,
   interactive = false
-): Promise<File | null> {
-  if (!gameId) return null;
+): Promise<FetchRomResult> {
+  if (!gameId) return { file: null, error: 'Invalid game ID' };
   const token = await ensureToken(interactive);
-  if (!token) return null;
+  if (!token) return { file: null, error: 'Not connected to Google Drive' };
 
   try {
     const allFiles = await listAppDataFiles(token);
+    const romFilesOnDrive = allFiles.filter(
+      (f) => f.name.startsWith('rs_v2_rom%3A') && f.name.endsWith('.bin')
+    );
+
+    if (romFilesOnDrive.length === 0) {
+      return {
+        file: null,
+        error: 'No ROM files in Cloud Vault yet. Open RetroStation on your phone and tap Sync to upload your ROM!',
+      };
+    }
+
     const targetKey = `rom:${gameId}`;
     const targetFilename = `rs_v2_${encodeURIComponent(targetKey)}.bin`;
 
-    let entry = allFiles.find((f) => f.name === targetFilename);
+    // 1. Exact filename match
+    let entry = romFilesOnDrive.find((f) => f.name === targetFilename && f.size > 0);
+
+    // 2. Decoded key match
     if (!entry) {
-      entry = allFiles.find((f) => driveFilenameToKey(f.name) === targetKey);
+      entry = romFilesOnDrive.find((f) => driveFilenameToKey(f.name) === targetKey && f.size > 0);
     }
-    if (!entry) return null;
+
+    // 3. Match via aliasIds from local metadata
+    const meta = findLocalGame(gameId);
+    if (!entry && meta?.aliasIds && Array.isArray(meta.aliasIds)) {
+      for (const alias of meta.aliasIds) {
+        const aKey = `rom:${alias}`;
+        const aFilename = `rs_v2_${encodeURIComponent(aKey)}.bin`;
+        entry = romFilesOnDrive.find(
+          (f) => (f.name === aFilename || driveFilenameToKey(f.name) === aKey) && f.size > 0
+        );
+        if (entry) break;
+      }
+    }
+
+    // 4. Match via crc32
+    if (!entry && meta?.crc32) {
+      const crcKey = `rom:rom_${String(meta.crc32).toLowerCase()}`;
+      entry = romFilesOnDrive.find((f) => driveFilenameToKey(f.name) === crcKey && f.size > 0);
+    }
+
+    // 5. If only 1 ROM file exists on Drive, match it
+    if (!entry && romFilesOnDrive.length === 1) {
+      entry = romFilesOnDrive[0];
+    }
+
+    if (!entry) {
+      return {
+        file: null,
+        error: `ROM for "${meta?.title || gameId}" not found in Cloud Vault. Tap Sync on your phone to upload it.`,
+      };
+    }
 
     const data = await downloadDriveBinary(token, entry.id);
-    if (!data || !(data instanceof Uint8Array) || data.length === 0) return null;
+    if (!data || !(data instanceof Uint8Array) || data.length === 0) {
+      return { file: null, error: 'ROM file in Cloud Vault is empty or corrupt.' };
+    }
 
-    const meta = findLocalGame(gameId);
     const fileName =
       preferredFileName || (meta?.fileName && String(meta.fileName)) || `${gameId}.rom`;
     const file = new File([data as unknown as BlobPart], fileName, {
@@ -1203,37 +1253,81 @@ export async function fetchRomFromCloud(
     };
     saveLocalMetaMap(metaMap);
 
-    return file;
-  } catch (err) {
+    return { file };
+  } catch (err: any) {
     console.warn(`[CloudSync] Failed to fetch ROM for ${gameId} from cloud:`, err);
-    return null;
+    return { file: null, error: err?.message || 'Download failed' };
   }
 }
 
 type UploadedFileInfo = { id: string; updatedAt: number };
 
 /**
- * Resumable raw-binary upload (Drive uploadType=resumable).
- * Sends the payload in chunks so large ROMs survive flaky mobile connections,
- * and keeps the browser's memory footprint small (no base64, no full JSON copy).
+ * Standard multipart upload for files <= 5 MB (single request, standard Google Drive API).
  */
-async function uploadDriveBinary(
+async function uploadDriveBinaryMultipart(
   token: string,
   filename: string,
-  data: Blob | Uint8Array | ArrayBuffer,
+  blob: Blob,
+  existingFileId?: string
+): Promise<UploadedFileInfo> {
+  const boundary = '-------rs_drive_bin_' + Math.random().toString(36).slice(2);
+  const mimeType = 'application/octet-stream';
+  const metadata = existingFileId
+    ? { name: filename, mimeType }
+    : { name: filename, mimeType, parents: ['appDataFolder'] };
+
+  const headerPart =
+    `--${boundary}\r\n` +
+    `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
+    `${JSON.stringify(metadata)}\r\n` +
+    `--${boundary}\r\n` +
+    `Content-Type: ${mimeType}\r\n\r\n`;
+  const footerPart = `\r\n--${boundary}--`;
+  const multipartBlob = new Blob([headerPart, blob, footerPart], {
+    type: `multipart/related; boundary=${boundary}`,
+  });
+
+  const url = existingFileId
+    ? `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(existingFileId)}?uploadType=multipart&fields=id,name,modifiedTime`
+    : `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,modifiedTime`;
+
+  const method = existingFileId ? 'PATCH' : 'POST';
+  const res = await fetch(url, {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': `multipart/related; boundary=${boundary}`,
+    },
+    body: multipartBlob,
+  });
+
+  if (res.status === 404 && existingFileId) {
+    return uploadDriveBinaryMultipart(token, filename, blob, undefined);
+  }
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`ROM multipart upload failed (HTTP ${res.status}): ${txt.slice(0, 120)}`);
+  }
+  const body = await res.json().catch(() => ({} as any));
+  return {
+    id: body?.id || existingFileId || filename,
+    updatedAt: Date.parse(body?.modifiedTime) || Date.now(),
+  };
+}
+
+/**
+ * Resumable raw-binary upload for files > 5 MB using a single PUT of the entire payload.
+ */
+async function uploadDriveBinaryResumable(
+  token: string,
+  filename: string,
+  blob: Blob,
   existingFileId?: string
 ): Promise<UploadedFileInfo> {
   const mimeType = 'application/octet-stream';
-  const part: BlobPart =
-    data instanceof Uint8Array ? (data as unknown as BlobPart) : (new Uint8Array(data as ArrayBuffer) as BlobPart);
-  const blob =
-    typeof Blob !== 'undefined' && data instanceof Blob
-      ? data
-      : new Blob([part], { type: mimeType });
   const totalSize = blob.size;
-  if (totalSize <= 0) throw new Error('No ROM data to upload');
 
-  // 1. Initiate the resumable session
   const metadata: Record<string, any> = existingFileId
     ? { name: filename, mimeType }
     : { name: filename, parents: ['appDataFolder'], mimeType };
@@ -1255,78 +1349,61 @@ async function uploadDriveBinary(
   });
 
   if (initRes.status === 404 && existingFileId) {
-    return uploadDriveBinary(token, filename, blob, undefined);
-  }
-  if (initRes.ok === false && existingFileId && [400, 405].includes(initRes.status)) {
-    // Some proxies/API revisions reject resumable PATCH; re-create the file
-    // (duplicate files for the same key are deduped by the sync engine) —
-    return uploadDriveBinary(token, filename, blob, undefined);
+    return uploadDriveBinaryResumable(token, filename, blob, undefined);
   }
   if (!initRes.ok) {
     const txt = await initRes.text().catch(() => '');
-    throw new Error(`ROM upload failed to start (HTTP ${initRes.status}): ${txt.slice(0, 120)}`);
+    throw new Error(`ROM upload init failed (HTTP ${initRes.status}): ${txt.slice(0, 120)}`);
   }
+
   const uploadUrl = initRes.headers.get('Location') || initRes.headers.get('location') || '';
   if (!uploadUrl) throw new Error('ROM upload session missing URL');
 
-  // 2. Chunked PUT loop
-  const parseRangeReceived = (res: Response): number => {
-    const rs = res.headers.get('Range') || ''; // "bytes=0-N" -> N+1 received
-    if (rs.includes('-')) {
-      const top = Number(rs.split('=')[1].split('-')[1]);
-      if (!Number.isNaN(top)) return top + 1;
-    }
-    return 0;
-  };
+  const res = await fetch(uploadUrl, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': mimeType,
+      'Content-Range': `bytes 0-${totalSize - 1}/${totalSize}`,
+    },
+    body: blob,
+  });
 
-  let offset = 0;
-  for (let rounds = 0; rounds < 8196; rounds++) {
-    const end = Math.min(offset + ROM_UPLOAD_CHUNK_BYTES, totalSize);
-    if (offset >= totalSize) {
-      throw new Error('ROM upload stalled');
-    }
-    const chunk = blob.slice(offset, end, mimeType);
-
-    const finalize = async (res: Response): Promise<UploadedFileInfo> => {
-      const body = await res.json().catch(() => ({} as any));
-      return {
-        id: body?.id || existingFileId || filename,
-        updatedAt: Date.parse(body?.modifiedTime) || Date.now(),
-      };
+  if (res.status === 200 || res.status === 201) {
+    const body = await res.json().catch(() => ({} as any));
+    return {
+      id: body?.id || existingFileId || filename,
+      updatedAt: Date.parse(body?.modifiedTime) || Date.now(),
     };
-
-    const res = await fetch(uploadUrl, {
-      method: 'PUT',
-      headers: { 'Content-Range': `bytes ${offset}-${end - 1}/${totalSize}` },
-      body: chunk,
-    });
-
-    if (res.status === 200 || res.status === 201) {
-      return await finalize(res);
-    }
-    if (res.status === 308) {
-      const received = parseRangeReceived(res);
-      offset = Math.max(offset + 1, received); // always guarantee forward progress
-      continue;
-    }
-    if (res.status === 500 || res.status === 502 || res.status === 503) {
-      // Transient: probe how much the server actually has, then resume there
-      const probe = await fetch(uploadUrl, {
-        method: 'PUT',
-        headers: { 'Content-Range': `bytes */${totalSize}` },
-      });
-      if (probe.status === 200 || probe.status === 201) return await finalize(probe);
-      if (probe.status === 308) {
-        const received = parseRangeReceived(probe);
-        offset = Math.max(offset + 1, received);
-        continue;
-      }
-      continue; // otherwise retry the same chunk next round
-    }
-    const txt = await res.text().catch(() => '');
-    throw new Error(`ROM upload failed (HTTP ${res.status}): ${txt.slice(0, 120)}`);
   }
-  throw new Error('ROM upload exceeded retry limit');
+
+  const txt = await res.text().catch(() => '');
+  throw new Error(`ROM upload failed (HTTP ${res.status}): ${txt.slice(0, 120)}`);
+}
+
+/**
+ * Upload binary ROM file to Google Drive.
+ * Files up to 5 MB use single-request multipart upload; larger files use resumable upload.
+ */
+async function uploadDriveBinary(
+  token: string,
+  filename: string,
+  data: Blob | Uint8Array | ArrayBuffer,
+  existingFileId?: string
+): Promise<UploadedFileInfo> {
+  const mimeType = 'application/octet-stream';
+  const part: BlobPart =
+    data instanceof Uint8Array ? (data as unknown as BlobPart) : (new Uint8Array(data as ArrayBuffer) as BlobPart);
+  const blob =
+    typeof Blob !== 'undefined' && data instanceof Blob
+      ? data
+      : new Blob([part], { type: mimeType });
+  const totalSize = blob.size;
+  if (totalSize <= 0) throw new Error('No ROM data to upload');
+
+  if (totalSize <= 5 * 1024 * 1024) {
+    return await uploadDriveBinaryMultipart(token, filename, blob, existingFileId);
+  }
+  return await uploadDriveBinaryResumable(token, filename, blob, existingFileId);
 }
 
 async function uploadDriveJson(
@@ -1591,7 +1668,22 @@ async function executeSync(interactive = false): Promise<{
       const idbKeys = await idbGetAllKeys();
       for (const k of idbKeys) {
         const ks = String(k);
-        if (isSyncableKey(ks)) candidates.add(ks);
+        if (isSyncableKey(ks)) {
+          candidates.add(ks);
+        } else if (
+          isRomSyncEnabled() &&
+          !ks.startsWith('boxart_index:') &&
+          !ks.startsWith('srm:') &&
+          !ks.startsWith('rtc:') &&
+          !ks.startsWith('autosave:') &&
+          !ks.startsWith('cover:') &&
+          !ks.startsWith('state:') &&
+          ks !== 'library_games' &&
+          ks !== 'retro_games' &&
+          !DEMO_GAME_IDS.has(ks)
+        ) {
+          candidates.add(`rom:${ks}`);
+        }
       }
     } catch (e) {}
 
@@ -1624,7 +1716,18 @@ async function executeSync(interactive = false): Promise<{
         const snap = collectSettingsSnapshot();
         localVal = Object.keys(snap).length > 0 ? snap : null;
       } else if (isRomKey(key)) {
-        localVal = await idbGet(romLocalIdbKey(key) || '').catch(() => null);
+        const gId = romLocalIdbKey(key) || '';
+        localVal = await idbGet(gId).catch(() => null);
+        if (!localVal) localVal = await idbGet(key).catch(() => null);
+        if (!localVal) {
+          const gMeta = findLocalGame(gId);
+          if (gMeta?.aliasIds && Array.isArray(gMeta.aliasIds)) {
+            for (const alias of gMeta.aliasIds) {
+              localVal = await idbGet(alias).catch(() => null);
+              if (localVal) break;
+            }
+          }
+        }
       } else if (key === 'library_games' || isItemKey(key)) {
         localVal = await idbGet(key).catch(() => null);
       }
@@ -1666,9 +1769,10 @@ async function executeSync(interactive = false): Promise<{
         continue;
       }
 
+      const remoteMissingOrEmpty = !remote || !remote.size || remote.size <= 0;
       const needsPush =
         Boolean(localMeta?.pendingUpload) ||
-        !remote ||
+        remoteMissingOrEmpty ||
         (localMeta?.updatedAt || 0) > remote.updatedAt;
 
       if (!needsPush) continue;

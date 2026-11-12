@@ -42,13 +42,13 @@ export const MissingRomModal: React.FC<MissingRomModalProps> = ({
     setDownloadingCloud(true);
     try {
       showToast(`Downloading ${game.title} from Cloud Vault...`);
-      const file = await fetchRomFromCloud(game.id, game.fileName, true);
-      if (file) {
+      const res = await fetchRomFromCloud(game.id, game.fileName, true);
+      if (res.file) {
         showToast(`ROM downloaded from Cloud Vault! Launching ${game.title}...`);
-        onRomSelected(file);
+        onRomSelected(res.file);
         onClose();
       } else {
-        showToast('ROM not found in Cloud Vault. Please select a local ROM file.');
+        showToast(res.error || 'ROM not found in Cloud Vault. Please select a local ROM file.');
       }
     } catch (e: any) {
       showToast(`Cloud fetch error: ${e?.message || 'Failed'}`);

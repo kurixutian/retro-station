@@ -1120,10 +1120,12 @@ export default function App() {
           if (user && hasValidToken()) {
             showToast(`Downloading ${game.title} from Cloud Vault...`);
             try {
-              const fetched = await fetchRomFromCloud(game.id, game.fileName, false);
-              if (fetched) {
-                blob = fetched;
+              const res = await fetchRomFromCloud(game.id, game.fileName, false);
+              if (res.file) {
+                blob = res.file;
                 showToast(`Downloaded ${game.title}! Launching...`);
+              } else if (res.error) {
+                showToast(res.error);
               }
             } catch (err) {
               console.warn('[App] Automatic cloud ROM fetch error:', err);

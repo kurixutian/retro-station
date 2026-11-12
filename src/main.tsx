@@ -21,6 +21,13 @@ if (
       });
   });
 
+  // Prompt update check whenever user returns to the tab or PWA
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      navigator.serviceWorker.getRegistration().then((reg) => reg?.update().catch(() => {}));
+    }
+  });
+
   // Refresh once when the Cross-Origin Isolation Service Worker activates on the home screen
   let refreshing = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
