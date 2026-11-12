@@ -436,30 +436,32 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       <main className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 pt-5 space-y-7">
         {/* Slot-1 Active Cartridge Deck Bay — full-bleed boxart hero card */}
         {featuredGame && (
-          <div
-            className={`relative rounded-3xl overflow-hidden border hardware-panel select-none hero-deck-card ${
-              games.length > 1 ? 'cursor-grab' : ''
-            } ${deckDragging ? 'cursor-grabbing' : ''} ${
-              theme.isLight ? 'border-[#cfcac0]' : 'border-[#222227]'
-            }`}
-            style={{ touchAction: 'pan-y' }}
-            onMouseEnter={() => setDeckHovered(true)}
-            onMouseLeave={() => setDeckHovered(false)}
-            onPointerDown={onDeckPointerDown}
-            onPointerMove={onDeckPointerMove}
-            onPointerUp={() => endDeckDrag(true)}
-            onPointerCancel={() => endDeckDrag(false)}
-            aria-label={games.length > 1 ? `Featured game carousel, game ${featuredIndex + 1} of ${games.length}. Swipe to change.` : 'Featured game'}
-          >
-            {/* Ambient dynamic glow backdrop */}
+          <div className="relative">
+            {/* Atmospheric Outer Breathing Ambient Glow (outside overflow-hidden) */}
             <div
-              className={`absolute -inset-1 rounded-[2rem] blur-xl opacity-60 pointer-events-none -z-10 ${
+              className={`absolute -inset-2 sm:-inset-3.5 rounded-[2.5rem] blur-2xl pointer-events-none hero-ambient-glow -z-10 ${
                 theme.isLight
-                  ? 'bg-gradient-to-r from-pink-500/20 via-purple-500/15 to-amber-500/20'
-                  : 'bg-gradient-to-r from-emerald-500/25 via-teal-500/20 to-emerald-500/25'
+                  ? 'bg-gradient-to-r from-pink-500/40 via-rose-500/35 to-purple-500/40'
+                  : 'bg-gradient-to-r from-emerald-500/45 via-teal-400/40 to-emerald-500/45'
               }`}
             />
-            {/* Boxart Background (keyed per game for the swap crossfade) */}
+
+            <div
+              className={`relative rounded-3xl overflow-hidden border hardware-panel select-none hero-deck-card ${
+                games.length > 1 ? 'cursor-grab' : ''
+              } ${deckDragging ? 'cursor-grabbing' : ''} ${
+                theme.isLight ? 'border-[#cfcac0]' : 'border-[#222227]'
+              }`}
+              style={{ touchAction: 'pan-y' }}
+              onMouseEnter={() => setDeckHovered(true)}
+              onMouseLeave={() => setDeckHovered(false)}
+              onPointerDown={onDeckPointerDown}
+              onPointerMove={onDeckPointerMove}
+              onPointerUp={() => endDeckDrag(true)}
+              onPointerCancel={() => endDeckDrag(false)}
+              aria-label={games.length > 1 ? `Featured game carousel, game ${featuredIndex + 1} of ${games.length}. Swipe to change.` : 'Featured game'}
+            >
+              {/* Boxart Background (keyed per game for the swap crossfade) */}
             <div
               className="transition-transform"
               style={{
@@ -541,6 +543,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 hardware-led" />
                 <span className="text-[11px] font-semibold tracking-normal text-white/60">Slot-1 Cartridge Deck</span>
               </div>
+            </div>
             </div>
           </div>
         )}
