@@ -208,6 +208,44 @@ html.light :focus-visible {
   pointer-events: none;
 }
 
+@keyframes crtPowerOn {
+  0% {
+    transform: scale(0, 0);
+    filter: brightness(0);
+    opacity: 0;
+  }
+  45% {
+    transform: scale(1.04, 0.015);
+    filter: brightness(4);
+    opacity: 1;
+  }
+  80% {
+    transform: scale(0.98, 1.02);
+    filter: brightness(1.2);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1, 1);
+    filter: brightness(1);
+    opacity: 1;
+  }
+}
+
+.crt-power-on {
+  animation: crtPowerOn 0.32s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+}
+
+.hero-deck-card {
+  box-shadow: 0 0 35px -5px rgba(16, 185, 129, 0.35), 0 12px 32px -8px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  border-color: rgba(16, 185, 129, 0.45) !important;
+  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+html.light .hero-deck-card {
+  box-shadow: 0 0 32px -4px rgba(141, 29, 92, 0.3), 0 10px 24px -6px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  border-color: rgba(141, 29, 92, 0.45) !important;
+}
+
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
@@ -239,7 +277,7 @@ html.light :focus-visible {
 }
 
 .hero-art-pan {
-  animation: heroArtPan 18s var(--ease-in-out) infinite;
+  animation: heroArtPan 8s var(--ease-in-out) infinite;
   backface-visibility: hidden;
 }
 

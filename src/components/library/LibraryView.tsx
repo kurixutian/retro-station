@@ -13,6 +13,9 @@ import {
   MoreVertical,
   Search,
   X,
+  Grid2X2,
+  Grid3X3,
+  List,
 } from 'lucide-react';
 import { haptics } from '../../services/haptics';
 import { Game, Theme } from '../../types';
@@ -154,6 +157,22 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     }
     start.dx = dx;
     setFeaturedDrag(Math.max(-48, Math.min(48, dx * 0.55)));
+  };
+
+  type BinderViewMode = 'grid-2' | 'grid-3' | 'list';
+  const [binderView, setBinderView] = React.useState<BinderViewMode>(() => {
+    try {
+      const saved = localStorage.getItem('retro_binder_view');
+      if (saved === 'grid-2' || saved === 'grid-3' || saved === 'list') return saved;
+    } catch {}
+    return 'grid-2';
+  });
+
+  const switchBinderView = (mode: BinderViewMode) => {
+    setBinderView(mode);
+    try {
+      localStorage.setItem('retro_binder_view', mode);
+    } catch {}
   };
 
   // ── Recently Played Games ──────────────────────────────────────────────
@@ -418,7 +437,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
         {/* Slot-1 Active Cartridge Deck Bay — full-bleed boxart hero card */}
         {featuredGame && (
           <div
-            className={`relative rounded-3xl overflow-hidden border hardware-panel select-none ${
+            className={`relative rounded-3xl overflow-hidden border hardware-panel select-none hero-deck-card ${
               games.length > 1 ? 'cursor-grab' : ''
             } ${deckDragging ? 'cursor-grabbing' : ''} ${
               theme.isLight ? 'border-[#cfcac0]' : 'border-[#222227]'
@@ -432,6 +451,14 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             onPointerCancel={() => endDeckDrag(false)}
             aria-label={games.length > 1 ? `Featured game carousel, game ${featuredIndex + 1} of ${games.length}. Swipe to change.` : 'Featured game'}
           >
+            {/* Ambient dynamic glow backdrop */}
+            <div
+              className={`absolute -inset-1 rounded-[2rem] blur-xl opacity-60 pointer-events-none -z-10 ${
+                theme.isLight
+                  ? 'bg-gradient-to-r from-pink-500/20 via-purple-500/15 to-amber-500/20'
+                  : 'bg-gradient-to-r from-emerald-500/25 via-teal-500/20 to-emerald-500/25'
+              }`}
+            />
             {/* Boxart Background (keyed per game for the swap crossfade) */}
             <div
               className="transition-transform"
@@ -440,7 +467,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                 transition: featuredDrag ? 'none' : 'transform 0.32s var(--ease-out)',
               }}
             >
-              <div className="relative min-h-[9rem] sm:min-h-[10rem]">
+              <div className="relative min-h-[14rem] sm:min-h-[17rem] md:min-h-[19.5rem]">
                 <div key={`featured-art-${featuredGame.id}`} className="absolute inset-0 featured-swap">
                   <GameCoverImage
                     game={featuredGame}
@@ -454,27 +481,27 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                   className="absolute inset-0 pointer-events-none"
                   style={{
                     background:
-                      'linear-gradient(to top, rgba(10,10,12,0.88) 0%, rgba(10,10,12,0.45) 40%, rgba(10,10,12,0.18) 75%, rgba(10,10,12,0.42) 100%)',
+                      'linear-gradient(to top, rgba(10,10,12,0.92) 0%, rgba(10,10,12,0.52) 42%, rgba(10,10,12,0.2) 75%, rgba(10,10,12,0.45) 100%)',
                   }}
                 />
 
                 {/* Featured game title + system badge + play */}
-                <div className="relative z-10 flex items-start justify-between gap-4 p-4 sm:p-6 pt-8 sm:pt-10 pb-11">
+                <div className="relative z-10 flex items-start justify-between gap-4 p-5 sm:p-7 pt-10 sm:pt-14 pb-12 sm:pb-14">
                   <div key={`featured-copy-${featuredGame.id}`} className="min-w-0 flex-1 featured-swap">
-                    <h1 className="text-lg sm:text-2xl font-bold tracking-tight truncate text-white drop-shadow-sm">
+                    <h1 className="text-xl sm:text-3xl font-extrabold tracking-tight truncate text-white drop-shadow-md">
                       {formatGameTitle(featuredGame.title)}
                     </h1>
-                    <span className="mt-1.5 inline-block px-2 py-0.5 rounded-md text-[11px] font-semibold border bg-black/45 text-white/85 border-white/15">
+                    <span className="mt-2 inline-block px-2.5 py-1 rounded-lg text-xs font-bold border bg-black/55 text-white/90 border-white/20 shadow-sm">
                       {featuredGame.system || featuredGame.shortSystem}
                     </span>
                   </div>
                   <button
                     onClick={() => onLaunchGame(featuredGame)}
-                    className={`shrink-0 p-3 rounded-xl tactile-btn transition shadow-sm active:scale-95 ${theme.accentBg}`}
+                    className={`shrink-0 p-3.5 sm:p-4 rounded-2xl tactile-btn transition shadow-lg active:scale-95 ${theme.accentBg}`}
                     title={`Play ${formatGameTitle(featuredGame.title)}`}
                     aria-label={`Play ${formatGameTitle(featuredGame.title)}`}
                   >
-                    <Play className="w-5 h-5 fill-current" />
+                    <Play className="w-5 h-5 sm:w-6 sm:h-6 fill-current" />
                   </button>
                 </div>
 
@@ -530,14 +557,14 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-tabular border ${
                   theme.isLight ? 'bg-[#dedad0] border-[#cfcac0] text-[#575654]' : 'bg-[#18181c] border-[#222227] text-[#8e8e93]'
                 }`}>
-                  {recentGames.length}
+                  {Math.min(recentGames.length, 4)}
                 </span>
               </div>
             </div>
 
-            {/* 2-Column Grid (up to 3 rows of consistently sized rows) */}
+            {/* 2-Column Grid (maximum 4 games, clean 2x2 grid) */}
             <div className="grid grid-cols-2 gap-2 sm:gap-2.5">
-              {recentGames.slice(0, 6).map((game) => (
+              {recentGames.slice(0, 4).map((game) => (
                 <div
                   key={`recent-${game.id}`}
                   onClick={() => onSelectGame(game)}
@@ -614,27 +641,87 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
               </h2>
             </div>
 
-            {/* Search Toggle (far right) */}
-            <button
-              onClick={() => {
-                if (showSearch) {
-                  setShowSearch(false);
-                  setSearchQuery('');
-                } else {
-                  setShowSearch(true);
-                }
-              }}
-              className={`px-2 py-1.5 rounded-xl border tactile-btn transition ${
-                theme.isLight
-                  ? 'bg-[#dedad0] hover:bg-[#d5d0c5] border-[#cfcac0] text-[#121214]'
-                  : 'bg-[#131316] hover:bg-[#1a1a1f] border-[#222227] text-[#f4f4f6]'
-              }`}
-              title={showSearch ? 'Close Search' : 'Search Library'}
-              aria-label={showSearch ? 'Close Library Search' : 'Open Library Search'}
-              aria-pressed={showSearch}
-            >
-              {showSearch ? <X className="w-4 h-4" /> : <Search className="w-4 h-4" />}
-            </button>
+            {/* View Mode Switcher + Search Toggle */}
+            <div className="flex items-center gap-1.5">
+              <div
+                className={`flex items-center p-0.5 rounded-xl border ${
+                  theme.isLight ? 'bg-[#dedad0] border-[#cfcac0]' : 'bg-[#131316] border-[#222227]'
+                }`}
+                role="group"
+                aria-label="Cartridge view options"
+              >
+                <button
+                  type="button"
+                  onClick={() => switchBinderView('grid-2')}
+                  className={`p-1.5 rounded-lg transition active:scale-95 ${
+                    binderView === 'grid-2'
+                      ? `${theme.accentBg} text-white shadow-sm`
+                      : theme.isLight
+                      ? 'text-[#575654] hover:text-[#121214]'
+                      : 'text-[#8e8e93] hover:text-[#f4f4f6]'
+                  }`}
+                  title="2 Columns per row (Original Grid)"
+                  aria-label="2 Columns per row"
+                  aria-pressed={binderView === 'grid-2'}
+                >
+                  <Grid2X2 className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => switchBinderView('grid-3')}
+                  className={`p-1.5 rounded-lg transition active:scale-95 ${
+                    binderView === 'grid-3'
+                      ? `${theme.accentBg} text-white shadow-sm`
+                      : theme.isLight
+                      ? 'text-[#575654] hover:text-[#121214]'
+                      : 'text-[#8e8e93] hover:text-[#f4f4f6]'
+                  }`}
+                  title="3 Columns per row (Compact Grid)"
+                  aria-label="3 Columns per row"
+                  aria-pressed={binderView === 'grid-3'}
+                >
+                  <Grid3X3 className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => switchBinderView('list')}
+                  className={`p-1.5 rounded-lg transition active:scale-95 ${
+                    binderView === 'list'
+                      ? `${theme.accentBg} text-white shadow-sm`
+                      : theme.isLight
+                      ? 'text-[#575654] hover:text-[#121214]'
+                      : 'text-[#8e8e93] hover:text-[#f4f4f6]'
+                  }`}
+                  title="List View (1 Column)"
+                  aria-label="List View (1 Column)"
+                  aria-pressed={binderView === 'list'}
+                >
+                  <List className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Search Toggle */}
+              <button
+                onClick={() => {
+                  if (showSearch) {
+                    setShowSearch(false);
+                    setSearchQuery('');
+                  } else {
+                    setShowSearch(true);
+                  }
+                }}
+                className={`px-2 py-1.5 rounded-xl border tactile-btn transition ${
+                  theme.isLight
+                    ? 'bg-[#dedad0] hover:bg-[#d5d0c5] border-[#cfcac0] text-[#121214]'
+                    : 'bg-[#131316] hover:bg-[#1a1a1f] border-[#222227] text-[#f4f4f6]'
+                }`}
+                title={showSearch ? 'Close Search' : 'Search Library'}
+                aria-label={showSearch ? 'Close Library Search' : 'Open Library Search'}
+                aria-pressed={showSearch}
+              >
+                {showSearch ? <X className="w-4 h-4" /> : <Search className="w-4 h-4" />}
+              </button>
+            </div>
           </div>
 
           {/* ROM Count + Search Field + System Divider Tabs (below) */}
@@ -728,6 +815,129 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                     </button>
                   )}
                 </div>
+              </div>
+            ) : binderView === 'list' ? (
+              <div className="grid grid-cols-1 gap-2">
+                {filteredGames.map((game) => (
+                  <div
+                    key={`list-${game.id}`}
+                    onClick={() => onSelectGame(game)}
+                    className={`group relative flex items-center gap-3 p-2.5 rounded-2xl border transition active:scale-[0.98] cursor-pointer h-16 sm:h-18 overflow-hidden hardware-panel select-none ${
+                      theme.isLight
+                        ? 'bg-[#f3efe8] hover:bg-[#eae6dd] border-[#d2cdc3] hover:border-[#b8b2a6]'
+                        : 'bg-[#131316] hover:bg-[#18181c] border-[#222227] hover:border-[#34343d]'
+                    }`}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Open ${formatGameTitle(game.title)}`}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        onSelectGame(game);
+                      }
+                    }}
+                  >
+                    {/* Cartridge Art Thumbnail */}
+                    <div className={`relative w-11 h-11 sm:w-12 sm:h-12 rounded-xl overflow-hidden shrink-0 border ${
+                      theme.isLight ? 'bg-[#dedad0] border-[#cfcac0]' : 'bg-black border-[#222227]'
+                    }`}>
+                      <GameCoverImage
+                        game={game}
+                        imgClassName="group-hover:scale-105 transition duration-150"
+                      />
+                    </div>
+
+                    {/* Game Title & System Badge */}
+                    <div className="flex-1 min-w-0 pr-2 space-y-0.5">
+                      <h3 className={`text-xs sm:text-sm font-bold truncate transition ${
+                        theme.isLight ? 'text-[#121214] group-hover:text-black' : 'text-[#f4f4f6] group-hover:text-white'
+                      }`}>
+                        {formatGameTitle(game.title)}
+                      </h3>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                          theme.isLight
+                            ? 'bg-[#dedad0] text-[#575654] border-[#cfcac0]'
+                            : 'bg-[#1c1c21] text-[#8e8e93] border-[#2c2c34]'
+                        }`}>
+                          {game.shortSystem || game.system}
+                        </span>
+                        {game.system && game.shortSystem && (
+                          <span className={`text-[11px] truncate hidden sm:inline ${
+                            theme.isLight ? 'text-[#575654]' : 'text-[#8e8e93]'
+                          }`}>
+                            {game.system}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Quick Play Button */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onLaunchGame(game);
+                      }}
+                      className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 border opacity-80 group-hover:opacity-100 transition active:scale-90 ${
+                        theme.isLight
+                          ? 'bg-[#dedad0] hover:bg-[#8d1d5c] hover:text-white text-[#121214] border-[#cfcac0]'
+                          : 'bg-[#1c1c21] hover:bg-emerald-500 hover:text-black text-[#f4f4f6] border-[#2c2c34]'
+                      }`}
+                      title={`Play ${formatGameTitle(game.title)}`}
+                      aria-label={`Play ${formatGameTitle(game.title)}`}
+                    >
+                      <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+                    </button>
+                  </div>
+                ))}
+
+                {/* Quick Add ROM Bay in List View */}
+                <button
+                  onClick={onTriggerAddRom}
+                  className={`w-full flex items-center justify-center gap-2 p-3.5 rounded-2xl border-2 border-dashed transition group tactile-btn ${
+                    theme.isLight
+                      ? 'border-stone-300 hover:border-emerald-500 bg-stone-200/50 hover:bg-stone-200 text-stone-700'
+                      : 'border-zinc-800 hover:border-emerald-500/60 bg-black/40 hover:bg-zinc-900/80 text-zinc-300'
+                  }`}
+                >
+                  <Plus className={`w-4 h-4 group-hover:text-emerald-500 ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`} />
+                  <span className="text-xs font-bold">Insert New Cartridge (.gb, .gbc, .gba, .nes, .sfc, .md)</span>
+                </button>
+              </div>
+            ) : binderView === 'grid-3' ? (
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2 sm:gap-3">
+                {filteredGames.map((game) => (
+                  <div key={game.id} className={`p-1 rounded-xl border binder-slot ${
+                    theme.isLight ? 'bg-stone-200/70 border-stone-300' : 'bg-black/40 border-zinc-800/70'
+                  }`}>
+                    <GameCard
+                      game={game}
+                      theme={theme}
+                      onSelect={onSelectGame}
+                      compact={true}
+                    />
+                  </div>
+                ))}
+
+                {/* Quick Add ROM Bay in 3-Col Compact Grid */}
+                <button
+                  onClick={onTriggerAddRom}
+                  className={`rounded-xl border-2 border-dashed p-2 flex flex-col items-center justify-center gap-1.5 min-h-[160px] transition group tactile-btn binder-slot ${
+                    theme.isLight
+                      ? 'border-stone-300 hover:border-emerald-500 bg-stone-200/50 hover:bg-stone-200'
+                      : 'border-zinc-800 hover:border-emerald-500/60 bg-black/40 hover:bg-zinc-900/80'
+                  }`}
+                >
+                  <div className={`w-9 h-9 rounded-xl border flex items-center justify-center transition ${
+                    theme.isLight
+                      ? 'bg-stone-300 group-hover:bg-emerald-500/20 border-stone-400'
+                      : 'bg-zinc-900 group-hover:bg-emerald-500/20 border-zinc-800'
+                  }`}>
+                    <Plus className={`w-5 h-5 group-hover:text-emerald-500 ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`} />
+                  </div>
+                  <span className={`text-[11px] font-bold text-center leading-tight ${theme.isLight ? 'text-zinc-900' : 'text-zinc-200'}`}>Insert Cartridge</span>
+                </button>
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">

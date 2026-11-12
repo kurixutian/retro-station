@@ -177,8 +177,17 @@ export const InGameView: React.FC<InGameViewProps> = ({
 
   const touchStartYRef = React.useRef<number | null>(null);
   const [isPoweringOff, setIsPoweringOff] = React.useState(false);
+  const [isPoweringOn, setIsPoweringOn] = React.useState(true);
   const [showCartridgeTools, setShowCartridgeTools] = React.useState(false);
   const [saveFormat, setSaveFormat] = React.useState<'sav' | 'srm'>('sav');
+
+  React.useEffect(() => {
+    setIsPoweringOn(true);
+    const timer = setTimeout(() => {
+      setIsPoweringOn(false);
+    }, 320);
+    return () => clearTimeout(timer);
+  }, [activeGame?.id]);
 
   const triggerExitWithCeremony = React.useCallback(() => {
     setInGameMenuOpen(false);
@@ -1611,11 +1620,11 @@ export const InGameView: React.FC<InGameViewProps> = ({
                     setInGameMenuOpen(false);
                     setGlobalSettingsOpen(true);
                   }}
-                  className="flex flex-col items-center justify-center gap-1 p-2 rounded-xl bg-zinc-900/80 hover:bg-zinc-900 border border-zinc-800 text-zinc-300 text-center transition active:scale-95"
-                  title="CRT Scanlines & Visual Settings"
+                  className="flex flex-col items-center justify-center gap-1 p-2 rounded-xl bg-zinc-900/80 hover:bg-zinc-900 border border-zinc-800 text-zinc-300 text-center transition active:scale-95 hover:border-zinc-700"
+                  title="System & Display Configuration"
                 >
-                  <Tv className="w-4 h-4 text-zinc-300" />
-                  <span className="text-[11px] font-bold">Shaders</span>
+                  <Settings className="w-4 h-4 text-zinc-300" />
+                  <span className="text-[11px] font-bold">Config</span>
                 </button>
 
                 {onToggleLightDark && (
@@ -1795,7 +1804,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 }
               }}
               className={`relative bg-black overflow-hidden ${
-                isPoweringOff ? 'crt-power-off' : ''
+                isPoweringOff ? 'crt-power-off' : isPoweringOn ? 'crt-power-on' : ''
               } ${
                 customizing && selectedPad === 'screen'
                   ? 'border-2 border-emerald-400 ring-2 ring-emerald-400/50 cursor-pointer'
