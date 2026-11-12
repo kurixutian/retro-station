@@ -467,7 +467,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                 transition: featuredDrag ? 'none' : 'transform 0.32s var(--ease-out)',
               }}
             >
-              <div className="relative min-h-[14rem] sm:min-h-[17rem] md:min-h-[19.5rem]">
+              <div className="relative min-h-[14rem] sm:min-h-[17rem] md:min-h-[19.5rem] flex flex-col justify-end">
                 <div key={`featured-art-${featuredGame.id}`} className="absolute inset-0 featured-swap">
                   <GameCoverImage
                     game={featuredGame}
@@ -481,23 +481,23 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                   className="absolute inset-0 pointer-events-none"
                   style={{
                     background:
-                      'linear-gradient(to top, rgba(10,10,12,0.92) 0%, rgba(10,10,12,0.52) 42%, rgba(10,10,12,0.2) 75%, rgba(10,10,12,0.45) 100%)',
+                      'linear-gradient(to top, rgba(10,10,12,0.96) 0%, rgba(10,10,12,0.7) 35%, rgba(10,10,12,0.18) 70%, rgba(10,10,12,0.4) 100%)',
                   }}
                 />
 
-                {/* Featured game title + system badge + play */}
-                <div className="relative z-10 flex items-start justify-between gap-4 p-5 sm:p-7 pt-10 sm:pt-14 pb-12 sm:pb-14">
+                {/* Featured game title + system badge + play (anchored at bottom) */}
+                <div className="relative z-10 flex items-end justify-between gap-4 p-4 sm:p-6 pt-16 pb-8 sm:pb-9">
                   <div key={`featured-copy-${featuredGame.id}`} className="min-w-0 flex-1 featured-swap">
                     <h1 className="text-xl sm:text-3xl font-extrabold tracking-tight truncate text-white drop-shadow-md">
                       {formatGameTitle(featuredGame.title)}
                     </h1>
-                    <span className="mt-2 inline-block px-2.5 py-1 rounded-lg text-xs font-bold border bg-black/55 text-white/90 border-white/20 shadow-sm">
+                    <span className="mt-1.5 inline-block px-2.5 py-1 rounded-lg text-xs font-bold border bg-black/55 text-white/90 border-white/20 shadow-sm">
                       {featuredGame.system || featuredGame.shortSystem}
                     </span>
                   </div>
                   <button
                     onClick={() => onLaunchGame(featuredGame)}
-                    className={`shrink-0 p-3.5 sm:p-4 rounded-2xl tactile-btn transition shadow-lg active:scale-95 ${theme.accentBg}`}
+                    className={`shrink-0 p-3 sm:p-3.5 rounded-2xl tactile-btn transition shadow-lg active:scale-95 ${theme.accentBg}`}
                     title={`Play ${formatGameTitle(featuredGame.title)}`}
                     aria-label={`Play ${formatGameTitle(featuredGame.title)}`}
                   >
@@ -507,7 +507,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 
                 {/* Carousel position indicator */}
                 {games.length > 1 && (
-                  <div className="absolute bottom-3 inset-x-0 z-10 flex items-center justify-center gap-1.5" role="group" aria-label="Featured game carousel position">
+                  <div className="absolute bottom-2.5 inset-x-0 z-10 flex items-center justify-center gap-1.5" role="group" aria-label="Featured game carousel position">
                     {games.length <= 8 ? (
                       games.map((g, i) => (
                         <button
