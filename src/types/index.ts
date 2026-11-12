@@ -50,6 +50,7 @@ export interface Theme {
   accentBg: string;
   accentBorder: string;
   accentSoft: string;
+  focusRing: string;
   dpadBg: string;
   btnA: string;
   btnB: string;

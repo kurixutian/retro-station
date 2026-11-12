@@ -29,8 +29,6 @@ import {
   Pencil,
   Check,
   Tv,
-  Sun,
-  Moon,
 } from 'lucide-react';
 import { Game, Theme, PadLayout, PadGroupId, SaveSlot } from '../../types';
 import { coreRatio, formatGameTitle, EJS_CORES } from '../../constants/cores';
@@ -670,7 +668,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
             style={{ width: '3.4rem', height: '3.4rem' }}
             aria-label="Button B"
           />
-          <span className="mt-1.5 text-[12px] font-black italic tracking-widest text-[#8d1d5c] dark:text-zinc-400 select-none">
+          <span className={`mt-1.5 text-[12px] font-black italic tracking-widest ${theme.accentText} dark:text-zinc-400 select-none`}>
             B
           </span>
         </div>
@@ -684,7 +682,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
             style={{ width: '3.4rem', height: '3.4rem' }}
             aria-label="Button A"
           />
-          <span className="mt-1.5 text-[12px] font-black italic tracking-widest text-[#8d1d5c] dark:text-zinc-400 select-none">
+          <span className={`mt-1.5 text-[12px] font-black italic tracking-widest ${theme.accentText} dark:text-zinc-400 select-none`}>
             A
           </span>
         </div>
@@ -699,7 +697,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
       }}
       className={`rounded-xl transition ${
         customizing && selectedPad === 'btnL'
-          ? 'border-2 border-emerald-400 ring-2 ring-emerald-400/50 cursor-pointer'
+          ? `border-2 border-[${theme.hex}] ring-2 ring-[${theme.hex}]/50 cursor-pointer`
           : customizing
           ? 'border-2 border-white/30 cursor-pointer'
           : ''
@@ -710,8 +708,8 @@ export const InGameView: React.FC<InGameViewProps> = ({
         {...safeBindPadButton('btnL')}
         className={`${isLandscape ? 'w-20 h-10' : 'w-16 h-8'} rounded-xl font-mono font-black text-xs shadow-md flex items-center justify-center tactile-btn touch-none select-none ${
           shaders.amoled
-            ? 'bg-zinc-950 text-zinc-200 border border-white/10 active:bg-emerald-500 active:text-zinc-950'
-            : 'bg-zinc-900/90 text-zinc-100 border border-white/15 active:bg-emerald-500 active:text-zinc-950 shadow-inner'
+            ? `bg-zinc-950 text-zinc-200 border border-white/10 active:bg-[${theme.hex}] active:text-zinc-950`
+            : `bg-zinc-900/90 text-zinc-100 border border-white/15 active:bg-[${theme.hex}] active:text-zinc-950 shadow-inner`
         }`}
         aria-label="L Shoulder"
       >
@@ -727,7 +725,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
       }}
       className={`rounded-xl transition ${
         customizing && selectedPad === 'btnR'
-          ? 'border-2 border-emerald-400 ring-2 ring-emerald-400/50 cursor-pointer'
+          ? `border-2 border-[${theme.hex}] ring-2 ring-[${theme.hex}]/50 cursor-pointer`
           : customizing
           ? 'border-2 border-white/30 cursor-pointer'
           : ''
@@ -738,8 +736,8 @@ export const InGameView: React.FC<InGameViewProps> = ({
         {...safeBindPadButton('btnR')}
         className={`${isLandscape ? 'w-20 h-10' : 'w-16 h-8'} rounded-xl font-mono font-black text-xs shadow-md flex items-center justify-center tactile-btn touch-none select-none ${
           shaders.amoled
-            ? 'bg-zinc-950 text-zinc-200 border border-white/10 active:bg-emerald-500 active:text-zinc-950'
-            : 'bg-zinc-900/90 text-zinc-100 border border-white/15 active:bg-emerald-500 active:text-zinc-950 shadow-inner'
+            ? `bg-zinc-950 text-zinc-200 border border-white/10 active:bg-[${theme.hex}] active:text-zinc-950`
+            : `bg-zinc-900/90 text-zinc-100 border border-white/15 active:bg-[${theme.hex}] active:text-zinc-950 shadow-inner`
         }`}
         aria-label="R Shoulder"
       >
@@ -771,7 +769,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
           className="rounded-full gb-rubber-pill -rotate-[25deg]"
           style={{ width: '3.2rem', height: '0.95rem' }}
         />
-        <span className="text-[10px] font-black italic tracking-widest text-[#8d1d5c] dark:text-zinc-400 uppercase select-none">
+        <span className={`text-[10px] font-black italic tracking-widest ${theme.accentText} dark:text-zinc-400 uppercase select-none`}>
           SELECT
         </span>
       </button>
@@ -801,7 +799,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
           className="rounded-full gb-rubber-pill -rotate-[25deg]"
           style={{ width: '3.2rem', height: '0.95rem' }}
         />
-        <span className="text-[10px] font-black italic tracking-widest text-[#8d1d5c] dark:text-zinc-400 uppercase select-none">
+        <span className={`text-[10px] font-black italic tracking-widest ${theme.accentText} dark:text-zinc-400 uppercase select-none`}>
           START
         </span>
       </button>
@@ -819,7 +817,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
           className="rounded-full gb-rubber-pill -rotate-[25deg]"
           style={{ width: '3.2rem', height: '0.95rem' }}
         />
-        <span className="text-[10px] font-black italic tracking-widest text-[#8d1d5c] dark:text-zinc-400 uppercase select-none">
+        <span className={`text-[10px] font-black italic tracking-widest ${theme.accentText} dark:text-zinc-400 uppercase select-none`}>
           SELECT
         </span>
       </button>
@@ -833,7 +831,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
           className="rounded-full gb-rubber-pill -rotate-[25deg]"
           style={{ width: '3.2rem', height: '0.95rem' }}
         />
-        <span className="text-[10px] font-black italic tracking-widest text-[#8d1d5c] dark:text-zinc-400 uppercase select-none">
+        <span className={`text-[10px] font-black italic tracking-widest ${theme.accentText} dark:text-zinc-400 uppercase select-none`}>
           START
         </span>
       </button>
@@ -1081,8 +1079,12 @@ export const InGameView: React.FC<InGameViewProps> = ({
           customizerPos
             ? { left: `${customizerPos.x}px`, top: `${customizerPos.y}px` }
             : isLandscape
-              ? { bottom: '16px', right: '16px' }
-              : { bottom: '16px', left: '50%', transform: 'translateX(-50%)' }
+              ? activeKey === 'actions' || activeKey === 'btnR' || activeKey === 'start'
+                ? { bottom: '16px', left: '16px' }
+                : { bottom: '16px', right: '16px' }
+              : isScreen
+                ? { bottom: '16px', left: '50%', transform: 'translateX(-50%)' }
+                : { top: 'max(env(safe-area-inset-top, 0px) + 12px, 20px)', left: '50%', transform: 'translateX(-50%)' }
         }
       >
         {/* Drag handle header */}
@@ -1100,7 +1102,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
             </span>
           </div>
           <span className="text-[10px] text-zinc-400 font-mono">
-            {Math.round(currentScale * 100)}% • Drag dialog
+            Drag dialog
           </span>
         </div>
 
@@ -1126,7 +1128,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 maxLength={20}
                 autoFocus
                 placeholder={`Layout ${activeSlot}`}
-                className="flex-1 bg-zinc-800 text-emerald-300 font-bold text-xs rounded-lg px-2 py-1 border border-emerald-500/50 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+                className={`flex-1 bg-zinc-800 ${theme.isLight ? 'text-emerald-700' : 'text-emerald-300'} font-bold text-xs rounded-lg px-2 py-1 border border-[${theme.hex}]/50 outline-none ${theme.focusRing}`}
               />
               <button
                 onClick={() => {
@@ -1136,7 +1138,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                   setEditingLayoutName(false);
                   showToast(`Renamed to "${trimmed}"`);
                 }}
-                className="p-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold transition active:scale-95"
+                className={`p-1 rounded-lg bg-[${theme.hex}] hover:bg-[${theme.hex}]/80 text-zinc-950 font-bold transition active:scale-95`}
                 title="Save layout name"
                 aria-label="Save layout name"
               >
@@ -1154,7 +1156,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
           ) : (
             <>
               <div className="flex items-center gap-1.5 text-zinc-400 font-mono font-bold text-[11px] shrink-0">
-                <Layers className="w-3.5 h-3.5 text-emerald-400" />
+                <Layers className={`w-3.5 h-3.5 ${theme.isLight ? 'text-emerald-600' : 'text-emerald-400'}`} />
                 <span>LAYOUT</span>
               </div>
               <div className="flex items-center gap-1.5 min-w-0">
@@ -1166,7 +1168,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                     setActiveSlotHandler(newSlot);
                     showToast(`Loaded ${layoutNames[newSlot] || `Layout ${newSlot}`} (${isLandscape ? 'Landscape' : 'Portrait'})`);
                   }}
-                  className="bg-zinc-800 hover:bg-zinc-700 text-emerald-300 font-bold text-xs rounded-lg px-2.5 py-1 border border-zinc-700 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 cursor-pointer transition max-w-[145px] truncate"
+                  className={`bg-zinc-800 hover:bg-zinc-700 ${theme.isLight ? 'text-emerald-700' : 'text-emerald-300'} font-bold text-xs rounded-lg px-2.5 py-1 border border-zinc-700 outline-none ${theme.focusRing} cursor-pointer transition max-w-[145px] truncate`}
                 >
                   <option value={1}>{layoutNames[1] || 'Layout 1'}</option>
                   <option value={2}>{layoutNames[2] || 'Layout 2'}</option>
@@ -1189,40 +1191,49 @@ export const InGameView: React.FC<InGameViewProps> = ({
         </div>
 
         {/* Resizing slider */}
-        <div className="flex items-center gap-2 pt-0.5">
-          <input
-            type="range"
-            min={isTransport ? '0.65' : isScreen ? '0.6' : '0.5'}
-            max={isTransport ? '1.5' : isScreen ? '1.5' : '1.8'}
-            step="0.05"
-            value={currentScale}
-            onChange={(e) => scalePad(activeKey, parseFloat(e.target.value))}
-            className="flex-1 accent-emerald-500 cursor-pointer"
-          />
-          <button
-            onClick={() => {
-              if (isLandscape) {
-                setPadLayoutLandscape(DEFAULT_LANDSCAPE_PAD_LAYOUT);
-              } else {
-                setPadLayoutPortrait(DEFAULT_PAD_LAYOUT);
-              }
-              showToast(`Reset Layout ${activeSlot} to default`);
-            }}
-            className="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold transition active:scale-95"
-            title="Reset layout to default"
-          >
-            Reset
-          </button>
-          <button
-            onClick={() => {
-              setCustomizing(false);
-              setCustomizerPos(null);
-              showToast('Controls saved');
-            }}
-            className="px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-zinc-950 text-xs font-black transition active:scale-95"
-          >
-            Done
-          </button>
+        <div className="space-y-1 pt-0.5">
+          <div className="flex items-center justify-between text-[11px] font-bold text-zinc-300">
+            <span>{isScreen ? 'Screen Scale' : 'Button Scale'}</span>
+            <span className="text-[10px] font-mono text-emerald-400">
+              {Math.round(currentScale * 100)}%
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="range"
+              min={isTransport ? '0.65' : isScreen ? '0.6' : '0.5'}
+              max={isTransport ? '1.5' : isScreen ? '1.5' : '1.8'}
+              step="0.05"
+              value={currentScale}
+              onChange={(e) => scalePad(activeKey, parseFloat(e.target.value))}
+              className="flex-1 accent-emerald-500 cursor-pointer"
+              aria-label={isScreen ? 'Screen scale' : 'Button scale'}
+            />
+            <button
+              onClick={() => {
+                if (isLandscape) {
+                  setPadLayoutLandscape(DEFAULT_LANDSCAPE_PAD_LAYOUT);
+                } else {
+                  setPadLayoutPortrait(DEFAULT_PAD_LAYOUT);
+                }
+                showToast(`Reset Layout ${activeSlot} to default`);
+              }}
+              className="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold transition active:scale-95"
+              title="Reset layout to default"
+            >
+              Reset
+            </button>
+            <button
+              onClick={() => {
+                setCustomizing(false);
+                setCustomizerPos(null);
+                showToast('Controls saved');
+              }}
+              className="px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-zinc-950 text-xs font-black transition active:scale-95"
+            >
+              Done
+            </button>
+          </div>
         </div>
 
         {/* Screen Vertical Slide Position Slider (Centered X, Only Moves Y Up/Down) */}
@@ -1290,14 +1301,6 @@ export const InGameView: React.FC<InGameViewProps> = ({
               className="flex-1 accent-emerald-500 cursor-pointer"
               aria-label="Touch controls opacity"
             />
-            <button
-              type="button"
-              onClick={() => setPadOpacity(1)}
-              className="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-mono font-bold transition active:scale-95"
-              title="Reset opacity to 100%"
-            >
-              100%
-            </button>
           </div>
         </div>
 
@@ -1309,7 +1312,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
               onClick={() => setSelectedPad(key)}
               className={`py-1 px-2 rounded-lg text-[10px] font-bold border transition ${
                 selectedPad === key
-                  ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
+                  ? `bg-[${theme.hex}]/20 border-[${theme.hex}] ${theme.isLight ? 'text-emerald-700' : 'text-emerald-300'}`
                   : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'
               }`}
             >
@@ -1350,6 +1353,14 @@ export const InGameView: React.FC<InGameViewProps> = ({
       </div>
     );
   };
+
+  // Transport bar className (depends on theme, customizing state)
+  const transportBorderClass = customizing && selectedPad === 'transport'
+    ? `border-[${theme.hex}] ring-2 ring-[${theme.hex}]/50 bg-[${theme.hex}]/20 cursor-pointer`
+    : customizing
+    ? 'border-white/30 cursor-pointer'
+    : 'border-white/10';
+  const transportClassName = `bg-black/90 px-2.5 py-0.5 rounded-lg border ${transportBorderClass} shadow-xl flex items-center transition-[transform,border-color,background-color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] origin-center`;
 
   return (
     <div
@@ -1395,7 +1406,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
             shaders.amoled
               ? 'bg-black border-b border-zinc-900'
               : 'bg-black/90 border-b border-white/10'
-          } transition-[transform,opacity] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] shadow-xl ${
+          } transition-[transform,opacity] var(--duration-base) var(--ease-standard) shadow-xl ${
             topBarVisible
               ? 'translate-y-0 opacity-100 pointer-events-auto'
               : '-translate-y-full opacity-0 pointer-events-none'
@@ -1403,14 +1414,28 @@ export const InGameView: React.FC<InGameViewProps> = ({
           style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 14px)' }}
           onClick={() => revealTopBar()}
         >
-          <button
-            onClick={triggerExitWithCeremony}
-            className="p-2 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-zinc-200 border border-white/10 text-xs font-bold transition active:scale-95 tactile-btn"
-            aria-label="Library"
-            title="Save & Return to Cartridge Binder"
-          >
-            <Home className="w-3.5 h-3.5 text-emerald-400" />
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={triggerExitWithCeremony}
+              className="p-2 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-zinc-200 border border-white/10 text-xs font-bold transition active:scale-95 tactile-btn"
+              aria-label="Library"
+              title="Save & Return to Cartridge Binder"
+            >
+              <Home className={`w-3.5 h-3.5 ${theme.isLight ? 'text-emerald-600' : 'text-emerald-400'}`} />
+            </button>
+            <button
+              onClick={() => setInGameMenuOpen((o) => !o)}
+              className={`p-2 rounded-xl border text-xs font-bold transition active:scale-95 tactile-btn ${
+                inGameMenuOpen
+                  ? `${theme.accentBg} text-white shadow-emerald-500/20`
+                  : 'bg-zinc-900/90 hover:bg-zinc-800 text-zinc-100 border-white/10 hover:border-white/20'
+              }`}
+              aria-label="Pause Menu & Controls"
+              title="Pause Menu & Controls"
+            >
+              <Sliders className={`w-3.5 h-3.5 ${inGameMenuOpen ? 'text-white' : theme.isLight ? 'text-emerald-600' : 'text-emerald-400'}`} />
+            </button>
+          </div>
 
           <div className="flex flex-col items-center text-center truncate px-2">
             <span className="text-xs font-extrabold text-zinc-100 truncate max-w-[180px]">
@@ -1419,7 +1444,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
             <div className="flex items-center gap-1.5 text-[11px] font-mono text-zinc-300">
               <span className="px-1.5 py-0.5 rounded bg-zinc-800 text-amber-300 font-bold uppercase">{activeGame.shortSystem || activeGame.core}</span>
               <span>•</span>
-              <span className="text-emerald-400 font-bold">
+              <span className={`font-bold ${theme.isLight ? 'text-emerald-600' : 'text-emerald-400'}`}>
                 {fps || 60} FPS
               </span>
               {isMuted && (
@@ -1431,7 +1456,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
             </div>
           </div>
 
-          {/* Top Controls Toggle + Fullscreen Toggle + Menu Button */}
+          {/* Top Controls Toggle + Fullscreen Toggle */}
           <div className="flex items-center gap-1.5">
             <button
               onClick={() => {
@@ -1440,7 +1465,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 try { localStorage.setItem('retro_hide_pad', next ? '1' : '0'); } catch {}
                 showToast?.(next ? 'On-screen buttons hidden' : 'On-screen buttons visible');
               }}
-              className={`flex items-center gap-1 px-2 py-1.5 rounded-xl border text-xs font-bold transition active:scale-95 ${
+              className={`p-2 rounded-xl border text-xs font-bold transition active:scale-95 tactile-btn ${
                 hidePad
                   ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
                   : 'bg-zinc-900/90 hover:bg-zinc-800 text-zinc-100 border-white/10'
@@ -1448,28 +1473,15 @@ export const InGameView: React.FC<InGameViewProps> = ({
               aria-label={hidePad ? 'Show touch controls' : 'Hide touch controls'}
               title={hidePad ? 'Show on-screen touch controls' : 'Hide on-screen touch controls'}
             >
-              {hidePad ? <EyeOff className="w-3.5 h-3.5 text-amber-400" /> : <Gamepad2 className="w-3.5 h-3.5 text-emerald-400" />}
+              {hidePad ? <EyeOff className="w-3.5 h-3.5 text-amber-400" /> : <Gamepad2 className={`w-3.5 h-3.5 ${theme.isLight ? 'text-emerald-600' : 'text-emerald-400'}`} />}
             </button>
             <button
               onClick={toggleFullscreen}
-              className="flex items-center gap-1 px-2 py-1.5 rounded-xl border text-xs font-bold transition active:scale-95 bg-zinc-900/90 hover:bg-zinc-800 text-zinc-100 border-white/10"
+              className="p-2 rounded-xl border text-xs font-bold transition active:scale-95 tactile-btn bg-zinc-900/90 hover:bg-zinc-800 text-zinc-100 border-white/10"
               aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
               title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
             >
-              {isFullscreen ? <Minimize className="w-3.5 h-3.5" /> : <Maximize className="w-3.5 h-3.5" />}
-            </button>
-            <button
-              onClick={() => setInGameMenuOpen((o) => !o)}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition active:scale-95 shadow-sm ${
-                inGameMenuOpen
-                  ? `${theme.accentBg} text-white shadow-emerald-500/20`
-                  : 'bg-zinc-900/90 hover:bg-zinc-800 text-zinc-100 border-white/10 hover:border-white/20'
-              }`}
-              aria-label="Pause Menu & Controls"
-              title="Pause Menu & Controls"
-            >
-              <Sliders className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="font-sans text-[11px] font-extrabold tracking-wide uppercase">Menu</span>
+              {isFullscreen ? <Minimize className={`w-3.5 h-3.5 ${theme.isLight ? 'text-emerald-600' : 'text-emerald-400'}`} /> : <Maximize className={`w-3.5 h-3.5 ${theme.isLight ? 'text-emerald-600' : 'text-emerald-400'}`} />}
             </button>
           </div>
         </div>
@@ -1490,7 +1502,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
             >
               <div className="flex items-center justify-between pb-1 border-b border-[#222227]">
                 <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 hardware-led" />
+                  <span className={`w-2 h-2 rounded-full ${theme.isLight ? 'bg-emerald-600' : 'bg-emerald-400'} hardware-led`} />
                   <span className="text-xs font-bold text-[#f4f4f6]">
                     Pause Menu
                   </span>
@@ -1507,7 +1519,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
               {/* Primary CTA: Resume Playing */}
               <button
                 onClick={() => setInGameMenuOpen(false)}
-                className="w-full py-2.5 px-4 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 text-xs font-bold flex items-center justify-center gap-2 shadow-sm tactile-btn transition active:scale-[0.98]"
+                className={`w-full py-2.5 px-4 rounded-2xl ${theme.accentBg} text-xs font-bold flex items-center justify-center gap-2 shadow-sm tactile-btn transition active:scale-[0.98]`}
               >
                 <Play className="w-3.5 h-3.5 fill-current" />
                 <span>Resume Playing</span>
@@ -1520,16 +1532,16 @@ export const InGameView: React.FC<InGameViewProps> = ({
                     setInGameMenuOpen(false);
                     setInGameSaveModalMode('save');
                   }}
-                  className="flex flex-col items-start gap-1 p-3 rounded-2xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 transition active:scale-[0.98] tactile-btn text-left"
+                  className={`flex flex-col items-start gap-1 p-3 rounded-2xl ${theme.accentSoft} transition active:scale-[0.98] tactile-btn text-left`}
                 >
                   <div className="flex items-center gap-1.5 w-full justify-between">
-                    <Save className="w-4 h-4 text-emerald-400" />
-                    <span className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold uppercase">
+                    <Save className={`w-4 h-4 ${theme.accentText}`} />
+                    <span className={`text-[11px] font-mono px-1.5 py-0.5 rounded font-bold uppercase ${theme.accentSoft}`}>
                       {latestSaveSlot ? `SLOT ${latestSaveSlot.slot}` : 'SLOTS'}
                     </span>
                   </div>
                   <span className="text-xs font-bold text-white mt-1">Save State</span>
-                  <span className="text-[11px] text-emerald-400/80 truncate max-w-full">
+                  <span className={`text-[11px] ${theme.accentText}/80 truncate max-w-full`}>
                     {latestSaveSlot ? `Slot ${latestSaveSlot.slot} • ${latestSaveSlot.timestamp || 'Saved'}` : 'Capture frame • 4 slots'}
                   </span>
                 </button>
@@ -1557,7 +1569,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
               {/* On-Screen Touch Controls Quick Switch Card */}
               <div className="flex items-center justify-between px-3 py-2 rounded-2xl bg-zinc-900/80 border border-zinc-800">
                 <div className="flex items-center gap-2.5">
-                  <div className={`p-1.5 rounded-xl ${hidePad ? 'bg-amber-500/20 text-amber-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
+                  <div className={`p-1.5 rounded-xl ${hidePad ? 'bg-amber-500/20 text-amber-400' : theme.accentSoft}`}>
                     {hidePad ? <EyeOff className="w-4 h-4" /> : <Gamepad2 className="w-4 h-4" />}
                   </div>
                   <div className="flex flex-col text-left">
@@ -1578,7 +1590,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                     showToast?.(next ? 'On-screen buttons hidden' : 'On-screen buttons visible');
                   }}
                   className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors ${
-                    !hidePad ? 'bg-emerald-500 justify-end' : 'bg-zinc-700 justify-start'
+                    !hidePad ? `bg-[${theme.hex}] justify-end` : 'bg-zinc-700 justify-start'
                   }`}
                   aria-label="Toggle on-screen touch controls"
                 >
@@ -1587,7 +1599,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
               </div>
 
               {/* Tier 2: Quick Control & Display Toggles (Compact horizontal pill row) */}
-              <div className="grid grid-cols-4 gap-1.5">
+              <div className="grid grid-cols-3 gap-1.5">
                 <button
                   onClick={toggleAudio}
                   className={`flex flex-col items-center justify-center gap-1 p-2 rounded-xl border text-center transition active:scale-95 ${
@@ -1597,7 +1609,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                   }`}
                   title="Toggle Audio Mute"
                 >
-                  {isMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
+                  {isMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className={`w-4 h-4 ${theme.isLight ? 'text-emerald-600' : 'text-emerald-400'}`} />}
                   <span className="text-[11px] font-bold">{isMuted ? 'Muted' : 'Audio'}</span>
                 </button>
 
@@ -1608,10 +1620,10 @@ export const InGameView: React.FC<InGameViewProps> = ({
                     setCustomizing(true);
                     setSelectedPad('dpad');
                   }}
-                  className="flex flex-col items-center justify-center gap-1 p-2 rounded-xl bg-zinc-900/80 hover:bg-zinc-900 border border-zinc-800 text-zinc-200 text-center transition active:scale-95 hover:border-emerald-500/40"
+                  className={`flex flex-col items-center justify-center gap-1 p-2 rounded-xl bg-zinc-900/80 hover:bg-zinc-900 border border-zinc-800 text-zinc-200 text-center transition active:scale-95 hover:border-[${theme.hex}]/40`}
                   title="Configure touch controls, opacity & layout"
                 >
-                  <Sliders className="w-4 h-4 text-emerald-400" />
+                  <Sliders className={`w-4 h-4 ${theme.isLight ? 'text-emerald-600' : 'text-emerald-400'}`} />
                   <span className="text-[11px] font-bold">Edit Pad</span>
                 </button>
 
@@ -1626,21 +1638,6 @@ export const InGameView: React.FC<InGameViewProps> = ({
                   <Settings className="w-4 h-4 text-zinc-300" />
                   <span className="text-[11px] font-bold">Config</span>
                 </button>
-
-                {onToggleLightDark && (
-                  <button
-                    onClick={onToggleLightDark}
-                    className="flex flex-col items-center justify-center gap-1 p-2 rounded-xl bg-zinc-900/80 hover:bg-zinc-900 border border-zinc-800 text-zinc-300 text-center transition active:scale-95"
-                    title={theme.isLight ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
-                  >
-                    {theme.isLight ? (
-                      <Moon className="w-4 h-4 text-zinc-300" />
-                    ) : (
-                      <Sun className="w-4 h-4 text-amber-500" />
-                    )}
-                    <span className="text-[11px] font-bold">{theme.isLight ? 'Dark' : 'Light'}</span>
-                  </button>
-                )}
               </div>
 
               {/* Tier 3: Collapsible Cartridge Tools & Session Exit */}
@@ -1742,7 +1739,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                   onClick={triggerExitWithCeremony}
                   className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white text-xs font-bold transition active:scale-95"
                 >
-                  <Home className="w-3.5 h-3.5 text-emerald-400" />
+                  <Home className={`w-3.5 h-3.5 ${theme.isLight ? 'text-emerald-600' : 'text-emerald-400'}`} />
                   <span>Save & Power Off to Shelf</span>
                 </button>
               </div>
@@ -1807,7 +1804,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 isPoweringOff ? 'crt-power-off' : isPoweringOn ? 'crt-power-on' : ''
               } ${
                 customizing && selectedPad === 'screen'
-                  ? 'border-2 border-emerald-400 ring-2 ring-emerald-400/50 cursor-pointer'
+                  ? `border-2 border-[${theme.hex}] ring-2 ring-[${theme.hex}]/50 cursor-pointer`
                   : customizing
                   ? 'border-2 border-white/30 cursor-pointer'
                   : shaders.edgeToEdge
@@ -1865,7 +1862,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 <div
                   className={`absolute inset-0 touch-none cursor-ns-resize pointer-events-auto z-30 flex items-center justify-center ${
                     selectedPad === 'screen'
-                      ? 'border-2 border-dashed border-emerald-400 bg-emerald-400/15'
+                      ? `border-2 border-dashed border-[${theme.hex}] bg-[${theme.hex}]/15`
                       : 'border-2 border-dashed border-white/40 bg-black/40 hover:border-emerald-400/60'
                   }`}
                   onPointerDown={(e) => {
@@ -1922,8 +1919,8 @@ export const InGameView: React.FC<InGameViewProps> = ({
                   }}
                 >
                   {selectedPad === 'screen' && (
-                    <div className="px-3 py-1.5 rounded-xl bg-black/90 border border-emerald-400/80 text-emerald-300 text-xs font-semibold shadow-lg flex items-center gap-2 pointer-events-none select-none">
-                      <GripVertical className="w-4 h-4 text-emerald-400" />
+                    <div className={`px-3 py-1.5 rounded-xl bg-black/90 border border-[${theme.hex}]/80 ${theme.isLight ? 'text-emerald-700' : 'text-emerald-300'} text-xs font-semibold shadow-lg flex items-center gap-2 pointer-events-none select-none`}>
+                      <GripVertical className={`w-4 h-4 ${theme.isLight ? 'text-emerald-600' : 'text-emerald-400'}`} />
                       <span>Slide Up / Down • Centered X</span>
                     </div>
                   )}
@@ -1981,13 +1978,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                     setSelectedPad('transport');
                   }
                 }}
-                className={`bg-black/90 px-2.5 py-0.5 rounded-lg border ${
-                  customizing && selectedPad === 'transport'
-                    ? 'border-emerald-400 ring-2 ring-emerald-400/50 bg-emerald-950/20 cursor-pointer'
-                    : customizing
-                    ? 'border-white/30 cursor-pointer'
-                    : 'border-white/10'
-                } shadow-xl flex items-center transition-[transform,border-color,background-color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] origin-center`}
+                className={transportClassName}
                 style={{
                   transform: `scale(${transportScale})`,
                   transformOrigin: 'center center',
@@ -2146,7 +2137,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
           <>
             {/* Left Flank (order: -1 -> placed visually on the LEFT) */}
             <div
-              className={`flex-none ${isGba ? 'w-[96px] sm:w-[110px] md:w-[124px]' : 'w-[112px] sm:w-[130px] md:w-[150px]'} h-full flex flex-col justify-between items-center py-3 px-2 select-none touch-none z-10 pointer-events-none ${
+              className={`flex-none ${isGba ? 'w-[96px] sm:w-[110px] md:w-[124px]' : 'w-[112px] sm:w-[130px] md:w-[150px]'} h-full select-none touch-none z-10 pointer-events-none ${
                 shaders.amoled ? 'bg-black border-r border-zinc-900' : `${theme.deckBg} border-r border-white/5`
               }`}
               style={{
@@ -2155,19 +2146,11 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 WebkitTouchCallout: 'none',
                 userSelect: 'none',
               }}
-            >
-              <div className="w-full flex items-center justify-start pl-2 pt-1 opacity-25 text-[10px] font-mono font-bold tracking-widest text-zinc-400 select-none">
-                L
-              </div>
-              <div className="flex-1" />
-              <div className="w-full flex items-center justify-start pl-2 pb-1 opacity-25 text-[9px] font-mono font-bold tracking-widest text-zinc-400 select-none">
-                SELECT
-              </div>
-            </div>
+            />
 
             {/* Right Flank (order: 1 -> placed visually on the RIGHT) */}
             <div
-              className={`flex-none ${isGba ? 'w-[96px] sm:w-[110px] md:w-[124px]' : 'w-[112px] sm:w-[130px] md:w-[150px]'} h-full flex flex-col justify-between items-center py-3 px-2 select-none touch-none z-10 pointer-events-none ${
+              className={`flex-none ${isGba ? 'w-[96px] sm:w-[110px] md:w-[124px]' : 'w-[112px] sm:w-[130px] md:w-[150px]'} h-full select-none touch-none z-10 pointer-events-none ${
                 shaders.amoled ? 'bg-black border-l border-zinc-900' : `${theme.deckBg} border-l border-white/5`
               }`}
               style={{
@@ -2176,15 +2159,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 WebkitTouchCallout: 'none',
                 userSelect: 'none',
               }}
-            >
-              <div className="w-full flex items-center justify-end pr-2 pt-1 opacity-25 text-[10px] font-mono font-bold tracking-widest text-zinc-400 select-none">
-                R
-              </div>
-              <div className="flex-1" />
-              <div className="w-full flex items-center justify-end pr-2 pb-1 opacity-25 text-[9px] font-mono font-bold tracking-widest text-zinc-400 select-none">
-                START
-              </div>
-            </div>
+            />
           </>
         )}
 

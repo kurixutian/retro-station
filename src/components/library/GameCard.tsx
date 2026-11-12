@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Game, Theme } from '../../types';
 import { formatGameTitle } from '../../constants/cores';
 import { GameCoverImage } from '../common/GameCoverImage';
@@ -11,7 +11,7 @@ interface GameCardProps {
   compact?: boolean;
 }
 
-export const GameCard: React.FC<GameCardProps> = ({ game, theme, onSelect, compact = false }) => {
+const GameCardInner: React.FC<GameCardProps> = ({ game, theme, onSelect, compact = false }) => {
   const systemLabel = game.shortSystem || game.system || 'ROM';
 
   return (
@@ -59,20 +59,22 @@ export const GameCard: React.FC<GameCardProps> = ({ game, theme, onSelect, compa
       </div>
 
       {/* Cartridge Label Footer */}
-      <div className={`${compact ? 'pt-1 px-1' : 'pt-2 px-1.5'} flex items-center justify-between gap-1.5`}>
+      <div className={`${compact ? 'pt-1.5 px-1' : 'pt-2 px-1.5'} flex items-center justify-between gap-1.5`}>
         <div className="min-w-0 flex-1 space-y-0.5">
-          <h3 className={`font-bold ${compact ? 'text-[11px] leading-tight' : 'text-xs sm:text-sm'} truncate transition-colors ${
+          <h3 className={`font-bold ${compact ? 'text-[11px] leading-snug line-clamp-2 min-h-[2.5em]' : 'text-xs sm:text-sm leading-snug line-clamp-2'} transition-colors ${
             theme.isLight ? 'text-[#121214] group-hover:text-black' : 'text-[#f4f4f6] group-hover:text-white'
           }`}>
             {formatGameTitle(game.title)}
           </h3>
-          <p className={`${compact ? 'text-[9px]' : 'text-[11px]'} truncate ${
-            theme.isLight ? 'text-[#575654]' : 'text-[#8e8e93]'
-          }`}>
-            {game.system || game.shortSystem}
-          </p>
+          {!compact && (
+            <p className={`text-[11px] truncate ${theme.isLight ? 'text-[#575654]' : 'text-[#8e8e93]'}`}>
+              {game.system || game.shortSystem}
+            </p>
+          )}
         </div>
       </div>
     </div>
   );
 };
+
+export const GameCard = memo(GameCardInner);

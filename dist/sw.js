@@ -1,4 +1,4 @@
-const CACHE_NAME = 'retro-station-v17';
+const CACHE_NAME = 'retro-station-v18';
 const PRECACHE_ASSETS = [
   './',
   './index.html',
@@ -42,6 +42,16 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   const reqUrl = new URL(event.request.url);
+
+  // Never intercept Vite dev server or hot-reload requests
+  if (
+    reqUrl.port === '5173' ||
+    reqUrl.pathname.startsWith('/@') ||
+    reqUrl.pathname.startsWith('/src/') ||
+    reqUrl.pathname.startsWith('/node_modules/')
+  ) {
+    return;
+  }
 
   // Never intercept Cloud Sync API calls in the Service Worker
   if (reqUrl.pathname.startsWith('/api/') || reqUrl.hostname.includes('workers.dev')) {

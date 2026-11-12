@@ -96,13 +96,13 @@ export const MissingRomModal: React.FC<MissingRomModalProps> = ({
         {/* Body */}
         <div className="p-5 space-y-4 overflow-y-auto modal-scroll">
           <div className="p-3.5 rounded-2xl bg-zinc-900/60 border border-zinc-800/80 flex items-start gap-3">
-            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0 mt-0.5">
+            <div className={`p-2 rounded-xl ${theme.accentSoft} shrink-0 mt-0.5`}>
               <ShieldCheck className="w-4 h-4" />
             </div>
             <div className="text-xs space-y-1">
               <div className="font-extrabold text-white flex items-center gap-1.5">
                 <span>Save Progress Synced</span>
-                <span className="text-[11px] px-1.5 py-0.5 rounded uppercase font-black tracking-wider bg-emerald-500/20 text-emerald-300">
+                <span className={`text-[11px] px-1.5 py-0.5 rounded uppercase font-black tracking-wider ${theme.accentSoft}`}>
                   Ready
                 </span>
               </div>

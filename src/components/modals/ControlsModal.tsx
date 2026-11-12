@@ -108,7 +108,7 @@ export const ControlsModal: React.FC<ControlsModalProps> = ({
               aria-selected={activeTab === 'keyboard'}
               aria-controls="controls-tabpanel-keyboard"
               onClick={() => setActiveTab('keyboard')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition active:scale-95 focus-visible:outline-none ${theme.focusRing} ${
                 activeTab === 'keyboard'
                   ? theme.isLight
                     ? 'bg-white text-zinc-900 shadow-sm'
@@ -127,7 +127,7 @@ export const ControlsModal: React.FC<ControlsModalProps> = ({
               aria-selected={activeTab === 'gamepad'}
               aria-controls="controls-tabpanel-gamepad"
               onClick={() => setActiveTab('gamepad')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition active:scale-95 focus-visible:outline-none ${theme.focusRing} ${
                 activeTab === 'gamepad'
                   ? theme.isLight
                     ? 'bg-white text-zinc-900 shadow-sm'
@@ -145,7 +145,7 @@ export const ControlsModal: React.FC<ControlsModalProps> = ({
           {/* Gamepad Detection Status */}
           <div className="flex items-center gap-1.5 text-[11px]">
             {connectedGamepad ? (
-              <span className="flex items-center gap-1.5 text-emerald-500 font-medium truncate max-w-[200px]" title={connectedGamepad}>
+              <span className={`flex items-center gap-1.5 font-medium truncate max-w-[200px] ${theme.accentText}`} title={connectedGamepad}>
                 <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
                 <span className="truncate">Connected: {connectedGamepad}</span>
               </span>
@@ -243,7 +243,7 @@ export const ControlsModal: React.FC<ControlsModalProps> = ({
                 theme.isLight ? 'bg-stone-100 border-stone-300' : 'bg-zinc-900/50 border-zinc-800'
               }`}>
                 <div className="flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-emerald-500" />
+                  <Sparkles className={`w-4 h-4 ${theme.accentText}`} />
                   <span className={`text-xs font-bold ${theme.isLight ? 'text-zinc-900' : 'text-zinc-200'}`}>W3C Standard Gamepad Mapping</span>
                 </div>
                 <p className={`text-[11px] leading-snug ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
@@ -265,7 +265,7 @@ export const ControlsModal: React.FC<ControlsModalProps> = ({
                       theme.isLight ? 'bg-stone-100 hover:bg-white text-zinc-900' : 'bg-zinc-950/60 hover:bg-zinc-900/40 text-zinc-200'
                     }`}>
                       <span className="font-bold">{binding.name}</span>
-                      <span className="font-mono text-emerald-500 font-semibold text-[11px]">
+                      <span className={`font-mono font-semibold text-[11px] ${theme.accentText}`}>
                         {binding.gamepad}
                       </span>
                     </div>

@@ -9,13 +9,21 @@ interface GameCoverImageProps {
   className?: string;
   imgClassName?: string;
   showBadge?: boolean;
+  /** Optional explicit dimensions to reserve layout space and avoid CLS */
+  width?: number;
+  height?: number;
+  /** Optional srcset for responsive images */
+  srcSet?: string;
 }
 
 export const GameCoverImage: React.FC<GameCoverImageProps> = ({
   game,
   className = '',
   imgClassName = '',
-  showBadge = false
+  showBadge = false,
+  width,
+  height,
+  srcSet,
 }) => {
   const [srcIndex, setSrcIndex] = useState(0);
   const [failedAll, setFailedAll] = useState(false);
@@ -115,6 +123,7 @@ export const GameCoverImage: React.FC<GameCoverImageProps> = ({
     >
       <img
         src={currentUrl}
+        srcSet={srcSet}
         alt={formatGameTitle(game?.title || '')}
         onLoad={() => {
           if (currentUrl && game?.id && currentUrl !== cachedUrl) {
@@ -149,6 +158,9 @@ export const GameCoverImage: React.FC<GameCoverImageProps> = ({
             : 'object-center'
         } ${imgClassName}`}
         loading="lazy"
+        decoding="async"
+        width={width}
+        height={height}
       />
       {showBadge && (
         <span className="absolute top-2 left-2 px-2 py-0.5 rounded-md text-[11px] font-bold bg-[#0a0a0c]/90 text-white border border-white/15">

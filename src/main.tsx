@@ -4,7 +4,23 @@ import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(<App />);
 
-if (
+if (import.meta.env.DEV) {
+  // Unregister existing Service Workers in development to prevent Vite HMR/dev asset caching conflicts
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then((registrations) => {
+      for (const reg of registrations) {
+        reg.unregister().catch(() => {});
+      }
+    });
+    if (typeof caches !== 'undefined') {
+      caches.keys().then((keys) => {
+        for (const key of keys) {
+          caches.delete(key).catch(() => {});
+        }
+      });
+    }
+  }
+} else if (
   'serviceWorker' in navigator &&
   (window.location.protocol === 'https:' ||
     window.location.hostname === 'localhost' ||

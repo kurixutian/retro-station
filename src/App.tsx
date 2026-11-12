@@ -1796,7 +1796,6 @@ export default function App() {
       {currentView === 'home' && (
         <LibraryView
           games={games}
-          filteredGames={filteredGames}
           theme={theme}
           showSearch={showSearch}
           setShowSearch={setShowSearch}

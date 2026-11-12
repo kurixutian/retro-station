@@ -343,7 +343,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                   <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-2 text-xs text-amber-200">
                     <div className="flex items-center gap-2">
                       <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-                      <span>Google session expired. Tap Sync Now to reconnect.</span>
+                      <span>Google session expired. Tap Reconnect & Sync below.</span>
                     </div>
                   </div>
                 )}
@@ -370,8 +370,12 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                     onClick={handleDisconnect}
                     className={`flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border font-bold text-xs transition cursor-pointer ${
                       confirmDisconnect
-                        ? 'bg-rose-500/20 border-rose-500 text-rose-300'
-                        : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-700/80 text-zinc-300'
+                        ? theme.isLight
+                          ? 'bg-rose-500/15 border-rose-500 text-rose-700'
+                          : 'bg-rose-500/20 border-rose-500 text-rose-300'
+                        : theme.isLight
+                          ? 'bg-stone-200 hover:bg-stone-300 border-stone-300 text-zinc-800'
+                          : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-700/80 text-zinc-300'
                     }`}
                   >
                     <LogOut className="w-4 h-4" />
@@ -380,14 +384,16 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                 </div>
 
                 {/* ROM Files Sync toggle (opt-in — uploads/downloads can be large) */}
-                <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-zinc-900/70 border border-zinc-800/80">
+                <div className={`flex items-center justify-between gap-3 p-3 rounded-xl border ${
+                  theme.isLight ? 'bg-stone-200/80 border-stone-300' : 'bg-zinc-900/70 border-zinc-800/80'
+                }`}>
                   <div className="flex items-start gap-2.5 min-w-0">
-                    <Gamepad2 className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
+                    <Gamepad2 className={`w-4 h-4 shrink-0 mt-0.5 ${theme.isLight ? 'text-sky-600' : 'text-sky-400'}`} />
                     <div className="min-w-0">
-                      <div className="text-[11px] font-extrabold text-white flex items-center gap-1.5">
+                      <div className={`text-[11px] font-extrabold flex items-center gap-1.5 ${theme.isLight ? 'text-zinc-900' : 'text-white'}`}>
                         ROM Files {romSyncOn ? 'Synced' : 'Not Synced'}
                       </div>
-                      <p className="text-[10px] text-zinc-400 leading-relaxed">
+                      <p className={`text-[10px] leading-relaxed ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
                         {romSyncOn
                           ? 'ROMs upload to your private Drive and restore automatically on a new device. Use Wi-Fi for large libraries.'
                           : 'Turn this on to upload imported ROM files, so a new device downloads them automatically instead of re-finding and re-downloading each ROM.'}
@@ -399,8 +405,8 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                     role="switch"
                     aria-checked={romSyncOn}
                     aria-label="Sync ROM files to Google Drive"
-                    className={`relative w-11 h-6 rounded-full shrink-0 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
-                      romSyncOn ? 'bg-emerald-500' : 'bg-zinc-700'
+                    className={`relative w-11 h-6 rounded-full shrink-0 transition-colors cursor-pointer focus:outline-none ${theme.focusRing} ${
+                      romSyncOn ? 'bg-emerald-500' : theme.isLight ? 'bg-stone-400' : 'bg-zinc-700'
                     }`}
                   >
                     <span
@@ -414,21 +420,27 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
 
               {/* Sync Report Panel */}
               {report.at > 0 && (
-                <div className="p-3.5 rounded-2xl bg-zinc-900/70 border border-zinc-800/80 space-y-2 text-xs">
+                <div className={`p-3.5 rounded-2xl border space-y-2 text-xs ${
+                  theme.isLight ? 'bg-stone-200/80 border-stone-300' : 'bg-zinc-900/70 border-zinc-800/80'
+                }`}>
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-zinc-300">Last Sync Report</span>
-                    <span className="text-[11px] text-zinc-400 font-mono">
+                    <span className={`font-bold ${theme.isLight ? 'text-zinc-900' : 'text-zinc-300'}`}>Last Sync Report</span>
+                    <span className={`text-[11px] font-mono ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
                       ↓ {report.pulled} pulled · ↑ {report.pushed} pushed
                     </span>
                   </div>
 
                   {report.skipped.length > 0 && (
-                    <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 space-y-1">
+                    <div className={`p-2.5 rounded-xl border space-y-1 ${
+                      theme.isLight
+                        ? 'bg-amber-500/15 border-amber-500/40 text-amber-900'
+                        : 'bg-amber-500/10 border-amber-500/30 text-amber-200'
+                    }`}>
                       <div className="flex items-center gap-1.5 font-bold text-[11px]">
-                        <FileWarning className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        <FileWarning className={`w-3.5 h-3.5 shrink-0 ${theme.isLight ? 'text-amber-600' : 'text-amber-400'}`} />
                         <span>{report.skipped.length} item(s) skipped:</span>
                       </div>
-                      <ul className="text-[11px] text-amber-200/90 pl-5 list-disc space-y-0.5">
+                      <ul className={`text-[11px] pl-5 list-disc space-y-0.5 ${theme.isLight ? 'text-amber-900/90' : 'text-amber-200/90'}`}>
                         {report.skipped.slice(0, 4).map((s, idx) => (
                           <li key={idx} className="break-all">
                             <span className="font-mono">{s.key}</span> — {s.reason}
@@ -439,12 +451,16 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                   )}
 
                   {report.errors.length > 0 && (
-                    <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-200 space-y-1">
+                    <div className={`p-2.5 rounded-xl border space-y-1 ${
+                      theme.isLight
+                        ? 'bg-rose-500/15 border-rose-500/40 text-rose-900'
+                        : 'bg-rose-500/10 border-rose-500/30 text-rose-200'
+                    }`}>
                       <div className="flex items-center gap-1.5 font-bold text-[11px]">
-                        <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                        <AlertTriangle className={`w-3.5 h-3.5 shrink-0 ${theme.isLight ? 'text-rose-600' : 'text-rose-400'}`} />
                         <span>{report.errors.length} error(s):</span>
                       </div>
-                      <ul className="text-[11px] text-rose-200/90 pl-5 list-disc space-y-0.5">
+                      <ul className={`text-[11px] pl-5 list-disc space-y-0.5 ${theme.isLight ? 'text-rose-900/90' : 'text-rose-200/90'}`}>
                         {report.errors.slice(0, 4).map((err, idx) => (
                           <li key={idx} className="break-all">
                             {err.key ? <span className="font-mono">{err.key}: </span> : null}
@@ -462,13 +478,13 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
               theme.isLight ? 'bg-[#dedad0]/60 border-[#cfcac0]' : 'bg-[#18181c] border-[#26262c]'
             }`}>
               <div className="space-y-1">
-                <h3 className="text-sm font-extrabold text-white">
-                  Option 1: Google Drive Auto-Sync
+                <h3 className={`text-sm font-extrabold ${theme.isLight ? 'text-zinc-900' : 'text-white'}`}>
+                  Google Drive Auto-Sync
                 </h3>
-                <p className="text-xs text-zinc-400 leading-relaxed">
+                <p className={`text-xs leading-relaxed ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
                   Sign in with Google to automatically sync save states, battery saves (.srm),
                   settings (theme, controls, shaders), and your game library to your private
-                  Google Drive <span className="text-zinc-200 font-semibold">appDataFolder</span>.
+                  Google Drive <span className={`font-semibold ${theme.isLight ? 'text-zinc-900' : 'text-zinc-200'}`}>appDataFolder</span>.
                   Turn on "ROM Files" (shown once linked) to sync the ROM binaries too.
                 </p>
               </div>
@@ -501,24 +517,25 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
           )}
 
           {/* 2. MANUAL FILE BACKUP SECTION (Always available, 100% offline & reliable) */}
-          <div className="p-4 rounded-2xl border border-amber-500/25 bg-amber-500/5 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-white font-extrabold text-xs">
-                <HardDrive className="w-4 h-4 text-amber-400" />
-                <span>Option 2: Manual Backup File (.json)</span>
-              </div>
-              <span className="px-2 py-0.5 rounded-md text-[9px] font-black tracking-wider uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                Offline
-              </span>
+          <div className={`p-4 rounded-2xl border space-y-3 ${
+            theme.isLight ? 'border-amber-500/40 bg-amber-500/10' : 'border-amber-500/25 bg-amber-500/5'
+          }`}>
+            <div className={`flex items-center gap-2 font-extrabold text-xs ${theme.isLight ? 'text-zinc-900' : 'text-white'}`}>
+              <HardDrive className={`w-4 h-4 ${theme.isLight ? 'text-amber-600' : 'text-amber-400'}`} />
+              <span>Manual Backup File (.json)</span>
             </div>
 
             {backupMsg && (
-              <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/25 text-[11px] text-amber-200 font-bold break-words">
+              <div className={`p-2 rounded-lg border text-[11px] font-bold break-words ${
+                theme.isLight
+                  ? 'bg-amber-500/15 border-amber-500/40 text-amber-900'
+                  : 'bg-amber-500/10 border-amber-500/25 text-amber-200'
+              }`}>
                 {backupMsg}
               </div>
             )}
 
-            <p className="text-xs text-zinc-400 leading-relaxed">
+            <p className={`text-xs leading-relaxed ${theme.isLight ? 'text-stone-700' : 'text-zinc-400'}`}>
               Export all your save states, battery saves (.srm), and game library into a single
               file. You can save it to your device or Google Drive manually and import it anywhere.
             </p>
@@ -535,7 +552,11 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={backupBusy}
-                className="py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700 transition active:scale-95 disabled:opacity-50 cursor-pointer"
+                className={`py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 border transition active:scale-95 disabled:opacity-50 cursor-pointer ${
+                  theme.isLight
+                    ? 'bg-stone-200 hover:bg-stone-300 text-zinc-900 border-stone-300'
+                    : 'bg-zinc-800 hover:bg-zinc-700 text-white border-zinc-700'
+                }`}
               >
                 <Upload className="w-3.5 h-3.5" />
                 <span>Import</span>
@@ -551,17 +572,21 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
           </div>
 
           {/* Info Box */}
-          <div className="p-3.5 rounded-2xl bg-zinc-900/50 border border-zinc-800/80 space-y-2 text-xs text-zinc-400">
+          <div className={`p-3.5 rounded-2xl border space-y-2 text-xs ${
+            theme.isLight
+              ? 'bg-stone-200/80 border-stone-300 text-stone-700'
+              : 'bg-zinc-900/50 border-zinc-800/80 text-zinc-400'
+          }`}>
             <div className="flex items-start gap-2.5">
-              <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+              <ShieldCheck className={`w-4 h-4 shrink-0 mt-0.5 ${theme.isLight ? 'text-emerald-600' : 'text-emerald-400'}`} />
               <p className="leading-relaxed">
-                <span className="text-zinc-200 font-bold">Zero Server Bills & Private:</span>{' '}
+                <span className={`font-bold ${theme.isLight ? 'text-zinc-900' : 'text-zinc-200'}`}>Zero Server Bills & Private:</span>{' '}
                 Everything lives in your own Google Drive hidden{' '}
-                <span className="text-zinc-200 font-semibold">appDataFolder</span>: saves, settings
+                <span className={`font-semibold ${theme.isLight ? 'text-zinc-900' : 'text-zinc-200'}`}>appDataFolder</span>: saves, settings
                 {romSyncOn ? ', and your imported ROM files' : ''}.{' '}
                 {!romSyncOn && (
                   <>
-                    <span className="text-zinc-200 font-semibold">ROM binaries are not uploaded</span>{' '}
+                    <span className={`font-semibold ${theme.isLight ? 'text-zinc-900' : 'text-zinc-200'}`}>ROM binaries are not uploaded</span>{' '}
                     (turn on "ROM Files" above to sync them).{' '}
                   </>
                 )}
@@ -572,13 +597,15 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
           </div>
 
           {/* Advanced Settings */}
-          <div className="border-t border-zinc-800/80 pt-2">
+          <div className={`border-t pt-2 ${theme.isLight ? 'border-stone-300' : 'border-zinc-800/80'}`}>
             <button
               onClick={() => setShowAdvanced(!showAdvanced)}
-              className="w-full flex items-center justify-between py-2 text-xs font-bold text-zinc-400 hover:text-zinc-200 transition cursor-pointer"
+              className={`w-full flex items-center justify-between py-2 text-xs font-bold transition cursor-pointer ${
+                theme.isLight ? 'text-stone-600 hover:text-zinc-900' : 'text-zinc-400 hover:text-zinc-200'
+              }`}
             >
               <span className="flex items-center gap-2">
-                <KeyRound className="w-3.5 h-3.5 text-zinc-500" />
+                <KeyRound className={`w-3.5 h-3.5 ${theme.isLight ? 'text-stone-500' : 'text-zinc-500'}`} />
                 Advanced / Self-Hosted OAuth Settings
               </span>
               {showAdvanced ? (
@@ -589,12 +616,14 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
             </button>
 
             {showAdvanced && (
-              <div className="mt-2 p-3.5 rounded-2xl bg-zinc-950/80 border border-zinc-800/80 space-y-3">
+              <div className={`mt-2 p-3.5 rounded-2xl border space-y-3 ${
+                theme.isLight ? 'bg-stone-200/80 border-stone-300' : 'bg-zinc-950/80 border-zinc-800/80'
+              }`}>
                 <div>
-                  <label className="block text-[11px] font-bold text-zinc-300 mb-1">
+                  <label className={`block text-[11px] font-bold mb-1 ${theme.isLight ? 'text-zinc-900' : 'text-zinc-300'}`}>
                     Custom Google OAuth Client ID (Optional)
                   </label>
-                  <p className="text-[11px] text-zinc-500 mb-2 leading-relaxed">
+                  <p className={`text-[11px] mb-2 leading-relaxed ${theme.isLight ? 'text-stone-600' : 'text-zinc-500'}`}>
                     Leave blank to use the built-in Client ID. If hosting on your own domain,
                     paste your own Google Web Client ID here.
                   </p>
@@ -604,7 +633,11 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                       value={clientIdInput}
                       onChange={(e) => setClientIdInput(e.target.value)}
                       placeholder="Your Google OAuth Web Client ID"
-                      className="flex-1 px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700/80 text-white font-mono text-xs focus:outline-none focus:border-emerald-500 focus-visible:ring-2 focus-visible:ring-emerald-400"
+                      className={`flex-1 px-3 py-2 rounded-xl border font-mono text-xs focus:outline-none focus:border-emerald-500 focus-visible:ring-2 focus-visible:ring-emerald-400 ${
+                        theme.isLight
+                          ? 'bg-white border-stone-300 text-zinc-900 placeholder:text-stone-400'
+                          : 'bg-zinc-900 border-zinc-700/80 text-white'
+                      }`}
                     />
                     <button
                       onClick={() => {
@@ -615,7 +648,11 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                             : 'Reverted to default Google Client ID'
                         );
                       }}
-                      className="px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold text-xs transition cursor-pointer"
+                      className={`px-3 py-2 rounded-xl font-bold text-xs transition cursor-pointer shrink-0 ${
+                        theme.isLight
+                          ? 'bg-stone-300 hover:bg-stone-400/70 text-zinc-900'
+                          : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200'
+                      }`}
                     >
                       Save
                     </button>
@@ -623,17 +660,21 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                 </div>
 
                 {user && (
-                  <div className="pt-2 border-t border-zinc-800/80 flex items-center justify-between">
-                    <span className="text-[11px] text-zinc-400">
+                  <div className={`pt-2 border-t flex items-center justify-between gap-3 ${
+                    theme.isLight ? 'border-stone-300' : 'border-zinc-800/80'
+                  }`}>
+                    <span className={`text-[11px] ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
                       Delete all RetroStation saves from Google Drive
                     </span>
                     <button
                       onClick={handleClearCloud}
                       disabled={isSyncing}
-                      className={`px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                      className={`px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 transition cursor-pointer ${
                         confirmClearCloud
                           ? 'bg-rose-500 text-white'
-                          : 'bg-rose-500/15 border border-rose-500/30 text-rose-300 hover:bg-rose-500/25'
+                          : theme.isLight
+                            ? 'bg-rose-500/15 border border-rose-500/40 text-rose-700 hover:bg-rose-500/25'
+                            : 'bg-rose-500/15 border border-rose-500/30 text-rose-300 hover:bg-rose-500/25'
                       }`}
                     >
                       <Trash2 className="w-3.5 h-3.5" />

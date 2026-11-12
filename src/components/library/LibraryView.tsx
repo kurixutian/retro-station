@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Gamepad2,
   HardDrive,
@@ -27,7 +27,6 @@ import appIcon from '../../assets/icon.png';
 
 interface LibraryViewProps {
   games: Game[];
-  filteredGames: Game[];
   theme: Theme;
   showSearch: boolean;
   setShowSearch: React.Dispatch<React.SetStateAction<boolean>>;
@@ -60,7 +59,6 @@ const AmbientBackdropTile: React.FC<{ game: Game }> = ({ game }) => {
 
 export const LibraryView: React.FC<LibraryViewProps> = ({
   games,
-  filteredGames,
   theme,
   showSearch,
   setShowSearch,
@@ -78,6 +76,36 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   recentGameIds,
   onToggleLightDark,
 }) => {
+  // ── Debounced Search (local state, synced to parent after delay) ───────────
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(searchQuery);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    // Sync from parent when it changes externally
+    setDebouncedSearchQuery(searchQuery);
+  }, [searchQuery]);
+
+  const handleSearchChange = useCallback((q: string) => {
+    setDebouncedSearchQuery(q);
+    // Debounce parent sync
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
+      setSearchQuery(q);
+    }, 180);
+  }, [setSearchQuery]);
+
+  // Memoized filtered games (computed locally from debounced query)
+  const filteredGames = useMemo(() => {
+    return games.filter((g) => {
+      if (systemFilter !== 'ALL' && g.shortSystem !== systemFilter) return false;
+      const q = debouncedSearchQuery.trim().toLowerCase();
+      if (q && !g.title.toLowerCase().includes(q) && !g.system.toLowerCase().includes(q)) {
+        return false;
+      }
+      return true;
+    });
+  }, [games, systemFilter, debouncedSearchQuery]);
+
   // ── Featured Game Hero Carousel ──────────────────────────────────────────
   const [featuredIndex, setFeaturedIndex] = React.useState<number>(() => {
     return games.length > 0 ? Math.floor(Math.random() * games.length) : 0;
@@ -729,25 +757,25 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             {showSearch && (
               <input
                 type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape' || e.key === 'Enter') {
-                    if (e.key === 'Escape') {
-                      setShowSearch(false);
-                      setSearchQuery('');
-                    }
-                  }
-                }}
-                placeholder="Search library…"
-                autoFocus
-                aria-label="Search library by title"
-                className={`flex-1 min-w-[150px] px-3 py-1 rounded-xl border text-xs font-semibold outline-none transition ${
-                  theme.isLight
-                    ? 'bg-white border-[#cfcac0] text-[#121214] placeholder:text-[#8a8780] focus:border-[#8d1d5c]'
-                    : 'bg-[#131316] border-[#222227] text-[#f4f4f6] placeholder:text-[#71717a] focus:border-[#10b981]'
-                }`}
-              />
+                value={debouncedSearchQuery}
+                                onChange={(e) => handleSearchChange(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Escape' || e.key === 'Enter') {
+                                    if (e.key === 'Escape') {
+                                      setShowSearch(false);
+                                      handleSearchChange('');
+                                    }
+                                  }
+                                }}
+                                placeholder="Search library…"
+                                autoFocus
+                                aria-label="Search library by title"
+                                className={`flex-1 min-w-[150px] px-3 py-1 rounded-xl border text-xs font-semibold outline-none transition ${
+                                  theme.isLight
+                                    ? 'bg-white border-[#cfcac0] text-[#121214] placeholder:text-[#8a8780]'
+                                    : 'bg-[#131316] border-[#222227] text-[#f4f4f6] placeholder:text-[#71717a]'
+                                } focus:border-[${theme.hex}]`}
+                />
             )}
             <span className={`px-2 py-0.5 rounded-full text-[10px] font-tabular border ${
               theme.isLight

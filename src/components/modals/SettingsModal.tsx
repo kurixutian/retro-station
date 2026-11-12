@@ -1,11 +1,10 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Sliders, X, Tv, Palette, Check, Vibrate, Cloud, ChevronRight, ChevronLeft, Sparkles, Gamepad2, Download, Upload, HardDrive, Coffee, Maximize, Moon } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Sliders, X, Tv, Check, Vibrate, Cloud, ChevronRight, ChevronLeft, Sparkles, Gamepad2, Coffee, Moon, Move } from 'lucide-react';
 import { COLOR_PROFILES } from '../../constants/shaders';
 import { Theme } from '../../types';
 import { haptics } from '../../services/haptics';
 import { ModalShell } from '../common/ModalShell';
-import { getSyncCode } from '../../cloudSync';
-import { createBackupFile, downloadBackup, importBackupFile } from '../../services/backup';
+import { getSyncStatus } from '../../cloudSync';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -22,20 +21,17 @@ interface SettingsModalProps {
   onOpenControls?: () => void;
 }
 
-type SettingsPanel = 'menu' | 'display' | 'controls' | 'themes' | 'vault';
+type SettingsPanel = 'menu' | 'display' | 'controls';
 
 const SETTINGS_PANELS: { id: SettingsPanel; label: string; desc: string; icon: React.FC<{ className?: string }> }[] = [
-  { id: 'display', label: 'Display & CRT', desc: 'Screen filters, color profiles & CRT effects', icon: Tv },
+  { id: 'display', label: 'Display & Appearance', desc: 'Theme, color profiles & CRT filters', icon: Tv },
   { id: 'controls', label: 'Controls & Haptic', desc: 'Haptics, gamepad & keyboard shortcuts', icon: Vibrate },
-  { id: 'themes', label: 'Themes', desc: 'Dark or light app appearance', icon: Palette },
-  { id: 'vault', label: 'Cloud Vault', desc: 'Drive sync & manual backup file', icon: Cloud },
 ];
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
   onClose,
   theme,
-  themeId,
   applyTheme,
   shaders,
   toggleShader,
@@ -46,42 +42,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onOpenControls,
 }) => {
   const [activePanel, setActivePanel] = useState<SettingsPanel>('menu');
-  const [backupBusy, setBackupBusy] = useState(false);
-  const [backupMsg, setBackupMsg] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-
-  const handleExportBackup = async () => {
-    setBackupBusy(true);
+  const [reduceMotion, setReduceMotion] = useState(() => {
     try {
-      const backup = await createBackupFile();
-      downloadBackup(backup);
-      setBackupMsg(`Backup exported (${Object.keys(backup.items).length} saves). Keep the file somewhere safe.`);
-    } catch (e) {
-      setBackupMsg('Backup export failed — try again.');
-    } finally {
-      setBackupBusy(false);
+      return localStorage.getItem('retro_reduce_motion') === '1';
+    } catch {
+      return false;
     }
-  };
+  });
 
-  const handleImportBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    setBackupBusy(true);
+  useEffect(() => {
     try {
-      const text = await file.text();
-      const res = await importBackupFile(text);
-      setBackupMsg(
-        res.ok
-          ? `Restored ${res.appliedItems} saves and ${res.appliedListItemCount} games from backup. Relink ROM files to play.`
-          : `Import failed: ${res.error}`
-      );
-    } catch (err) {
-      setBackupMsg('Import failed: could not read that file.');
-    } finally {
-      setBackupBusy(false);
-    }
-  };
+      localStorage.setItem('retro_reduce_motion', reduceMotion ? '1' : '0');
+      document.documentElement.classList.toggle('reduce-motion', reduceMotion);
+    } catch {}
+  }, [reduceMotion]);
 
   useEffect(() => {
     if (isOpen) setActivePanel('menu');
@@ -100,7 +74,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   }, [isOpen, activePanel, onClose]);
 
   if (!isOpen) return null;
-  const syncCode = getSyncCode();
+  const syncState = getSyncStatus();
+  const syncStatusBadge =
+    syncState.status === 'syncing'
+      ? { label: 'Syncing', cls: 'bg-amber-500/20 text-amber-300 border-amber-500/30' }
+      : syncState.status === 'needs_reauth' || syncState.status === 'error'
+        ? { label: 'Not Synced', cls: 'bg-amber-500/20 text-amber-300 border-amber-500/30' }
+        : syncState.user
+          ? { label: 'Synced', cls: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' }
+          : null;
 
   return (
     <ModalShell
@@ -153,14 +135,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <div className="flex-1 overflow-y-auto modal-scroll p-5 space-y-6">
           {/* CATEGORY PICKER: choose which settings to open */}
           {activePanel === 'menu' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-1 gap-2.5">
               {SETTINGS_PANELS.map((panel) => {
                 const Icon = panel.icon;
                 return (
                   <button
                     key={panel.id}
                     onClick={() => setActivePanel(panel.id)}
-                    className={`text-left p-4 rounded-2xl border transition flex items-center gap-3 min-h-[74px] tactile-btn focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
+                    className={`text-left p-4 rounded-2xl border transition flex items-center gap-3 min-h-[74px] tactile-btn focus-visible:outline-none ${theme.focusRing} ${
                       theme.isLight
                         ? 'bg-stone-100 hover:bg-white border-stone-300 hover:border-stone-400 text-zinc-900'
                         : 'bg-zinc-900/70 border-zinc-800 hover:bg-zinc-900 hover:border-zinc-700 text-zinc-100'
@@ -169,7 +151,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <div className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 ${
                       theme.isLight ? 'bg-stone-200 border-stone-300' : 'bg-zinc-950 border-zinc-800'
                     }`}>
-                      <Icon className="w-5 h-5 text-emerald-500" />
+                      <Icon className={`w-5 h-5 ${theme.accentText}`} />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className={`text-sm font-extrabold truncate ${
@@ -185,64 +167,134 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </button>
                 );
               })}
+
+              {onOpenCloudSync && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenCloudSync();
+                  }}
+                  className={`text-left p-4 rounded-2xl border transition flex items-center gap-3 min-h-[74px] tactile-btn focus-visible:outline-none ${theme.focusRing} ${
+                    theme.isLight
+                      ? 'bg-stone-100 hover:bg-white border-stone-300 hover:border-stone-400 text-zinc-900'
+                      : 'bg-zinc-900/70 border-zinc-800 hover:bg-zinc-900 hover:border-zinc-700 text-zinc-100'
+                  }`}
+                >
+                  <div className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 ${
+                    theme.isLight ? 'bg-stone-200 border-stone-300' : 'bg-zinc-950 border-zinc-800'
+                  }`}>
+                    <Cloud className={`w-5 h-5 ${theme.accentText}`} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-sm font-extrabold truncate ${
+                        theme.isLight ? 'text-zinc-900' : 'text-white'
+                      }`}>Cloud Save & Backup</span>
+                      {syncStatusBadge && (
+                        <span className={`px-2 py-0.5 rounded-md text-[9px] font-black tracking-wider uppercase border shrink-0 ${syncStatusBadge.cls}`}>
+                          {syncStatusBadge.label}
+                        </span>
+                      )}
+                    </div>
+                    <div className={`text-[11px] truncate ${
+                      theme.isLight ? 'text-stone-600' : 'text-zinc-400'
+                    }`}>
+                      {syncState.user?.email
+                        ? `${syncState.user.email} • Drive sync & manual backup`
+                        : 'Google Drive sync & offline backup file'}
+                    </div>
+                  </div>
+                  <ChevronRight className={`w-4 h-4 shrink-0 ${
+                    theme.isLight ? 'text-stone-400' : 'text-zinc-600'
+                  }`} />
+                </button>
+              )}
             </div>
           )}
 
-          {/* PANEL 1: DISPLAY & CRT */}
+          {/* PANEL 1: DISPLAY & APPEARANCE */}
           {activePanel === 'display' && (
             <div className="space-y-6">
-              {/* AMOLED Battery Saver Dedicated Toggle Card */}
-              <button
-                type="button"
-                role="switch"
-                aria-checked={Boolean(shaders.amoled)}
-                onClick={() => toggleShader('amoled')}
-                className={`w-full text-left p-4 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 tactile-btn focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
-                  shaders.amoled
-                    ? 'bg-emerald-500/15 border-emerald-500/50 text-white'
-                    : 'bg-zinc-900/70 border-zinc-800 text-zinc-300 hover:bg-zinc-900'
-                }`}
-              >
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className={`w-2.5 h-2.5 rounded-full ${shaders.amoled ? 'bg-emerald-400' : 'bg-zinc-600'}`} />
-                    <span className="text-sm font-extrabold text-white">AMOLED Black Mode</span>
-                    <span className="px-2 py-0.5 rounded-md text-[9px] font-black tracking-wider uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                      Battery Saver
-                    </span>
-                  </div>
-                  <p className="text-xs text-zinc-400 leading-snug">
-                    Pure true-black screen — OLED pixels fully turn off, saving battery.
-                  </p>
-                </div>
-
-                <div
-                  className={`shrink-0 w-12 h-6 rounded-full transition-colors p-0.5 flex items-center ${
-                    shaders.amoled ? 'bg-emerald-500 justify-end' : 'bg-zinc-800 border border-zinc-700 justify-start'
+              {/* App Theme + AMOLED Toggles */}
+              <div className="space-y-2.5">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={!theme.isLight}
+                  onClick={() => applyTheme(theme.isLight ? 'midnight' : 'trooper')}
+                  className={`w-full text-left p-4 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 tactile-btn focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
+                    theme.isLight
+                      ? 'bg-stone-100 border-stone-300 text-zinc-900 shadow-sm'
+                      : 'bg-zinc-900/70 border-zinc-800 text-white hover:bg-zinc-900'
                   }`}
                 >
-                  <div className="w-5 h-5 rounded-full bg-white shadow-md" />
-                </div>
-              </button>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Moon className={`w-4 h-4 ${theme.accentText}`} />
+                      <span className={`text-sm font-extrabold ${theme.isLight ? 'text-zinc-900' : 'text-white'}`}>Dark Mode</span>
+                    </div>
+                    <p className={`text-xs leading-snug ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
+                      Switch between dark obsidian and warm retro stone across the library and console.
+                    </p>
+                  </div>
+
+                  <div
+                    className={`shrink-0 w-12 h-6 rounded-full transition-colors p-0.5 flex items-center ${
+                      !theme.isLight ? 'justify-end' : 'bg-stone-300 border border-stone-400 justify-start'
+                    }`}
+                    style={{ backgroundColor: !theme.isLight ? theme.hex : undefined }}
+                  >
+                    <div className="w-5 h-5 rounded-full bg-white shadow-md" />
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={Boolean(shaders.amoled)}
+                  onClick={() => toggleShader('amoled')}
+                  className={`w-full text-left p-4 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 tactile-btn focus-visible:outline-none ${theme.focusRing} ${
+                    shaders.amoled
+                      ? theme.isLight
+                        ? 'bg-emerald-500/10 border-emerald-600/50 text-zinc-900'
+                        : `bg-[${theme.hex}]/15 border-[${theme.hex}]/50 text-white`
+                      : theme.isLight
+                        ? 'bg-stone-200/80 border-stone-300 text-zinc-800 hover:bg-stone-200'
+                        : 'bg-zinc-900/70 border-zinc-800 text-zinc-300 hover:bg-zinc-900'
+                  }`}
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2.5 h-2.5 rounded-full ${shaders.amoled ? `bg-[${theme.hex}]` : theme.isLight ? 'bg-stone-400' : 'bg-zinc-600'}`} />
+                      <span className={`text-sm font-extrabold ${theme.isLight ? 'text-zinc-900' : 'text-white'}`}>AMOLED Black Mode</span>
+                    </div>
+                    <p className={`text-xs leading-snug ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
+                      Pure true-black in-game shell — OLED pixels turn off to save battery.
+                    </p>
+                  </div>
+
+                  <div
+                    className={`shrink-0 w-12 h-6 rounded-full transition-colors p-0.5 flex items-center ${
+                      shaders.amoled
+                        ? 'justify-end'
+                        : theme.isLight
+                          ? 'bg-stone-300 border border-stone-400 justify-start'
+                          : 'bg-zinc-800 border border-zinc-700 justify-start'
+                    }`}
+                    style={{ backgroundColor: shaders.amoled ? theme.hex : undefined }}
+                  >
+                    <div className="w-5 h-5 rounded-full bg-white shadow-md" />
+                  </div>
+                </button>
+              </div>
 
               {/* Section: COLOR ACCURACY & CONTRAST (RETROARCH) */}
               <div className="space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <h3 className={`text-xs font-bold flex items-center gap-1.5 ${theme.isLight ? 'text-[#575654]' : 'text-[#8e8e93]'}`}>
-                    <Sparkles className="w-4 h-4 text-amber-500" />
-                    <span>Color Accuracy & Contrast</span>
-                  </h3>
-                  <button
-                    onClick={() => toggleShader('colorCorrection')}
-                    className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border transition ${
-                      shaders.colorCorrection !== false && shaders.colorProfile !== 'off'
-                        ? 'bg-amber-400/20 border-amber-400/50 text-amber-300'
-                        : 'bg-zinc-900 border-zinc-800 text-zinc-500'
-                    }`}
-                  >
-                    {shaders.colorCorrection !== false && shaders.colorProfile !== 'off' ? 'ACTIVE' : 'OFF'}
-                  </button>
-                </div>
+                <h3 className={`text-xs font-bold flex items-center gap-1.5 ${theme.isLight ? 'text-[#575654]' : 'text-[#8e8e93]'}`}>
+                  <Sparkles className="w-4 h-4 text-amber-500" />
+                  <span>Color Accuracy & Contrast</span>
+                </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {COLOR_PROFILES.map((prof) => {
                     const isSelected =
@@ -260,18 +312,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         }}
                         className={`text-left p-3 rounded-2xl border transition flex items-start justify-between gap-2 ${
                           isSelected
-                            ? 'bg-amber-500/15 border-amber-500/50 text-white shadow-md'
-                            : 'bg-zinc-900/70 border-zinc-800 text-zinc-400 hover:bg-zinc-900'
+                            ? theme.isLight
+                              ? 'bg-amber-500/15 border-amber-500/60 text-zinc-900 shadow-sm'
+                              : 'bg-amber-500/15 border-amber-500/50 text-white shadow-md'
+                            : theme.isLight
+                              ? 'bg-stone-200/80 border-stone-300 text-zinc-700 hover:bg-stone-200'
+                              : 'bg-zinc-900/70 border-zinc-800 text-zinc-400 hover:bg-zinc-900'
                         }`}
                       >
                         <div className="space-y-1">
                           <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-white">{prof.name}</span>
-                            <span className="text-[9px] font-mono px-1.5 py-0.2 rounded uppercase font-bold bg-zinc-800 text-amber-300 border border-white/5">
-                              {prof.badge}
-                            </span>
+                            <span className={`text-xs font-bold ${theme.isLight ? 'text-zinc-900' : 'text-white'}`}>{prof.name}</span>
+                            {prof.id === 'vivid' && (
+                              <span className={`text-[9px] font-mono px-1.5 py-0.2 rounded uppercase font-bold border ${
+                                theme.isLight
+                                  ? 'bg-amber-500/20 text-amber-900 border-amber-600/30'
+                                  : 'bg-zinc-800 text-amber-300 border-white/5'
+                              }`}>
+                                {prof.badge}
+                              </span>
+                            )}
                           </div>
-                          <p className="text-[10px] text-zinc-400 leading-snug">
+                          <p className={`text-[10px] leading-snug ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
                             {prof.desc}
                           </p>
                         </div>
@@ -289,7 +351,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               {/* Section 1: CRT & LCD SHADER FILTER */}
               <div className="space-y-2.5">
                 <h3 className={`text-xs font-bold flex items-center gap-1.5 ${theme.isLight ? 'text-[#575654]' : 'text-[#8e8e93]'}`}>
-                  <Tv className="w-4 h-4 text-emerald-400" />
+                  <Tv className={`w-4 h-4 ${theme.accentText}`} />
                   <span>CRT & LCD Shader Filters</span>
                 </h3>
 
@@ -331,24 +393,30 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <button
                         key={item.key}
                         onClick={() => toggleShader(item.key)}
-                        className={`text-left p-3 rounded-2xl border transition flex items-start gap-3 ${
+                        className={`text-left p-3 rounded-2xl border transition flex items-start gap-3 ${theme.focusRing} ${
                           checked
-                            ? 'bg-emerald-500/15 border-emerald-500/50 text-white'
-                            : 'bg-zinc-900/70 border-zinc-800 text-zinc-400 hover:bg-zinc-900'
+                            ? theme.isLight
+                              ? 'bg-emerald-500/10 border-emerald-600/50 text-zinc-900'
+                              : `bg-[${theme.hex}]/15 border-[${theme.hex}]/50 text-white`
+                            : theme.isLight
+                              ? 'bg-stone-200/80 border-stone-300 text-zinc-700 hover:bg-stone-200'
+                              : 'bg-zinc-900/70 border-zinc-800 text-zinc-400 hover:bg-zinc-900'
                         }`}
                       >
                         <div
                           className={`mt-0.5 w-5 h-5 rounded-md flex items-center justify-center border shrink-0 ${
                             checked
-                              ? 'bg-emerald-400 border-emerald-300 text-zinc-950'
-                              : 'border-zinc-700 bg-zinc-950'
+                              ? `bg-[${theme.hex}] border-[${theme.hex}]/70 text-zinc-950`
+                              : theme.isLight
+                                ? 'border-stone-400 bg-white'
+                                : 'border-zinc-700 bg-zinc-950'
                           }`}
                         >
                           {checked && <Check className="w-3.5 h-3.5 stroke-[3]" />}
                         </div>
                         <div>
-                          <div className="text-xs font-bold">{item.title}</div>
-                          <div className="text-[10px] text-zinc-400 leading-snug mt-0.5">
+                          <div className={`text-xs font-bold ${theme.isLight ? 'text-zinc-900' : 'text-white'}`}>{item.title}</div>
+                          <div className={`text-[10px] leading-snug mt-0.5 ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
                             {item.desc}
                           </div>
                         </div>
@@ -363,6 +431,52 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* PANEL 2: CONTROLS & HAPTIC */}
           {activePanel === 'controls' && (
             <div className="space-y-6">
+              {/* Motion Preferences */}
+              <div className="space-y-2.5">
+                <h3 className={`text-xs font-bold flex items-center gap-1.5 ${theme.isLight ? 'text-[#575654]' : 'text-[#8e8e93]'}`}>
+                  <Move className={`w-4 h-4 ${theme.accentText}`} />
+                  <span>Motion & Animation</span>
+                </h3>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={reduceMotion}
+                  onClick={() => setReduceMotion(!reduceMotion)}
+                  className={`w-full text-left p-4 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 tactile-btn focus-visible:outline-none ${theme.focusRing} ${
+                    reduceMotion
+                      ? theme.isLight
+                        ? 'bg-emerald-500/10 border-emerald-600/50 text-zinc-900'
+                        : `bg-[${theme.hex}]/15 border-[${theme.hex}]/50 text-white`
+                      : theme.isLight
+                        ? 'bg-stone-200/80 border-stone-300 text-zinc-800 hover:bg-stone-200'
+                        : 'bg-zinc-900/70 border-zinc-800 text-zinc-300 hover:bg-zinc-900'
+                  }`}
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2.5 h-2.5 rounded-full ${reduceMotion ? `bg-[${theme.hex}]` : theme.isLight ? 'bg-stone-400' : 'bg-zinc-600'}`} />
+                      <span className={`text-sm font-extrabold ${theme.isLight ? 'text-zinc-900' : 'text-white'}`}>Reduce Motion</span>
+                    </div>
+                    <p className={`text-xs leading-snug ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
+                      Disable continuous animations (hero pan, backdrop drift) and shorten transitions.
+                    </p>
+                  </div>
+
+                  <div
+                    className={`shrink-0 w-12 h-6 rounded-full transition-colors p-0.5 flex items-center ${
+                      reduceMotion
+                        ? 'justify-end'
+                        : theme.isLight
+                          ? 'bg-stone-300 border border-stone-400 justify-start'
+                          : 'bg-zinc-800 border border-zinc-700 justify-start'
+                    }`}
+                    style={{ backgroundColor: reduceMotion ? theme.hex : undefined }}
+                  >
+                    <div className="w-5 h-5 rounded-full bg-white shadow-md" />
+                  </div>
+                </button>
+              </div>
+
               {/* Controls & Haptic Feedback Toggle Card */}
               <button
                 type="button"
@@ -375,26 +489,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 }}
                 className={`w-full text-left p-4 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 tactile-btn focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${
                   hapticsEnabled
-                    ? 'bg-sky-500/15 border-sky-500/50 text-white'
-                    : 'bg-zinc-900/70 border-zinc-800 text-zinc-300 hover:bg-zinc-900'
+                    ? theme.isLight
+                      ? 'bg-sky-500/15 border-sky-600/40 text-zinc-900'
+                      : 'bg-sky-500/15 border-sky-500/50 text-white'
+                    : theme.isLight
+                      ? 'bg-stone-200/80 border-stone-300 text-zinc-800 hover:bg-stone-200'
+                      : 'bg-zinc-900/70 border-zinc-800 text-zinc-300 hover:bg-zinc-900'
                 }`}
               >
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <Vibrate className={`w-4 h-4 ${hapticsEnabled ? 'text-sky-400' : 'text-zinc-500'}`} />
-                    <span className="text-sm font-extrabold text-white">Haptic Vibration</span>
-                    <span className="px-2 py-0.5 rounded-md text-[9px] font-black tracking-wider uppercase bg-sky-500/20 text-sky-300 border border-sky-500/30">
-                      Touchpad
-                    </span>
+                    <Vibrate className={`w-4 h-4 ${hapticsEnabled ? (theme.isLight ? 'text-sky-600' : 'text-sky-400') : theme.isLight ? 'text-stone-500' : 'text-zinc-500'}`} />
+                    <span className={`text-sm font-extrabold ${theme.isLight ? 'text-zinc-900' : 'text-white'}`}>Haptic Vibration</span>
                   </div>
-                  <p className="text-xs text-zinc-400 leading-snug">
+                  <p className={`text-xs leading-snug ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
                     Tactile vibration feedback on on-screen button presses.
                   </p>
                 </div>
 
                 <div
                   className={`shrink-0 w-12 h-6 rounded-full transition-colors p-0.5 flex items-center ${
-                    hapticsEnabled ? 'bg-sky-500 justify-end' : 'bg-zinc-800 border border-zinc-700 justify-start'
+                    hapticsEnabled
+                      ? 'bg-sky-500 justify-end'
+                      : theme.isLight
+                        ? 'bg-stone-300 border border-stone-400 justify-start'
+                        : 'bg-zinc-800 border border-zinc-700 justify-start'
                   }`}
                 >
                   <div className="w-5 h-5 rounded-full bg-white shadow-md" />
@@ -402,16 +521,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </button>
 
               {/* Gamepad & Keyboard Integration Card */}
-              <div className="p-4 rounded-2xl border border-zinc-800 bg-zinc-900/50 space-y-2">
-                <div className="flex items-center gap-2 text-white font-extrabold text-xs">
-                  <Gamepad2 className="w-4 h-4 text-emerald-400" />
+              <div className={`p-4 rounded-2xl border space-y-2 ${
+                theme.isLight ? 'border-stone-300 bg-stone-200/80' : 'border-zinc-800 bg-zinc-900/50'
+              }`}>
+                <div className={`flex items-center gap-2 font-extrabold text-xs ${theme.isLight ? 'text-zinc-900' : 'text-white'}`}>
+                  <Gamepad2 className={`w-4 h-4 ${theme.accentText}`} />
                   <span>Physical Gamepad Support</span>
                 </div>
-                <p className="text-xs text-zinc-400 leading-relaxed">
+                <p className={`text-xs leading-relaxed ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
                   Bluetooth & USB controllers connect automatically via HTML5 Gamepad API with zero battery overhead.
                 </p>
-                <div className="text-[11px] text-zinc-500 font-mono pt-1">
-                  Quick Save: <span className="text-amber-300 font-bold">Shift + F1</span> • Quick Load: <span className="text-cyan-300 font-bold">F3</span>
+                <div className={`text-[11px] font-mono pt-1 ${theme.isLight ? 'text-stone-600' : 'text-zinc-500'}`}>
+                  Quick Save: <span className={`font-bold ${theme.isLight ? 'text-amber-700' : 'text-amber-300'}`}>Shift + F1</span> • Quick Load: <span className={`font-bold ${theme.isLight ? 'text-cyan-700' : 'text-cyan-300'}`}>F3</span>
                 </div>
               </div>
 
@@ -422,191 +543,54 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     onClose();
                     onOpenControls();
                   }}
-                  className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-zinc-900/80 hover:bg-zinc-900 border border-zinc-800 text-zinc-200 text-xs font-bold transition active:scale-[0.98] tactile-btn focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+                  className={`w-full flex items-center justify-between p-3.5 rounded-2xl border text-xs font-bold transition active:scale-[0.98] tactile-btn focus-visible:outline-none ${theme.focusRing} ${
+                    theme.isLight
+                      ? 'bg-stone-200/80 hover:bg-stone-200 border-stone-300 text-zinc-900'
+                      : 'bg-zinc-900/80 hover:bg-zinc-900 border-zinc-800 text-zinc-200'
+                  }`}
                 >
                   <div className="flex items-center gap-2.5">
-                    <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                    <div className={`w-7 h-7 rounded-lg bg-[${theme.hex}]/10 border border-[${theme.hex}]/30 flex items-center justify-center ${theme.accentText}`}>
                       <Gamepad2 className="w-4 h-4" />
                     </div>
                     <span>Open Full Keyboard & Gamepad Guide</span>
                   </div>
-                  <ChevronRight className="w-4 h-4 text-zinc-500" />
+                  <ChevronRight className={`w-4 h-4 ${theme.isLight ? 'text-stone-500' : 'text-zinc-500'}`} />
                 </button>
               )}
             </div>
           )}
 
-          {/* PANEL 3: THEMES (Dark/Light Mode Appearance) */}
-          {activePanel === 'themes' && (
-            <div className="space-y-5">
-              <div>
-                <h3 className={`text-xs font-bold flex items-center gap-1.5 mb-3 ${
-                  theme.isLight ? 'text-[#575654]' : 'text-[#8e8e93]'
-                }`}>
-                  <Palette className="w-4 h-4 text-amber-500" />
-                  <span>Appearance & Theme</span>
-                </h3>
-
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={!theme.isLight}
-                  onClick={() => applyTheme(theme.isLight ? 'midnight' : 'trooper')}
-                  className={`w-full text-left p-4 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 tactile-btn focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
+          {/* Support / Buy Me a Coffee Footer Banner (Main Menu only) */}
+          {activePanel === 'menu' && (
+            <a
+              href="https://buymeacoffee.com/kurixutian"
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`w-full p-3.5 rounded-2xl border flex items-center justify-between gap-3 tactile-btn transition ${
+                theme.isLight
+                  ? 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/40 text-amber-800'
+                  : 'bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/30 text-amber-200'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <div
+                  className={`w-8 h-8 rounded-xl border flex items-center justify-center shrink-0 ${
                     theme.isLight
-                      ? 'bg-stone-100 border-stone-300 text-zinc-900 shadow-sm'
-                      : 'bg-zinc-900 border-zinc-700 text-white'
+                      ? 'bg-amber-400/25 border-amber-400/50 text-amber-700'
+                      : 'bg-amber-400/20 border-amber-400/40 text-amber-300'
                   }`}
                 >
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <Moon className="w-4 h-4 text-emerald-500" />
-                      <span className={`text-sm font-extrabold ${theme.isLight ? 'text-zinc-900' : 'text-white'}`}>Dark Mode</span>
-                      <span className={`px-2 py-0.5 rounded-md text-[9px] font-black tracking-wider uppercase border ${
-                        theme.isLight
-                          ? 'bg-stone-200 text-stone-700 border-stone-300'
-                          : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                      }`}>
-                        {theme.isLight ? 'Light' : 'Dark'}
-                      </span>
-                    </div>
-                    <p className={`text-xs leading-snug ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
-                      Toggle between dark obsidian and warm retro light stone across the library and console.
-                    </p>
-                  </div>
-
-                  <div
-                    className={`shrink-0 w-12 h-6 rounded-full transition-colors p-0.5 flex items-center ${
-                      !theme.isLight ? 'bg-emerald-500 justify-end' : 'bg-stone-300 border border-stone-400 justify-start'
-                    }`}
-                  >
-                    <div className="w-5 h-5 rounded-full bg-white shadow-md" />
-                  </div>
-                </button>
+                  <Coffee className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className={`text-xs font-extrabold ${theme.isLight ? 'text-[#121214]' : 'text-white'}`}>Enjoying Retro Station?</div>
+                  <div className={`text-[11px] ${theme.isLight ? 'text-amber-700/90' : 'text-amber-300/90'}`}>Buy me a coffee to support development</div>
+                </div>
               </div>
-            </div>
+              <ChevronRight className={`w-4 h-4 shrink-0 ${theme.isLight ? 'text-amber-600' : 'text-amber-300'}`} />
+            </a>
           )}
-
-          {/* PANEL 4: CLOUD VAULT */}
-          {activePanel === 'vault' && (
-            <div className="space-y-4">
-              <button
-                type="button"
-                onClick={() => {
-                  onClose();
-                  onOpenCloudSync?.();
-                }}
-                className="w-full text-left p-4 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 bg-zinc-900/70 border-zinc-800 text-zinc-300 hover:bg-zinc-900 hover:border-zinc-700 tactile-btn focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-              >
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Cloud className="w-4 h-4 text-sky-400" />
-                    <span className="text-sm font-extrabold text-white">Cloud Save Vault</span>
-                    <span className={`px-2 py-0.5 rounded-md text-[9px] font-black tracking-wider uppercase ${
-                      syncCode
-                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                        : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
-                    }`}>
-                      {syncCode ? 'Linked' : 'Not Linked'}
-                    </span>
-                  </div>
-                  <p className="text-xs text-zinc-400 leading-snug">
-                    {syncCode
-                      ? `Connected: ${syncCode}. Tap to manage or sync.`
-                      : 'Sign in with Google Drive to sync saves, states & games across devices.'}
-                  </p>
-                </div>
-                <ChevronRight className="w-4 h-4 text-zinc-500 shrink-0" />
-              </button>
-
-              <div className="p-4 rounded-2xl border border-zinc-800/80 bg-zinc-900/30 space-y-2 text-xs text-zinc-400">
-                <span className="font-bold text-zinc-300 block">About Google Drive Sync</span>
-                <p>
-                  Zero server cost ($0.00 forever). Your SRAM battery saves, save states, and game library metadata synchronize directly to your personal Google Drive private appDataFolder.
-                </p>
-                <p>
-                  Works 100% offline first — whenever you are off the grid, saves write instantly to device storage and sync when you reconnect.
-                </p>
-              </div>
-
-              {/* MANUAL BACKUP (Safety Net) — independent of cloud vault */}
-              <div className="p-4 rounded-2xl border border-zinc-800 bg-zinc-900/50 space-y-3">
-                <div className="flex items-center gap-2 text-white font-extrabold text-xs">
-                  <HardDrive className="w-4 h-4 text-amber-400" />
-                  <span>Manual Backup File</span>
-                  <span className="px-2 py-0.5 rounded-md text-[9px] font-black tracking-wider uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                    Safety Net
-                  </span>
-                </div>
-                {backupMsg && (
-                  <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/25 text-[10px] text-amber-300 font-bold break-words">
-                    {backupMsg}
-                  </div>
-                )}
-                <p className="text-[11px] text-zinc-400 leading-snug">
-                  Export all your games, save states, cartridge SRAM, and covers as a single JSON file you keep
-                  yourself — no internet needed. Restore it on any device. ROM files are not included (link them
-                  again after importing).
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <button
-                    onClick={handleExportBackup}
-                    disabled={backupBusy}
-                    className={`py-2.5 px-3 rounded-xl font-bold text-[11px] flex items-center justify-center gap-2 transition active:scale-95 ${
-                      backupBusy ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed' : 'bg-amber-500 text-zinc-950 hover:bg-amber-400'
-                    }`}
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>{backupBusy ? 'Building backup...' : 'Export Backup'}</span>
-                  </button>
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={backupBusy}
-                    className="py-2.5 px-3 rounded-xl font-bold text-[11px] flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700 transition active:scale-95 disabled:opacity-40"
-                  >
-                    <Upload className="w-3.5 h-3.5" />
-                    <span>Import Backup</span>
-                  </button>
-                </div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="application/json,.json"
-                  className="hidden"
-                  onChange={handleImportBackup}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Support / Buy Me a Coffee Footer Banner */}
-          <a
-            href="https://buymeacoffee.com/kurixutian"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={`w-full p-3.5 rounded-2xl border flex items-center justify-between gap-3 tactile-btn transition ${
-              theme.isLight
-                ? 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/40 text-amber-800'
-                : 'bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/30 text-amber-200'
-            }`}
-          >
-            <div className="flex items-center gap-2.5">
-              <div
-                className={`w-8 h-8 rounded-xl border flex items-center justify-center shrink-0 ${
-                  theme.isLight
-                    ? 'bg-amber-400/25 border-amber-400/50 text-amber-700'
-                    : 'bg-amber-400/20 border-amber-400/40 text-amber-300'
-                }`}
-              >
-                <Coffee className="w-4 h-4" />
-              </div>
-              <div>
-                <div className={`text-xs font-extrabold ${theme.isLight ? 'text-[#121214]' : 'text-white'}`}>Enjoying Retro Pocket?</div>
-                <div className={`text-[11px] ${theme.isLight ? 'text-amber-700/90' : 'text-amber-300/90'}`}>Buy me a coffee to support development</div>
-              </div>
-            </div>
-            <ChevronRight className={`w-4 h-4 shrink-0 ${theme.isLight ? 'text-amber-600' : 'text-amber-300'}`} />
-          </a>
         </div>
     </ModalShell>
   );

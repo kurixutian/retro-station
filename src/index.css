@@ -6,6 +6,28 @@
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-standard: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-fast: 100ms;
+  --duration-base: 160ms;
+  --duration-slow: 240ms;
+  --accent: #10b981;
+  --accent-hover: #059669;
+  --accent-soft-bg: rgba(16, 185, 129, 0.1);
+  --accent-soft-text: #10b981;
+  --accent-soft-border: rgba(16, 185, 129, 0.25);
+  --accent-focus: rgba(16, 185, 129, 0.85);
+  --accent-selection: rgba(16, 185, 129, 0.35);
+}
+
+html.light {
+  --accent: #047857;
+  --accent-hover: #065f46;
+  --accent-soft-bg: rgba(4, 120, 87, 0.1);
+  --accent-soft-text: #047857;
+  --accent-soft-border: rgba(4, 120, 87, 0.25);
+  --accent-focus: rgba(4, 120, 87, 0.85);
+  --accent-selection: rgba(4, 120, 87, 0.35);
 }
 
 /* Safe-area insets for fullscreen notch & mobile home-bars */
@@ -61,25 +83,25 @@ button, a, [role="button"] {
 }
 
 ::selection {
-  background-color: rgba(16, 185, 129, 0.35);
+  background-color: var(--accent-selection);
   color: inherit;
 }
 
 html.dark input, html.dark textarea {
-  caret-color: #10b981;
+  caret-color: var(--accent);
 }
 
 html.light input, html.light textarea {
-  caret-color: #8d1d5c;
+  caret-color: var(--accent);
 }
 
 html.dark :focus-visible {
-  outline: 2px solid rgba(16, 185, 129, 0.85);
+  outline: 2px solid var(--accent-focus);
   outline-offset: 2px;
 }
 
 html.light :focus-visible {
-  outline: 2px solid rgba(141, 29, 92, 0.85);
+  outline: 2px solid var(--accent-focus);
   outline-offset: 2px;
 }
 
@@ -130,11 +152,13 @@ html.light :focus-visible {
 
 .cartridge-card {
   box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
-  transition: transform 0.14s var(--ease-out), box-shadow 0.14s var(--ease-out), border-color 0.14s ease;
+  transition: transform var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard), border-color var(--duration-fast) ease;
+  touch-action: manipulation;
 }
 
 .cartridge-card:active {
-  transform: scale(0.98);
+  transform: scale(0.97);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.08), 0 2px 8px -2px rgba(0, 0, 0, 0.3);
 }
 
 .tactile-btn {
@@ -143,7 +167,7 @@ html.light :focus-visible {
   -webkit-user-select: none;
   -webkit-touch-callout: none;
   box-shadow: 0 1.5px 0 0 rgba(0, 0, 0, 0.35), inset 0 1px 0 0 rgba(255, 255, 255, 0.15);
-  transition: transform 0.04s var(--ease-out);
+  transition: transform var(--duration-fast) var(--ease-standard);
 }
 
 .tactile-btn:active,
@@ -160,7 +184,7 @@ html.light :focus-visible {
 }
 
 .dpad-arm {
-  transition: transform 0.04s ease, opacity 0.04s ease;
+  transition: transform var(--duration-fast) ease, opacity var(--duration-fast) ease;
 }
 
 .dpad-arm:active,
@@ -204,7 +228,7 @@ html.light :focus-visible {
 }
 
 .crt-power-off {
-  animation: crtPowerOff 0.28s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+  animation: crtPowerOff var(--duration-base) var(--ease-standard) forwards;
   pointer-events: none;
 }
 
@@ -232,18 +256,18 @@ html.light :focus-visible {
 }
 
 .crt-power-on {
-  animation: crtPowerOn 0.32s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+  animation: crtPowerOn var(--duration-slow) var(--ease-standard) forwards;
 }
 
 .hero-deck-card {
-  box-shadow: 0 0 35px -5px rgba(16, 185, 129, 0.35), 0 12px 32px -8px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.15);
-  border-color: rgba(16, 185, 129, 0.45) !important;
-  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+  box-shadow: 0 0 35px -5px var(--accent-selection), 0 12px 32px -8px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  border-color: var(--accent-soft-border) !important;
+  transition: box-shadow var(--duration-base) var(--ease-standard), border-color var(--duration-base) var(--ease-standard);
 }
 
 html.light .hero-deck-card {
-  box-shadow: 0 0 32px -4px rgba(141, 29, 92, 0.3), 0 10px 24px -6px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.7);
-  border-color: rgba(141, 29, 92, 0.45) !important;
+  box-shadow: 0 0 32px -4px var(--accent-selection), 0 10px 24px -6px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  border-color: var(--accent-soft-border) !important;
 }
 
 /* Custom Scrollbar */
@@ -293,7 +317,7 @@ html.light .hero-deck-card {
 }
 
 .featured-swap {
-  animation: featuredSwap 0.26s var(--ease-out) both;
+  animation: featuredSwap var(--duration-fast) var(--ease-standard) both;
 }
 
 /* ── Modal enter/exit ── */
@@ -338,16 +362,16 @@ html.light .hero-deck-card {
 }
 
 .modal-in {
-  animation: modalIn 0.18s var(--ease-out) both;
+  animation: modalIn var(--duration-fast) var(--ease-standard) both;
 }
 
 .modal-pop {
-  animation: modalInPop 0.2s var(--ease-out) both;
+  animation: modalInPop var(--duration-fast) var(--ease-standard) both;
 }
 
 .modal-out,
 .modal-pop-out {
-  animation-duration: 0.2s;
+  animation-duration: var(--duration-fast);
   pointer-events: none;
 }
 
@@ -386,7 +410,7 @@ html.light .hero-deck-card {
 /* taste-skill-ignore: authentic physical molded Nintendo Game Boy D-Pad, dome buttons, and rubber pills */
 .gb-dpad-arm {
   background: transparent;
-  transition: transform 0.04s ease, filter 0.04s ease, background 0.04s ease;
+  transition: transform var(--duration-fast) ease, filter var(--duration-fast) ease, background var(--duration-fast) ease;
 }
 
 .gb-dpad-arm:active,
@@ -407,9 +431,9 @@ html.light .hero-deck-card {
 }
 
 .gb-action-dome {
-  background: radial-gradient(circle at 36% 30%, #a82a72 0%, #8d1d5c 45%, #63123f 85%, #470d2c 100%);
+  background: radial-gradient(circle at 38% 32%, #a82a72 0%, #8d1d5c 45%, #63123f 85%, #470d2c 100%);
   box-shadow: inset 0 2px 3px rgba(255, 255, 255, 0.35), inset 0 -3px 4px rgba(0, 0, 0, 0.55), 0 6px 14px -1px rgba(0, 0, 0, 0.75);
-  transition: transform 0.05s var(--ease-out), box-shadow 0.05s ease;
+  transition: transform var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) ease;
 }
 
 .gb-action-dome:active,
@@ -421,7 +445,7 @@ html.light .hero-deck-card {
 .gb-rubber-pill {
   background: linear-gradient(180deg, #44444a 0%, #2b2b30 60%, #1c1c20 100%);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 -1px 2px rgba(0, 0, 0, 0.6), 0 3px 6px rgba(0, 0, 0, 0.6);
-  transition: transform 0.04s ease;
+  transition: transform var(--duration-fast) ease;
 }
 
 .gb-rubber-pill:active,
@@ -431,18 +455,32 @@ html.light .hero-deck-card {
 
 @media (prefers-reduced-motion: reduce) {
   .hero-art-pan,
-  .ambient-backdrop-pan {
+  .ambient-backdrop-pan,
+  .crt-power-off,
+  .crt-power-on,
+  .featured-swap,
+  .modal-in,
+  .modal-pop,
+  .modal-out,
+  .modal-pop-out {
     animation: none !important;
     transform: none !important;
   }
 
-  .featured-swap {
-    animation: none !important;
-  }
-
   .cartridge-card,
   .tactile-btn,
-  .dpad-arm {
+  .dpad-arm,
+  .gb-dpad-arm,
+  .gb-action-dome,
+  .gb-rubber-pill,
+  .hero-deck-card {
     transition-duration: 0.01ms !important;
   }
+}
+
+/* User toggle for continuous motion effects (independent of OS setting) */
+html.reduce-motion .hero-art-pan,
+html.reduce-motion .ambient-backdrop-pan {
+  animation: none !important;
+  transform: none !important;
 }
