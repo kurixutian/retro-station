@@ -30,6 +30,9 @@ import {
   getDeletedGameIds,
   setGameplayActive,
   SETTINGS_SYNC_KEY,
+  fetchRomFromCloud,
+  getCachedUserProfile,
+  hasValidToken,
 } from './cloudSync';
 import { onBackupApplied } from './services/backup';
 
@@ -264,6 +267,12 @@ export default function App() {
   const [cloudModalOpen, setCloudModalOpen] = useState(false);
   const [cloudStatus, setCloudStatus] = useState<CloudSyncStatus>('unlinked');
   const [missingRomData, setMissingRomData] = useState<{ game: Game; optionalStateData?: any } | null>(null);
+  const missingRomDataRef = useRef(missingRomData);
+  useEffect(() => {
+    missingRomDataRef.current = missingRomData;
+  }, [missingRomData]);
+
+  const launchGameRef = useRef<((game: Game, optionalStateData?: any) => void) | null>(null);
 
   useEffect(() => {
     const unsub = subscribeSyncStatus((st) => setCloudStatus(st));
@@ -393,6 +402,17 @@ export default function App() {
             setSavesByGameId((prev) => applySlotUpdates(prev, updates));
           }
         })();
+      }
+
+      // If a ROM was pulled while the user had MissingRomModal open, launch automatically!
+      const romKeys = keys.filter((k) => k.startsWith('rom:'));
+      if (romKeys.length > 0 && missingRomDataRef.current) {
+        const curMissing = missingRomDataRef.current;
+        if (romKeys.includes(`rom:${curMissing.game.id}`)) {
+          setMissingRomData(null);
+          showToast(`ROM downloaded from Cloud Vault! Launching ${curMissing.game.title}...`);
+          launchGameRef.current?.(curMissing.game, curMissing.optionalStateData);
+        }
       }
     };
 
@@ -1092,7 +1112,25 @@ export default function App() {
         !optionalStateData?.emuState && optionalStateData?.lazyIdbKey
           ? idbGet(optionalStateData.lazyIdbKey).catch(() => null)
           : Promise.resolve(null)
-      ]).then(([blob, srm, rtc, autoSt, lazySlotRec]) => {
+      ]).then(async ([initialBlob, srm, rtc, autoSt, lazySlotRec]) => {
+        let blob = initialBlob;
+        if (!blob) {
+          // If Google Drive is linked, attempt seamless on-demand download from Cloud Vault
+          const user = getCachedUserProfile();
+          if (user && hasValidToken()) {
+            showToast(`Downloading ${game.title} from Cloud Vault...`);
+            try {
+              const fetched = await fetchRomFromCloud(game.id, game.fileName, false);
+              if (fetched) {
+                blob = fetched;
+                showToast(`Downloaded ${game.title}! Launching...`);
+              }
+            } catch (err) {
+              console.warn('[App] Automatic cloud ROM fetch error:', err);
+            }
+          }
+        }
+
         if (!blob) {
           // ROM binary not on this device yet! Prompt user to select file
           setMissingRomData({ game, optionalStateData });
@@ -1134,6 +1172,10 @@ export default function App() {
 
     showToast('Select a ROM file to launch');
   }, [recordRecentGame, showToast]);
+
+  useEffect(() => {
+    launchGameRef.current = launchGame;
+  }, [launchGame]);
 
   const saveStateToGameSlot = useCallback(async (game: Game, slotNumber: number) => {
     if (game.real) {

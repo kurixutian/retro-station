@@ -1,8 +1,9 @@
-import React, { useRef, useEffect } from 'react';
-import { HardDrive, X, FolderPlus, Gamepad2, ShieldCheck } from 'lucide-react';
+import React, { useRef, useEffect, useState } from 'react';
+import { HardDrive, X, FolderPlus, Gamepad2, ShieldCheck, Cloud, RefreshCw } from 'lucide-react';
 import { Game, Theme } from '../../types';
 import { formatGameTitle } from '../../constants/cores';
 import { ModalShell } from '../common/ModalShell';
+import { fetchRomFromCloud, getCachedUserProfile } from '../../cloudSync';
 
 interface MissingRomModalProps {
   isOpen: boolean;
@@ -21,7 +22,9 @@ export const MissingRomModal: React.FC<MissingRomModalProps> = ({
   onRomSelected,
   showToast,
 }) => {
+  const [downloadingCloud, setDownloadingCloud] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const user = getCachedUserProfile();
 
   useEffect(() => {
     if (!isOpen) return;
@@ -33,6 +36,26 @@ export const MissingRomModal: React.FC<MissingRomModalProps> = ({
   }, [isOpen, onClose]);
 
   if (!isOpen || !game) return null;
+
+  const handleDownloadFromCloud = async () => {
+    if (!game) return;
+    setDownloadingCloud(true);
+    try {
+      showToast(`Downloading ${game.title} from Cloud Vault...`);
+      const file = await fetchRomFromCloud(game.id, game.fileName, true);
+      if (file) {
+        showToast(`ROM downloaded from Cloud Vault! Launching ${game.title}...`);
+        onRomSelected(file);
+        onClose();
+      } else {
+        showToast('ROM not found in Cloud Vault. Please select a local ROM file.');
+      }
+    } catch (e: any) {
+      showToast(`Cloud fetch error: ${e?.message || 'Failed'}`);
+    } finally {
+      setDownloadingCloud(false);
+    }
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -115,13 +138,45 @@ export const MissingRomModal: React.FC<MissingRomModalProps> = ({
             className="hidden"
           />
 
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className={`w-full py-3 px-4 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg tactile-btn transition ${theme.accentBg}`}
-          >
-            <FolderPlus className="w-4 h-4 stroke-[2.5]" />
-            <span>Select ROM File</span>
-          </button>
+          {user ? (
+            <>
+              <button
+                onClick={handleDownloadFromCloud}
+                disabled={downloadingCloud}
+                className={`w-full py-3 px-4 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg tactile-btn transition ${
+                  theme.accentBg
+                } disabled:opacity-50`}
+              >
+                {downloadingCloud ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Downloading from Cloud Vault...</span>
+                  </>
+                ) : (
+                  <>
+                    <Cloud className="w-4 h-4 stroke-[2.5]" />
+                    <span>Download from Cloud Vault</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full py-2.5 px-4 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-zinc-800 font-semibold text-xs tactile-btn transition flex items-center justify-center gap-2"
+              >
+                <FolderPlus className="w-4 h-4" />
+                <span>Select Local ROM File</span>
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className={`w-full py-3 px-4 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg tactile-btn transition ${theme.accentBg}`}
+            >
+              <FolderPlus className="w-4 h-4 stroke-[2.5]" />
+              <span>Select ROM File</span>
+            </button>
+          )}
 
           <button
             onClick={onClose}

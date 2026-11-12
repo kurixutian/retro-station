@@ -12,6 +12,8 @@ const SETTINGS_SYNC_KEYS = [
   'retro_theme',
   'retro_shaders',
   'retro_haptics',
+  'retro_sync_roms',
+  'retro_pad_opacity',
   'retro_pad_layout',
   'retro_pad_layout_portrait',
   'retro_pad_layout_landscape',

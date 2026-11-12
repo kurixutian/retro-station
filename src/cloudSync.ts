@@ -104,6 +104,8 @@ const SETTINGS_SYNC_KEYS: string[] = [
   'retro_theme',
   'retro_shaders',
   'retro_haptics',
+  'retro_sync_roms',
+  'retro_pad_opacity',
   // On-screen pad configuration (layout JSON, layout names, active slot)
   'retro_pad_layout',
   'retro_pad_layout_portrait',
@@ -165,9 +167,12 @@ const ROM_SYNC_ENABLED_KEY = 'retro_sync_roms';
 
 export function isRomSyncEnabled(): boolean {
   try {
-    return localStorage.getItem(ROM_SYNC_ENABLED_KEY) === '1';
+    if (typeof localStorage === 'undefined') return true;
+    // Enabled by default so ROMs sync and play seamlessly across devices;
+    // only disabled if the user explicitly turns it off ('0').
+    return localStorage.getItem(ROM_SYNC_ENABLED_KEY) !== '0';
   } catch (e) {
-    return false;
+    return true;
   }
 }
 
@@ -178,6 +183,7 @@ export function setRomSyncEnabled(enabled: boolean): void {
   if (enabled) {
     markAllRomsForUpload();
   }
+  markLocalSaveModified(SETTINGS_SYNC_KEY).catch(() => {});
   triggerDebouncedCloudSync(enabled ? 2500 : 500);
 }
 
@@ -711,6 +717,9 @@ function gameIdFromItemKey(key: string): string | null {
 }
 
 export function keyToDriveFilename(key: string): string {
+  if (isRomKey(key)) {
+    return `rs_v2_${encodeURIComponent(key)}.bin`;
+  }
   return `rs_v2_${encodeURIComponent(key)}.json`;
 }
 
@@ -1149,6 +1158,58 @@ async function downloadDriveBinary(token: string, fileId: string): Promise<Uint8
   return new Uint8Array(buf);
 }
 
+/**
+ * On-demand single ROM download from Google Drive appDataFolder.
+ * Used when a game is launched on a secondary device and the ROM hasn't been downloaded yet.
+ * Returns the downloaded File, stores it in IndexedDB, and updates local metadata.
+ */
+export async function fetchRomFromCloud(
+  gameId: string,
+  preferredFileName?: string,
+  interactive = false
+): Promise<File | null> {
+  if (!gameId) return null;
+  const token = await ensureToken(interactive);
+  if (!token) return null;
+
+  try {
+    const allFiles = await listAppDataFiles(token);
+    const targetKey = `rom:${gameId}`;
+    const targetFilename = `rs_v2_${encodeURIComponent(targetKey)}.bin`;
+
+    let entry = allFiles.find((f) => f.name === targetFilename);
+    if (!entry) {
+      entry = allFiles.find((f) => driveFilenameToKey(f.name) === targetKey);
+    }
+    if (!entry) return null;
+
+    const data = await downloadDriveBinary(token, entry.id);
+    if (!data || !(data instanceof Uint8Array) || data.length === 0) return null;
+
+    const meta = findLocalGame(gameId);
+    const fileName =
+      preferredFileName || (meta?.fileName && String(meta.fileName)) || `${gameId}.rom`;
+    const file = new File([data as unknown as BlobPart], fileName, {
+      type: 'application/octet-stream',
+    });
+
+    await idbPut(gameId, file);
+
+    const metaMap = getLocalMetaMap();
+    metaMap[targetKey] = {
+      updatedAt: entry.updatedAt || Date.now(),
+      pendingUpload: false,
+      fileId: entry.id,
+    };
+    saveLocalMetaMap(metaMap);
+
+    return file;
+  } catch (err) {
+    console.warn(`[CloudSync] Failed to fetch ROM for ${gameId} from cloud:`, err);
+    return null;
+  }
+}
+
 type UploadedFileInfo = { id: string; updatedAt: number };
 
 /**
@@ -1490,6 +1551,13 @@ async function executeSync(interactive = false): Promise<{
       return rItem.updatedAt > local.updatedAt;
     });
 
+    // Pull manifests & settings before binary assets so local metadata is ready
+    pullKeys.sort((a, b) => {
+      const aPrio = a === 'retro_games' || a === 'library_games' ? 0 : a === SETTINGS_SYNC_KEY ? 1 : 2;
+      const bPrio = b === 'retro_games' || b === 'library_games' ? 0 : b === SETTINGS_SYNC_KEY ? 1 : 2;
+      return aPrio - bPrio;
+    });
+
     pulledCount = await pullItemsFromDrive({
       token,
       keys: pullKeys,
@@ -1506,6 +1574,19 @@ async function executeSync(interactive = false): Promise<{
     candidates.add(SETTINGS_SYNC_KEY);
     for (const k of Object.keys(metaMap)) if (isSyncableKey(k)) candidates.add(k);
     for (const k of Object.keys(remoteItems)) if (isSyncableKey(k)) candidates.add(k);
+    if (isRomSyncEnabled()) {
+      try {
+        const rawGames = localStorage.getItem('retro_games');
+        const list = rawGames ? JSON.parse(rawGames) : [];
+        if (Array.isArray(list)) {
+          for (const g of list) {
+            if (g && g.id && g.real && !DEMO_GAME_IDS.has(String(g.id))) {
+              candidates.add(`rom:${g.id}`);
+            }
+          }
+        }
+      } catch (e) {}
+    }
     try {
       const idbKeys = await idbGetAllKeys();
       for (const k of idbKeys) {

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'retro-station-v15';
+const CACHE_NAME = 'retro-station-v16';
 const PRECACHE_ASSETS = [
   './',
   './index.html',
