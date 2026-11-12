@@ -21,6 +21,8 @@ import {
   Minimize,
   RefreshCw,
   Gamepad2,
+  Eye,
+  EyeOff,
   GripHorizontal,
   GripVertical,
   Layers,
@@ -575,41 +577,68 @@ export const InGameView: React.FC<InGameViewProps> = ({
         releaseDpadAll();
       }}
     >
+      {/* Seamless unified cross body with authentic Game Boy matte dark molding & drop shadow */}
+      <div className="absolute inset-0 pointer-events-none filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.7)]">
+        <svg className="w-full h-full" viewBox="0 0 144 144" aria-hidden="true">
+          <defs>
+            <linearGradient id="gbDpadCrossGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="#36363d" />
+              <stop offset="45%" stopColor="#222227" />
+              <stop offset="100%" stopColor="#141418" />
+            </linearGradient>
+          </defs>
+          <path
+            d="M 48,10 A 10,10 0 0,1 58,0 L 86,0 A 10,10 0 0,1 96,10 L 96,48 L 134,48 A 10,10 0 0,1 144,58 L 144,86 A 10,10 0 0,1 134,96 L 96,96 L 96,134 A 10,10 0 0,1 86,144 L 58,144 A 10,10 0 0,1 48,134 L 48,96 L 10,96 A 10,10 0 0,1 0,86 L 0,58 A 10,10 0 0,1 10,48 L 48,48 Z"
+            fill="url(#gbDpadCrossGrad)"
+            stroke="#40404a"
+            strokeWidth="0.75"
+          />
+        </svg>
+      </div>
+
       {/* Up */}
       <div
         ref={(el) => { dpadArmRefs.current.up = el; }}
-        className="absolute top-0 left-12 w-12 h-14 rounded-t-lg gb-dpad-arm flex items-start justify-center pt-2 pointer-events-none select-none dpad-arm"
+        className="absolute top-0 left-12 w-12 h-14 rounded-t-xl gb-dpad-arm flex items-start justify-center pt-2.5 pointer-events-none select-none dpad-arm z-10"
         aria-hidden="true"
       >
-        <span className="text-[10px] font-black text-black/80 drop-shadow-[0_1px_0_rgba(255,255,255,0.2)]">▲</span>
+        <svg className="w-2.5 h-2.5 fill-black/80 drop-shadow-[0_1px_0_rgba(255,255,255,0.25)]" viewBox="0 0 10 10" aria-hidden="true">
+          <polygon points="5,1 9,8 1,8" />
+        </svg>
       </div>
       {/* Down */}
       <div
         ref={(el) => { dpadArmRefs.current.down = el; }}
-        className="absolute bottom-0 left-12 w-12 h-14 rounded-b-lg gb-dpad-arm flex items-end justify-center pb-2 pointer-events-none select-none dpad-arm"
+        className="absolute bottom-0 left-12 w-12 h-14 rounded-b-xl gb-dpad-arm flex items-end justify-center pb-2.5 pointer-events-none select-none dpad-arm z-10"
         aria-hidden="true"
       >
-        <span className="text-[10px] font-black text-black/80 drop-shadow-[0_1px_0_rgba(255,255,255,0.2)]">▼</span>
+        <svg className="w-2.5 h-2.5 fill-black/80 drop-shadow-[0_1px_0_rgba(255,255,255,0.25)]" viewBox="0 0 10 10" aria-hidden="true">
+          <polygon points="1,2 9,2 5,9" />
+        </svg>
       </div>
       {/* Left */}
       <div
         ref={(el) => { dpadArmRefs.current.left = el; }}
-        className="absolute top-12 left-0 w-14 h-12 rounded-l-lg gb-dpad-arm flex items-center justify-start pl-2 pointer-events-none select-none dpad-arm"
+        className="absolute top-12 left-0 w-14 h-12 rounded-l-xl gb-dpad-arm flex items-center justify-start pl-2.5 pointer-events-none select-none dpad-arm z-10"
         aria-hidden="true"
       >
-        <span className="text-[10px] font-black text-black/80 drop-shadow-[0_1px_0_rgba(255,255,255,0.2)]">◀</span>
+        <svg className="w-2.5 h-2.5 fill-black/80 drop-shadow-[0_1px_0_rgba(255,255,255,0.25)]" viewBox="0 0 10 10" aria-hidden="true">
+          <polygon points="8,1 8,9 1,5" />
+        </svg>
       </div>
       {/* Right */}
       <div
         ref={(el) => { dpadArmRefs.current.right = el; }}
-        className="absolute top-12 right-0 w-14 h-12 rounded-r-lg gb-dpad-arm flex items-center justify-end pr-2 pointer-events-none select-none dpad-arm"
+        className="absolute top-12 right-0 w-14 h-12 rounded-r-xl gb-dpad-arm flex items-center justify-end pr-2.5 pointer-events-none select-none dpad-arm z-10"
         aria-hidden="true"
       >
-        <span className="text-[10px] font-black text-black/80 drop-shadow-[0_1px_0_rgba(255,255,255,0.2)]">▶</span>
+        <svg className="w-2.5 h-2.5 fill-black/80 drop-shadow-[0_1px_0_rgba(255,255,255,0.25)]" viewBox="0 0 10 10" aria-hidden="true">
+          <polygon points="2,1 2,9 9,5" />
+        </svg>
       </div>
       {/* Molded Center Pivot Dish (Authentic Game Boy Concave indentation) */}
       <div
-        className="absolute top-12 left-12 w-12 h-12 gb-dpad-arm flex items-center justify-center pointer-events-none z-10"
+        className="absolute top-12 left-12 w-12 h-12 flex items-center justify-center pointer-events-none z-20"
       >
         <div className="w-5 h-5 rounded-full gb-pivot-dish" />
       </div>
@@ -1393,8 +1422,25 @@ export const InGameView: React.FC<InGameViewProps> = ({
             </div>
           </div>
 
-          {/* Top Settings Gear Button + Fullscreen Toggle */}
+          {/* Top Controls Toggle + Fullscreen Toggle + Menu Button */}
           <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => {
+                const next = !hidePad;
+                setHidePad(next);
+                try { localStorage.setItem('retro_hide_pad', next ? '1' : '0'); } catch {}
+                showToast?.(next ? 'On-screen buttons hidden' : 'On-screen buttons visible');
+              }}
+              className={`flex items-center gap-1 px-2 py-1.5 rounded-xl border text-xs font-bold transition active:scale-95 ${
+                hidePad
+                  ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+                  : 'bg-zinc-900/90 hover:bg-zinc-800 text-zinc-100 border-white/10'
+              }`}
+              aria-label={hidePad ? 'Show touch controls' : 'Hide touch controls'}
+              title={hidePad ? 'Show on-screen touch controls' : 'Hide on-screen touch controls'}
+            >
+              {hidePad ? <EyeOff className="w-3.5 h-3.5 text-amber-400" /> : <Gamepad2 className="w-3.5 h-3.5 text-emerald-400" />}
+            </button>
             <button
               onClick={toggleFullscreen}
               className="flex items-center gap-1 px-2 py-1.5 rounded-xl border text-xs font-bold transition active:scale-95 bg-zinc-900/90 hover:bg-zinc-800 text-zinc-100 border-white/10"
@@ -1499,6 +1545,38 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 </button>
               </div>
 
+              {/* On-Screen Touch Controls Quick Switch Card */}
+              <div className="flex items-center justify-between px-3 py-2 rounded-2xl bg-zinc-900/80 border border-zinc-800">
+                <div className="flex items-center gap-2.5">
+                  <div className={`p-1.5 rounded-xl ${hidePad ? 'bg-amber-500/20 text-amber-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
+                    {hidePad ? <EyeOff className="w-4 h-4" /> : <Gamepad2 className="w-4 h-4" />}
+                  </div>
+                  <div className="flex flex-col text-left">
+                    <span className="text-xs font-bold text-zinc-100">On-Screen Controls</span>
+                    <span className="text-[10px] text-zinc-400">
+                      {hidePad ? 'Hidden (playing with keyboard/gamepad)' : 'Visible (touch buttons active)'}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={!hidePad}
+                  onClick={() => {
+                    const next = !hidePad;
+                    setHidePad(next);
+                    try { localStorage.setItem('retro_hide_pad', next ? '1' : '0'); } catch {}
+                    showToast?.(next ? 'On-screen buttons hidden' : 'On-screen buttons visible');
+                  }}
+                  className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors ${
+                    !hidePad ? 'bg-emerald-500 justify-end' : 'bg-zinc-700 justify-start'
+                  }`}
+                  aria-label="Toggle on-screen touch controls"
+                >
+                  <div className="w-4 h-4 rounded-full bg-white shadow-md transform transition-transform" />
+                </button>
+              </div>
+
               {/* Tier 2: Quick Control & Display Toggles (Compact horizontal pill row) */}
               <div className="grid grid-cols-4 gap-1.5">
                 <button
@@ -1525,7 +1603,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                   title="Configure touch controls, opacity & layout"
                 >
                   <Sliders className="w-4 h-4 text-emerald-400" />
-                  <span className="text-[11px] font-bold">Controls</span>
+                  <span className="text-[11px] font-bold">Edit Pad</span>
                 </button>
 
                 <button

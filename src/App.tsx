@@ -539,7 +539,19 @@ export default function App() {
     };
   }, [currentView, isPaused]);
 
-  const [hidePad, setHidePad] = useState(false);
+  const [hidePad, setHidePad] = useState(() => {
+    try {
+      return localStorage.getItem('retro_hide_pad') === '1';
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('retro_hide_pad', hidePad ? '1' : '0');
+    } catch {}
+  }, [hidePad]);
   const [slotPortrait, setSlotPortrait] = useState<LayoutSlot>(() => getActiveSlot(false, currentSystemKey));
   const [slotLandscape, setSlotLandscape] = useState<LayoutSlot>(() => getActiveSlot(true, currentSystemKey));
   const [padLayoutPortrait, setPadLayoutPortrait] = useState<PadLayout>(() => loadPadLayout(false, getActiveSlot(false, currentSystemKey), currentSystemKey));
