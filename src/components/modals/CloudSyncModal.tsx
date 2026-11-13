@@ -198,8 +198,10 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     try {
       const backup = await createBackupFile();
       downloadBackup(backup);
-      const count = Object.keys(backup.items).length;
-      setBackupMsg(`Exported ${count} save item(s) & ${backup.lists.retro_games?.length || 0} game(s).`);
+      const keys = Object.keys(backup.items);
+      const romCount = keys.filter((k) => k.startsWith('rom:')).length;
+      const otherCount = keys.length - romCount;
+      setBackupMsg(`Exported ${romCount} ROM(s), ${otherCount} save item(s) & ${backup.lists.retro_games?.length || 0} game(s).`);
       showToast('Backup file downloaded!');
     } catch (e: any) {
       setBackupMsg(`Export failed: ${e?.message || 'unknown error'}`);
