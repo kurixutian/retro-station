@@ -536,8 +536,9 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
             )}
 
             <p className={`text-xs leading-relaxed ${theme.isLight ? 'text-stone-700' : 'text-zinc-400'}`}>
-              Export all your save states, battery saves (.srm), and game library into a single
-              file. You can save it to your device or Google Drive manually and import it anywhere.
+              Export all your ROMs, save states, battery saves (.srm), and game library into a
+              single file. You can save it to your device or Google Drive manually and import it
+              anywhere.
             </p>
 
             <div className="grid grid-cols-2 gap-2.5">

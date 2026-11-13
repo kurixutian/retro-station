@@ -2,10 +2,7 @@
 // Offline Backup - manual "export everything / import a previous export"
 // ----------------------------------------------------------------------------
 // Independent of the cloud vault: a single JSON file containing cartridges,
-// save states (base64), SRAM/RTC (base64), RTC clocks and cover art.
-// ROM binaries are intentionally NOT included - they are the user's original
-// files and are typically the largest, replaceable assets. The irreplaceable
-// progress data is everything else.
+// ROM binaries (base64), save states (base64), SRAM/RTC (base64), and cover art.
 // ============================================================================
 
 import { idbGet, idbGetAllKeys, idbPut } from './storage/idb';
@@ -50,17 +47,36 @@ export async function createBackupFile(): Promise<BackupFile> {
     for (const k of keys) {
       const key = String(k);
       if (
-        !(
-          key.startsWith('state:') ||
-          key.startsWith('srm:') ||
-          key.startsWith('rtc:') ||
-          key.startsWith('cover:')
-        )
+        key === 'library_games' ||
+        key === 'retro_games' ||
+        key.startsWith('boxart_index:') ||
+        key.startsWith('autosave:')
       ) {
-        continue; // ROMs excluded on purpose
+        continue;
       }
+
+      const isKnownItem =
+        key.startsWith('state:') ||
+        key.startsWith('srm:') ||
+        key.startsWith('rtc:') ||
+        key.startsWith('cover:');
       const val = await idbGet(key);
       if (val == null) continue;
+
+      if (!isKnownItem) {
+        // ROM binary (stored under bare gameId or rom:gameId)
+        const romKey = key.startsWith('rom:') ? key : `rom:${key}`;
+        let bytes: Uint8Array | null = null;
+        if (typeof Blob !== 'undefined' && val instanceof Blob) {
+          bytes = new Uint8Array(await val.arrayBuffer());
+        } else {
+          bytes = normalizeBinaryData(val);
+        }
+        if (bytes && bytes.byteLength > 0) {
+          items[romKey] = uint8ToBase64(bytes);
+        }
+        continue;
+      }
 
       if (typeof val === 'string') {
         items[key] = val; // cover: data URL string
@@ -223,8 +239,26 @@ export async function importBackupFile(raw: string): Promise<ImportResult> {
   // Per-item values
   const items = backup.items || {};
   for (const [key, stored] of Object.entries(items)) {
-    if (!(key.startsWith('state:') || key.startsWith('srm:') || key.startsWith('rtc:') || key.startsWith('cover:'))) continue;
     if (typeof stored !== 'string') continue;
+    if (key.startsWith('rom:')) {
+      const gameId = key.slice('rom:'.length);
+      if (!gameId) continue;
+      try {
+        const bytes = base64ToUint8(stored);
+        if (bytes && bytes.length > 0) {
+          const meta = mergedRetro.find((g) => g && String(g.id) === gameId);
+          const fileName = (meta?.fileName && String(meta.fileName)) || `${gameId}.rom`;
+          const file = new File([bytes as unknown as BlobPart], fileName, {
+            type: 'application/octet-stream',
+          });
+          await idbPut(gameId, file).catch(() => {});
+          appliedItems++;
+          updatedKeys.push(key);
+        }
+      } catch (e) {}
+      continue;
+    }
+    if (!(key.startsWith('state:') || key.startsWith('srm:') || key.startsWith('rtc:') || key.startsWith('cover:'))) continue;
     const value = decodeItemValue(key, stored);
     if (value == null) continue;
     await idbPut(key, value).catch(() => {});
