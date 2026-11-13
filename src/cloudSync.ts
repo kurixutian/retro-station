@@ -1614,7 +1614,13 @@ async function executeSync(interactive = false): Promise<{
       tombstonesDirty = true;
     }
 
-    // -------- 2. Pull phase: download remote items newer than local --------
+    // -------- 2. Pull phase: download remote items newer than local (or missing from IDB) --------
+    let localIdbKeySet: Set<string> | null = null;
+    try {
+      const idbKeysBeforePull = await idbGetAllKeys();
+      localIdbKeySet = new Set(idbKeysBeforePull.map(String));
+    } catch (e) {}
+
     const pullKeys = Object.keys(remoteItems).filter((k) => {
       const owningGame = isItemKey(k) ? gameIdFromItemKey(k) : null;
       if (owningGame && mergedDeletedGames.has(owningGame)) return false;
@@ -1625,7 +1631,22 @@ async function executeSync(interactive = false): Promise<{
       if (tombTs > rItem.updatedAt) return false;
       const local = metaMap[k];
       if (!local) return true;
-      return rItem.updatedAt > local.updatedAt;
+      if (rItem.updatedAt > local.updatedAt) return true;
+      // If IndexedDB lost the item locally while localMeta survived, re-pull it from Drive
+      if (localIdbKeySet && isItemKey(k)) {
+        if (isRomKey(k)) {
+          const gId = romLocalIdbKey(k) || '';
+          const gMeta = gId ? findLocalGame(gId) : undefined;
+          const hasLocalRom =
+            (gId && localIdbKeySet.has(gId)) ||
+            localIdbKeySet.has(k) ||
+            Boolean(gMeta?.aliasIds?.some((alias: string) => localIdbKeySet!.has(alias)));
+          if (!hasLocalRom) return true;
+        } else if (!localIdbKeySet.has(k)) {
+          return true;
+        }
+      }
+      return false;
     });
 
     // Pull manifests & settings before binary assets so local metadata is ready
@@ -1752,16 +1773,6 @@ async function executeSync(interactive = false): Promise<{
 
       // ROM binaries only push/pull when the user opted in
       if (isRomKey(key) && !isRomSyncEnabled()) continue;
-
-      // Local item was deleted on this device (we have localMeta, no localVal, and remote exists)
-      if (remote && localVal == null && localMeta && isItemKey(key)) {
-        await deleteDriveFile(token, remote.id);
-        remoteTombstones.deletedItems[key] = Date.now();
-        tombstonesDirty = true;
-        delete metaMap[key];
-        touchedThisRun.add(key);
-        continue;
-      }
 
       if (localVal == null) continue;
 

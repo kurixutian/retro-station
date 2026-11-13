@@ -289,10 +289,17 @@ export default function App() {
 
   // Restore library from IndexedDB if localStorage was empty
   useEffect(() => {
-    if (games.length === 0) {
+    let hasSavedGames = false;
+    try {
+      const raw = localStorage.getItem('retro_games');
+      const parsed = raw ? JSON.parse(raw) : null;
+      hasSavedGames = Array.isArray(parsed) && parsed.some((g: any) => g && g.real && g.id !== 'pokemon_gold');
+    } catch (e) {}
+
+    if (!hasSavedGames) {
       idbGet('library_games').then((saved) => {
         if (Array.isArray(saved) && saved.length > 0) {
-          setGames(sanitizeGameList(saved));
+          setGames((prev) => sanitizeGameList([...prev, ...saved]));
         }
       }).catch(() => {});
     }
@@ -617,7 +624,9 @@ export default function App() {
   useEffect(() => {
     // Durable backup to IndexedDB so libraries exceeding localStorage 5MB quota never get lost
     const userImportedOnly = games.filter((g) => g.real && g.id !== 'pokemon_gold');
-    idbPut('library_games', userImportedOnly).catch(() => {});
+    if (!isFirstMountRef.current || userImportedOnly.length > 0) {
+      idbPut('library_games', userImportedOnly).catch(() => {});
+    }
 
     try {
       localStorage.setItem('retro_games', JSON.stringify(games));
