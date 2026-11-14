@@ -7,7 +7,8 @@ A tactile, offline-first mobile & web Libretro handheld emulator frontend with a
 
 ## Play Now
 
-**Play in your browser:** [https://kurixutian.github.io/retro-station/](https://kurixutian.github.io/retro-station/)
+- **Play in your browser:** [https://kurixutian.github.io/retro-station/](https://kurixutian.github.io/retro-station/)
+- **Install the Android App (APK):** [Download from GitHub Releases](https://github.com/kurixutian/retro-station/releases/latest) — install the native app so your ROMs and saves are stored on your device instead of depending on browser local storage.
 
 ## Features
 
