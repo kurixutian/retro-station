@@ -40,3 +40,10 @@ If you enjoy using **Retro Pocket**, consider supporting its development:
 [![Buy Me A Coffee](https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png)](https://buymeacoffee.com/kurixutian)
 
 - **Buy Me a Coffee:** [https://buymeacoffee.com/kurixutian](https://buymeacoffee.com/kurixutian)
+
+
+## License & Legal
+
+- **Copyright:** Copyright (c) 2026 `kurixutian`. All rights reserved. Unauthorized copying, redistribution, rebranding, or plagiarism of this project's source code, UI, or assets without explicit permission is prohibited.
+- **No Copyrighted Content Included:** Retro Pocket is a frontend only. It does **not** include, host, or distribute any copyrighted game ROMs or BIOS files. Users are solely responsible for supplying their own legally obtained game backups.
+- **Third-Party Licenses:** Libretro cores, Capacitor, React, and other open-source libraries used by this project remain subject to their respective open-source licenses.
