@@ -309,6 +309,7 @@ function setCachedUserProfile(profile: GoogleUserProfile | null): void {
 interface StoredToken {
   accessToken: string;
   expiresAt: number;
+  refreshToken?: string;
 }
 
 function loadStoredToken(): StoredToken | null {
@@ -319,15 +320,17 @@ function loadStoredToken(): StoredToken | null {
     if (parsed?.accessToken && parsed?.expiresAt && Date.now() < parsed.expiresAt - 60_000) {
       return parsed;
     }
-    localStorage.removeItem(TOKEN_STORAGE_KEY);
+    if (!parsed?.refreshToken) {
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+    }
   } catch (e) {}
   return null;
 }
 
-function saveStoredToken(accessToken: string | null, expiresAt = 0): void {
+function saveStoredToken(accessToken: string | null, expiresAt = 0, refreshToken?: string): void {
   try {
     if (accessToken && expiresAt > Date.now()) {
-      localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify({ accessToken, expiresAt }));
+      localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify({ accessToken, expiresAt, refreshToken }));
     } else {
       localStorage.removeItem(TOKEN_STORAGE_KEY);
     }
@@ -348,6 +351,14 @@ export function hasValidToken(): boolean {
     inMemoryAccessToken = stored.accessToken;
     tokenExpiresAt = stored.expiresAt;
     return true;
+  }
+  // In Capacitor native, a refresh token counts as "valid" because we can refresh silently
+  if (isCapacitorNative()) {
+    try {
+      const raw = localStorage.getItem(TOKEN_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (parsed?.refreshToken) return true;
+    } catch (e) {}
   }
   return false;
 }
@@ -396,6 +407,220 @@ export async function loadGisScript(): Promise<boolean> {
   });
 
   return gisLoadingPromise;
+}
+
+// ============================================================================
+// CAPACITOR NATIVE OAUTH (Chrome Custom Tab + PKCE)
+// ============================================================================
+
+const PKCE_VERIFIER_KEY = 'retro_pkce_verifier';
+// Custom scheme redirect URI for Capacitor Browser plugin (matches AndroidManifest intent filter)
+const REDIRECT_URI = 'com.retrostation.app:/oauth2redirect';
+
+function isCapacitorNative(): boolean {
+  return typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.() === true;
+}
+
+// Platform-specific Google Client ID
+// Web/PWA: uses the configured web client ID (from localStorage or VITE_GOOGLE_CLIENT_ID)
+// Android (Capacitor): uses a separate Android-type OAuth client ID
+// Create one at: https://console.cloud.google.com/apis/credentials → OAuth client ID → Android
+// Package: com.retrostation.app, SHA-1: from debug.keystore
+const ANDROID_CLIENT_ID = '812701015700-q01748676a4kl199qnp2uuo6u8um05u2.apps.googleusercontent.com';
+
+function getPlatformClientId(): string {
+  if (isCapacitorNative()) {
+    return ANDROID_CLIENT_ID || getGoogleClientId();
+  }
+  return getGoogleClientId();
+}
+
+function base64URLEncode(buf: ArrayBuffer): string {
+  return btoa(String.fromCharCode(...new Uint8Array(buf)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+}
+
+async function generatePKCEPair(): Promise<{ verifier: string; challenge: string }> {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  const verifier = base64URLEncode(bytes.buffer);
+  const challengeBuf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+  const challenge = base64URLEncode(challengeBuf);
+  return { verifier, challenge };
+}
+
+export function parseOAuthRedirectUrl(
+  url: string,
+  redirectUri = REDIRECT_URI
+): { code: string } | { error: string } | null {
+  if (!url || !url.startsWith(redirectUri)) return null;
+  const parsed = new URL(url);
+  const oauthError = parsed.searchParams.get('error');
+  if (oauthError) {
+    const desc = parsed.searchParams.get('error_description') || oauthError;
+    return { error: `Google sign-in failed: ${desc}` };
+  }
+  const code = parsed.searchParams.get('code');
+  if (!code) return { error: 'OAuth canceled or no code returned' };
+  return { code };
+}
+
+async function waitForOAuthRedirect(authUrl: string): Promise<string> {
+  const { Browser } = await import('@capacitor/browser');
+  const { App } = await import('@capacitor/app');
+
+  return new Promise<string>(async (resolve, reject) => {
+    let settled = false;
+    let cancelTimer: ReturnType<typeof setTimeout> | null = null;
+    let urlHandle: { remove: () => Promise<void> } | null = null;
+    let finishedHandle: { remove: () => Promise<void> } | null = null;
+
+    const cleanup = () => {
+      if (cancelTimer) {
+        clearTimeout(cancelTimer);
+        cancelTimer = null;
+      }
+      urlHandle?.remove().catch(() => {});
+      finishedHandle?.remove().catch(() => {});
+    };
+
+    const finishResolve = (code: string) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(code);
+    };
+
+    const finishReject = (err: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(err);
+    };
+
+    try {
+      urlHandle = await App.addListener('appUrlOpen', ({ url }) => {
+        try {
+          const parsed = parseOAuthRedirectUrl(url);
+          if (!parsed) return;
+          Browser.close().catch(() => {});
+          if ('error' in parsed) {
+            finishReject(new Error(parsed.error));
+            return;
+          }
+          finishResolve(parsed.code);
+        } catch (e: any) {
+          finishReject(new Error(e?.message || 'Invalid OAuth redirect URL'));
+        }
+      });
+
+      finishedHandle = await Browser.addListener('browserFinished', () => {
+        // Give appUrlOpen a brief grace period in case Custom Tab closes just before onNewIntent fires
+        if (settled || cancelTimer) return;
+        cancelTimer = setTimeout(() => {
+          finishReject(new Error('Google sign-in was cancelled'));
+        }, 750);
+      });
+
+      await Browser.open({ url: authUrl, presentationStyle: 'fullscreen' });
+    } catch (err: any) {
+      finishReject(new Error(err?.message || 'Could not open Google sign-in'));
+    }
+  });
+}
+
+async function getAccessTokenNative(): Promise<string> {
+  const clientId = getPlatformClientId();
+  if (!clientId) {
+    setStatus('unlinked', 'Google Client ID not configured');
+    throw new Error('Google Client ID not configured');
+  }
+
+  const { verifier, challenge } = await generatePKCEPair();
+  localStorage.setItem(PKCE_VERIFIER_KEY, verifier);
+
+  const scope = 'openid email profile https://www.googleapis.com/auth/drive.appdata';
+  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+    `client_id=${encodeURIComponent(clientId)}` +
+    `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
+    `&response_type=code` +
+    `&scope=${encodeURIComponent(scope)}` +
+    `&access_type=offline` +
+    `&prompt=consent` +
+    `&code_challenge=${challenge}` +
+    `&code_challenge_method=S256`;
+
+  let code: string;
+  try {
+    code = await waitForOAuthRedirect(authUrl);
+  } catch (err) {
+    localStorage.removeItem(PKCE_VERIFIER_KEY);
+    throw err;
+  }
+
+  const verifierStored = localStorage.getItem(PKCE_VERIFIER_KEY) || verifier;
+  localStorage.removeItem(PKCE_VERIFIER_KEY);
+
+  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      code,
+      client_id: clientId,
+      redirect_uri: REDIRECT_URI,
+      grant_type: 'authorization_code',
+      code_verifier: verifierStored,
+    }),
+  });
+  const tokens = await tokenRes.json();
+  if (!tokens.access_token) throw new Error('Token exchange failed: ' + (tokens.error_description || tokens.error || JSON.stringify(tokens)));
+
+  const expiresInSec = Number(tokens.expires_in) || 3599;
+  const expiry = Date.now() + (expiresInSec - 60) * 1000;
+  saveStoredToken(tokens.access_token, expiry, tokens.refresh_token);
+  if (!getCachedUserProfile()) {
+    setCachedUserProfile({ email: 'Google Drive User', name: 'Player' });
+  }
+  await fetchUserProfile(tokens.access_token);
+
+  return tokens.access_token;
+}
+
+async function refreshAccessTokenNative(): Promise<string> {
+  const stored = JSON.parse(localStorage.getItem(TOKEN_STORAGE_KEY) || '{}') as Partial<StoredToken>;
+  if (!stored.refreshToken) throw new Error('No refresh token');
+
+  const clientId = getPlatformClientId();
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: clientId,
+      grant_type: 'refresh_token',
+      refresh_token: stored.refreshToken,
+    }),
+  });
+  const data = await res.json();
+  if (!data.access_token) throw new Error(data.error_description || data.error || 'Refresh failed');
+
+  const expiresInSec = Number(data.expires_in) || 3599;
+  saveStoredToken(
+    data.access_token,
+    Date.now() + (expiresInSec - 60) * 1000,
+    data.refresh_token || stored.refreshToken
+  );
+  return data.access_token;
+}
+
+async function revokeAccessNative(): Promise<void> {
+  const stored = JSON.parse(localStorage.getItem(TOKEN_STORAGE_KEY) || '{}') as Partial<StoredToken>;
+  const token = stored.accessToken || stored.refreshToken;
+  if (token) {
+    await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`, { method: 'POST' }).catch(() => {});
+  }
+  localStorage.removeItem(TOKEN_STORAGE_KEY);
+  localStorage.removeItem(USER_PROFILE_STORAGE_KEY);
 }
 
 async function fetchUserProfile(token: string): Promise<GoogleUserProfile | null> {
@@ -455,6 +680,44 @@ export async function ensureToken(interactive = false): Promise<string | null> {
     return null;
   }
 
+  // Capacitor Native: use Chrome Custom Tab + PKCE flow
+  if (isCapacitorNative()) {
+    if (hasValidToken() && inMemoryAccessToken && Date.now() < tokenExpiresAt - 60_000) {
+      return inMemoryAccessToken;
+    }
+    // Try refresh token if we have one
+    if (hasValidToken()) {
+      try {
+        const newToken = await refreshAccessTokenNative();
+        inMemoryAccessToken = newToken;
+        return newToken;
+      } catch (e) {
+        console.warn('[CloudSync] Native refresh failed, will re-auth:', e);
+        // Fall through to interactive sign-in
+      }
+    }
+    if (!interactive) {
+      if (getCachedUserProfile()) {
+        setStatus('needs_reauth', 'Session expired — tap Reconnect or Sync Now');
+      } else {
+        setStatus('unlinked', 'Not signed in');
+      }
+      return null;
+    }
+    try {
+      const token = await getAccessTokenNative();
+      inMemoryAccessToken = token;
+      const stored = loadStoredToken();
+      tokenExpiresAt = stored?.expiresAt || Date.now() + 3600_000;
+      setStatus('idle', 'Connected to Google Drive');
+      return token;
+    } catch (err: any) {
+      setStatus('error', err?.message || 'Native sign-in failed');
+      return null;
+    }
+  }
+
+  // Browser/PWA: existing GIS flow
   if (hasValidToken() && inMemoryAccessToken) {
     return inMemoryAccessToken;
   }
@@ -548,7 +811,10 @@ export async function signOutGoogle(): Promise<void> {
   try {
     localStorage.removeItem(LAST_SYNC_TIME_KEY);
   } catch (e) {}
-  if (tok && typeof window !== 'undefined' && window.google?.accounts?.oauth2?.revoke) {
+
+  if (isCapacitorNative()) {
+    await revokeAccessNative();
+  } else if (tok && typeof window !== 'undefined' && window.google?.accounts?.oauth2?.revoke) {
     try {
       window.google.accounts.oauth2.revoke(tok, () => {});
     } catch (e) {}
@@ -1424,9 +1690,7 @@ async function uploadDriveJson(
     `--${boundary}\r\n` +
     `Content-Type: application/json; charset=UTF-8\r\n\r\n`;
   const footerPart = `\r\n--${boundary}--`;
-  const multipartBlob = new Blob([headerPart, jsonString, footerPart], {
-    type: `multipart/related; boundary=${boundary}`,
-  });
+  const multipartBody = `${headerPart}${jsonString}${footerPart}`;
 
   const url = existingFileId
     ? `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(existingFileId)}?uploadType=multipart&fields=id,name,modifiedTime`
@@ -1439,7 +1703,7 @@ async function uploadDriveJson(
       Authorization: `Bearer ${token}`,
       'Content-Type': `multipart/related; boundary=${boundary}`,
     },
-    body: multipartBlob,
+    body: multipartBody,
   });
 
   if (res.status === 404 && existingFileId) {

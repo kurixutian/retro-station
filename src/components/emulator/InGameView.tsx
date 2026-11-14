@@ -382,15 +382,44 @@ export const InGameView: React.FC<InGameViewProps> = ({
   }, [romUrl, emuFrameRef]);
 
   const toggleFullscreen = React.useCallback(() => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().then(() => {
-        try {
-          (screen.orientation as any)?.lock?.('landscape').catch(() => {});
-        } catch (e) {}
-      }).catch(() => {});
+    const androidOrient = (window as any).AndroidOrientation;
+    const goingLandscape = !isLandscape && !document.fullscreenElement;
+
+    if (goingLandscape) {
+      if (androidOrient?.setOrientation) {
+        androidOrient.setOrientation('landscape');
+      }
+      if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen().then(() => {
+          try {
+            (screen.orientation as any)?.lock?.('landscape').catch(() => {});
+          } catch (e) {}
+        }).catch(() => {
+          try {
+            (screen.orientation as any)?.lock?.('landscape').catch(() => {});
+          } catch (e) {}
+        });
+      }
     } else {
-      document.exitFullscreen().catch(() => {});
+      if (androidOrient?.setOrientation) {
+        androidOrient.setOrientation('portrait');
+      }
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
+      try {
+        (screen.orientation as any)?.lock?.('portrait').catch(() => {});
+      } catch (e) {}
     }
+  }, [isLandscape]);
+
+  React.useEffect(() => {
+    return () => {
+      (window as any).AndroidOrientation?.setOrientation?.('portrait');
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
+    };
   }, []);
 
   // ── Draggable customizer state ───────────────────────────────────────────
@@ -845,7 +874,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
   );
 
   const renderTransport = (compact = false) => (
-    <div className={`flex items-center justify-center ${compact ? 'gap-[72px]' : 'gap-2 w-[300px] grid grid-cols-3'} select-none touch-none`}>
+    <div className={`flex items-center justify-center ${compact ? 'gap-[72px]' : 'gap-1.5 w-[216px] grid grid-cols-3'} select-none touch-none`}>
       {/* Pause Toggle */}
       <button
         type="button"
@@ -867,7 +896,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
           });
         }}
         className={`relative flex items-center justify-center gap-1.5 ${
-          compact ? 'h-[28px] min-w-[92px] px-3.5 rounded-md before:content-[\'\'] before:absolute before:-top-4 before:-bottom-4 before:-inset-x-2' : 'py-2.5 px-3 min-h-[44px] rounded-xl text-xs font-bold'
+          compact ? 'h-[28px] min-w-[92px] px-3.5 rounded-md before:content-[\'\'] before:absolute before:-top-4 before:-bottom-4 before:-inset-x-2' : 'py-1.5 px-2 min-h-[34px] rounded-lg text-[10px] font-bold'
         } border transition active:scale-95 touch-none select-none tactile-btn ${
           isPaused
             ? 'bg-amber-500 text-zinc-950 border-amber-300 shadow-lg'
@@ -925,7 +954,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
         }}
         onContextMenu={(e) => e.preventDefault()}
         className={`relative flex items-center justify-center gap-1.5 ${
-          compact ? 'h-[28px] min-w-[92px] px-3.5 rounded-md before:content-[\'\'] before:absolute before:-top-4 before:-bottom-4 before:-inset-x-2' : 'py-2.5 px-3 min-h-[44px] rounded-xl text-xs font-bold'
+          compact ? 'h-[28px] min-w-[92px] px-3.5 rounded-md before:content-[\'\'] before:absolute before:-top-4 before:-bottom-4 before:-inset-x-2' : 'py-1.5 px-2 min-h-[34px] rounded-lg text-[10px] font-bold'
         } border transition active:scale-95 touch-none select-none tactile-btn ${
           isRewinding
             ? 'bg-amber-400 text-zinc-950 border-amber-200 shadow-lg'
@@ -957,7 +986,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
           });
         }}
         className={`relative flex items-center justify-center gap-1.5 ${
-          compact ? 'h-[28px] min-w-[92px] px-3.5 rounded-md before:content-[\'\'] before:absolute before:-top-4 before:-bottom-4 before:-inset-x-2' : 'py-2.5 px-3 min-h-[44px] rounded-xl text-xs font-bold'
+          compact ? 'h-[28px] min-w-[92px] px-3.5 rounded-md before:content-[\'\'] before:absolute before:-top-4 before:-bottom-4 before:-inset-x-2' : 'py-1.5 px-2 min-h-[34px] rounded-lg text-[10px] font-bold'
         } border transition active:scale-95 touch-none select-none tactile-btn ${
           isFastForward
             ? 'bg-sky-400 text-zinc-950 border-sky-200 shadow-lg'
@@ -1379,10 +1408,11 @@ export const InGameView: React.FC<InGameViewProps> = ({
           isLandscape ? 'flex-row' : 'flex-col'
         } overflow-hidden ${
           shaders.amoled ? 'bg-black border-zinc-900' : theme.shellBg
-        }`}
+        } ${isLandscape ? '' : 'safe-bottom'}`}
       >
         {/* Tap & Swipe zone at top: reveals the auto-hiding top bar */}
         <button
+          type="button"
           aria-label="Show top bar"
           onClick={() => revealTopBar()}
           onTouchStart={(e) => {
@@ -1400,8 +1430,11 @@ export const InGameView: React.FC<InGameViewProps> = ({
           onTouchEnd={() => {
             touchStartYRef.current = null;
           }}
-          className={`absolute top-0 ${isLandscape ? 'left-1/3 right-1/3' : 'left-0 right-0'} z-30 cursor-pointer flex flex-col items-center pt-2`}
-          style={{ height: 'max(env(safe-area-inset-top, 0px) + 28px, 44px)' }}
+          className={`absolute top-0 ${isLandscape ? 'left-1/3 right-1/3' : 'left-0 right-0'} z-30 cursor-pointer flex flex-col items-center justify-start bg-transparent border-0`}
+          style={{
+            height: 'max(env(safe-area-inset-top, 0px) + 24px, 36px)',
+            paddingTop: 'max(env(safe-area-inset-top, 0px) + 4px, 10px)',
+          }}
         >
           <span className="w-10 h-1 rounded-full bg-white/20 border border-white/10 shadow-sm opacity-50 hover:opacity-100 transition-opacity" />
         </button>
@@ -1417,7 +1450,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
               ? 'translate-y-0 opacity-100 pointer-events-auto'
               : '-translate-y-full opacity-0 pointer-events-none'
           }`}
-          style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 14px)' }}
+          style={{ paddingTop: 'max(env(safe-area-inset-top, 0px) + 8px, 36px)' }}
           onClick={() => revealTopBar()}
         >
           <div className="flex items-center gap-1.5">
@@ -1773,31 +1806,6 @@ export const InGameView: React.FC<InGameViewProps> = ({
               : (isLandscape ? '6px' : undefined),
           }}
         >
-          {/* Permanent Minimal Hardware Bezel Status Indicator (FPS LED + Mute Indicator) */}
-          {!topBarVisible && (
-            <div
-              onClick={() => revealTopBar()}
-              className="absolute top-1.5 right-2.5 z-30 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-black/65 border border-white/10 cursor-pointer select-none opacity-75 hover:opacity-100 transition-opacity"
-              title="Tap to reveal top status bar"
-            >
-              <span
-                className={`w-1.5 h-1.5 rounded-full hardware-led ${
-                  (fps || 60) >= 55 ? 'bg-emerald-400 text-emerald-400' : 'bg-amber-400 text-amber-400'
-                }`}
-              />
-              <span className="text-[9px] font-mono font-bold text-zinc-300">
-                {isGba ? 'GBA' : (fps || 60)}
-              </span>
-              {isFastForward && (
-                <span className="flex items-center gap-0.5 text-sky-400 font-bold text-[9px] font-mono">
-                  <FastForward className="w-2.5 h-2.5" />
-                  <span>{ffSpeed}x</span>
-                </span>
-              )}
-              {isMuted && <VolumeX className="w-2.5 h-2.5 text-rose-400" />}
-            </div>
-          )}
-
           {/* Portrait Screen + Lens Assembly (Centered horizontally, vertical position driven by flow paddingTop) */}
           <div className="w-full flex flex-col items-center justify-center">
             <div

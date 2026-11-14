@@ -110,7 +110,8 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     try {
       const ok = await signInWithGoogle();
       if (!ok) {
-        showToast('Google sign-in was cancelled or blocked');
+        const status = getSyncStatus();
+        showToast(status.details || 'Google sign-in was cancelled or blocked');
         return;
       }
       setUser(getCachedUserProfile());

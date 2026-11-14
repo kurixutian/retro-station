@@ -61,11 +61,11 @@ export const CONTROL_BINDINGS: ControlBinding[] = [
 ];
 
 export const DEFAULT_PAD_LAYOUT: PadLayout = {
-  transport: { x: 0.5, y: 0.08, s: 1 },
+  transport: { x: 0.5, y: 0.11, s: 1 },
   dpad: { x: 0.22, y: 0.40, s: 1 },
   actions: { x: 0.78, y: 0.38, s: 1 },
   system: { x: 0.5, y: 0.78, s: 1 },
-  screen: { x: 0.5, y: 0.5, s: 1 },
+  screen: { x: 0.5, y: 0.28, s: 1 },
   btnL: { x: 0.15, y: 0.11, s: 1 },
   btnR: { x: 0.85, y: 0.11, s: 1 },
   select: { x: 0.40, y: 0.78, s: 1 },
