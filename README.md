@@ -1,6 +1,7 @@
 # Retro Pocket (Retro Station)
 
 [![Live Web App](https://img.shields.io/badge/Play%20Now-kurixutian.github.io%2Fretro--station-10b981?style=for-the-badge&logo=github)](https://kurixutian.github.io/retro-station/)
+[![Android APK](https://img.shields.io/badge/Download-Android%20APK-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/kurixutian/retro-station/releases/latest)
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Support%20Development-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/kurixutian)
 
 A tactile, offline-first mobile & web Libretro handheld emulator frontend with automatic core detection, per-game save state slots, customizable on-screen touch controls, CRT/LCD hardware shaders, and private zero-cost Google Drive cloud sync.
@@ -9,6 +10,20 @@ A tactile, offline-first mobile & web Libretro handheld emulator frontend with a
 
 - **Play in your browser:** [https://kurixutian.github.io/retro-station/](https://kurixutian.github.io/retro-station/)
 - **Install the Android App (APK):** [Download from GitHub Releases](https://github.com/kurixutian/retro-station/releases/latest) — install the native app so your ROMs and saves are stored on your device instead of depending on browser local storage.
+
+## Screenshots
+
+| Cartridge Binder (Portrait) | Pause Menu & Save States | Edit Touch Controls |
+| :---: | :---: | :---: |
+| ![Catalog Portrait](screenshots/01-catalog-portrait.png) | ![In-Game Menu](screenshots/07-ingame-menu.png) | ![Edit Controls](screenshots/08-edit-controls-portrait.png) |
+
+| Display & Shaders | Cloud Save Vault | Controls & Keybindings |
+| :---: | :---: | :---: |
+| ![Appearance & Shaders](screenshots/03-appearance-shaders.png) | ![Cloud Vault](screenshots/04-cloud-vault.png) | ![Controls Guide](screenshots/05-controls-guide.png) |
+
+**Landscape Mode:**
+
+![Catalog Landscape](screenshots/02-catalog-landscape.png)
 
 ## Features
 
