@@ -395,7 +395,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                       <div className={`text-[11px] font-extrabold flex items-center gap-1.5 ${theme.isLight ? 'text-zinc-900' : 'text-white'}`}>
                         ROM Files {romSyncOn ? 'Synced' : 'Not Synced'}
                       </div>
-                      <p className={`text-[10px] leading-relaxed ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
+                      <p className={`text-xs leading-relaxed ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
                         {romSyncOn
                           ? 'ROMs upload to your private Drive and restore automatically on a new device. Use Wi-Fi for large libraries.'
                           : 'Turn this on to upload imported ROM files, so a new device downloads them automatically instead of re-finding and re-downloading each ROM.'}

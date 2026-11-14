@@ -29,7 +29,7 @@ interface LibraryViewProps {
   games: Game[];
   theme: Theme;
   showSearch: boolean;
-  setShowSearch: React.Dispatch<React.SetStateAction<boolean>>;
+  setShowSearch: (s: boolean) => void;
   searchQuery: string;
   setSearchQuery: (q: string) => void;
   systemFilter: string;
@@ -43,6 +43,7 @@ interface LibraryViewProps {
   onOpenControls?: () => void;
   recentGameIds?: string[];
   onToggleLightDark?: () => void;
+  onRenameGame?: (gameId: string, newTitle: string) => void;
 }
 
 const AmbientBackdropTile: React.FC<{ game: Game }> = ({ game }) => {
@@ -292,7 +293,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                 <span className={`font-black tracking-tight text-base sm:text-lg ${theme.isLight ? 'text-zinc-900' : 'text-zinc-100'}`}>RETRO</span>
                 <span className={`font-black tracking-tight text-base sm:text-lg ${theme.accentText}`}>STATION</span>
               </div>
-              <p className={`text-[10px] hidden sm:block ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
+              <p className={`text-xs hidden sm:block ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
                 Mobile & Web Libretro Frontend • Auto-Core & Per-Game State Slots
               </p>
             </div>
@@ -777,7 +778,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                                 } focus:border-[${theme.hex}]`}
                 />
             )}
-            <span className={`px-2 py-0.5 rounded-full text-[10px] font-tabular border ${
+            <span className={`px-2 py-0.5 rounded-full text-[11px] font-tabular border ${
               theme.isLight
                 ? 'bg-[#dedad0] border-[#cfcac0] text-[#575654]'
                 : 'bg-[#18181c] border-[#222227] text-[#8e8e93]'
@@ -810,13 +811,11 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
           }`}>
             {filteredGames.length === 0 && games.length === 0 ? (
               <div className="py-16 px-4 flex flex-col items-center justify-center text-center space-y-5 max-w-md mx-auto">
-                <div className={`w-16 h-16 rounded-3xl border flex items-center justify-center ${
-                  theme.isLight ? 'bg-[#eae6dd] border-[#cfcac0]' : 'bg-[#131316] border-[#222227]'
-                }`}>
-                  <Gamepad2 className={`w-8 h-8 ${theme.isLight ? 'text-[#575654]' : 'text-[#8e8e93]'}`} />
-                </div>
                 <div className="space-y-1.5">
-                  <h3 className={`text-lg font-bold ${theme.isLight ? 'text-[#121214]' : 'text-[#f4f4f6]'}`}>Your Cartridge Shelf is Empty</h3>
+                  <h3 className={`flex items-center justify-center gap-2 text-lg font-bold ${theme.isLight ? 'text-[#121214]' : 'text-[#f4f4f6]'}`}>
+                    <Gamepad2 className={`w-5 h-5 ${theme.isLight ? 'text-[#575654]' : 'text-[#8e8e93]'}`} />
+                    Your Cartridge Shelf is Empty
+                  </h3>
                   <p className={`text-xs leading-relaxed ${theme.isLight ? 'text-[#575654]' : 'text-[#8e8e93]'}`}>
                     Insert your personal game backup files (<span className={`font-mono ${theme.isLight ? 'text-[#121214]' : 'text-[#f4f4f6]'}`}>.gb, .gbc, .gba, .zip</span>) to play instantly in browser with CRT shaders and battery saves.
                   </p>

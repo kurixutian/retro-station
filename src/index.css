@@ -7,7 +7,7 @@
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
   --ease-standard: cubic-bezier(0.23, 1, 0.32, 1);
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
   --duration-fast: 100ms;
   --duration-base: 160ms;
   --duration-slow: 240ms;
@@ -260,13 +260,13 @@ html.light :focus-visible {
 }
 
 .hero-deck-card {
-  box-shadow: 0 0 35px -5px var(--accent-selection), 0 12px 32px -8px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.15);
   border-color: var(--accent-soft-border) !important;
   transition: box-shadow var(--duration-base) var(--ease-standard), border-color var(--duration-base) var(--ease-standard);
 }
 
 html.light .hero-deck-card {
-  box-shadow: 0 0 32px -4px var(--accent-selection), 0 10px 24px -6px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  box-shadow: 0 10px 24px -6px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.7);
   border-color: var(--accent-soft-border) !important;
 }
 
@@ -483,4 +483,33 @@ html.reduce-motion .hero-art-pan,
 html.reduce-motion .ambient-backdrop-pan {
   animation: none !important;
   transform: none !important;
+}
+
+/* Focus-visible for on-screen gamepad controls (keyboard accessibility) */
+html.dark .gb-action-dome:focus-visible,
+html.dark .gb-rubber-pill:focus-visible,
+html.dark .gb-dpad-arm:focus-visible,
+html.dark .tactile-btn:focus-visible,
+html.dark button[aria-label^="Button"]:focus-visible,
+html.dark button[aria-label*="Shoulder"]:focus-visible,
+html.dark button[aria-label="L Shoulder"]:focus-visible,
+html.dark button[aria-label="R Shoulder"]:focus-visible,
+html.dark button[aria-label="Select button"]:focus-visible,
+html.dark button[aria-label="Start button"]:focus-visible {
+  outline: 2px solid var(--accent-focus);
+  outline-offset: 3px;
+}
+
+html.light .gb-action-dome:focus-visible,
+html.light .gb-rubber-pill:focus-visible,
+html.light .gb-dpad-arm:focus-visible,
+html.light .tactile-btn:focus-visible,
+html.light button[aria-label^="Button"]:focus-visible,
+html.light button[aria-label*="Shoulder"]:focus-visible,
+html.light button[aria-label="L Shoulder"]:focus-visible,
+html.light button[aria-label="R Shoulder"]:focus-visible,
+html.light button[aria-label="Select button"]:focus-visible,
+html.light button[aria-label="Start button"]:focus-visible {
+  outline: 2px solid var(--accent-focus);
+  outline-offset: 3px;
 }

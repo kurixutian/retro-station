@@ -663,6 +663,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
         <div className="flex flex-col items-center">
           <button
             type="button"
+            tabIndex={0}
             {...safeBindPadButton('actionB')}
             className="rounded-full font-black text-base flex items-center justify-center touch-none select-none gb-action-dome"
             style={{ width: '3.4rem', height: '3.4rem' }}
@@ -677,6 +678,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
         <div className="flex flex-col items-center">
           <button
             type="button"
+            tabIndex={0}
             {...safeBindPadButton('actionA')}
             className="rounded-full font-black text-base flex items-center justify-center touch-none select-none gb-action-dome"
             style={{ width: '3.4rem', height: '3.4rem' }}
@@ -705,6 +707,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
     >
       <button
         type="button"
+        tabIndex={0}
         {...safeBindPadButton('btnL')}
         className={`${isLandscape ? 'w-20 h-10' : 'w-16 h-8'} rounded-xl font-mono font-black text-xs shadow-md flex items-center justify-center tactile-btn touch-none select-none ${
           shaders.amoled
@@ -733,6 +736,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
     >
       <button
         type="button"
+        tabIndex={0}
         {...safeBindPadButton('btnR')}
         className={`${isLandscape ? 'w-20 h-10' : 'w-16 h-8'} rounded-xl font-mono font-black text-xs shadow-md flex items-center justify-center tactile-btn touch-none select-none ${
           shaders.amoled
@@ -761,6 +765,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
     >
       <button
         type="button"
+        tabIndex={0}
         {...safeBindPadButton('select')}
         className="flex flex-col items-center gap-1.5 group touch-none select-none"
         aria-label="Select button"
@@ -791,6 +796,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
     >
       <button
         type="button"
+        tabIndex={0}
         {...safeBindPadButton('start')}
         className="flex flex-col items-center gap-1.5 group touch-none select-none"
         aria-label="Start button"

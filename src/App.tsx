@@ -958,6 +958,23 @@ export default function App() {
     showToast('ROM deleted from library');
   }, [showToast]);
 
+  const renameGame = useCallback((gameId: string, newTitle: string) => {
+    const trimmed = newTitle.trim();
+    if (!trimmed) return;
+    setGames((prev) => {
+      const updated = prev.map((g) =>
+        g.id === gameId ? { ...g, customTitle: trimmed } : g
+      );
+      localStorage.setItem('retro_games', JSON.stringify(updated));
+      const userImportedOnly = updated.filter((g) => g.real && g.id !== 'pokemon_gold');
+      idbPut('library_games', userImportedOnly).catch(() => {});
+      return updated;
+    });
+    markLocalSaveModified('retro_games');
+    markLocalSaveModified('library_games');
+    showToast('Game renamed');
+  }, [showToast]);
+
   const importRomFiles = async (files: File[]) => {
     if (!files.length) return;
 
@@ -1824,6 +1841,7 @@ export default function App() {
             const nextTheme = theme.isLight ? 'midnight' : 'trooper';
             applyTheme(nextTheme);
           }}
+          onRenameGame={renameGame}
         />
       )}
 
@@ -1897,6 +1915,7 @@ export default function App() {
           const g = detailGame || activeGame;
           if (g) renameGameSlot(g.id, slotNum, name);
         }}
+        onRenameGame={renameGame}
         onChangeArtwork={setGameCustomCover}
         onClose={() => {
           setDetailGame(null);

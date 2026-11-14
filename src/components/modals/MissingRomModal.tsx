@@ -69,24 +69,32 @@ export const MissingRomModal: React.FC<MissingRomModalProps> = ({
       isOpen={isOpen}
       onClose={onClose}
       labelledBy="missing-rom-dialog-title"
-      panelClassName="w-full max-w-md shadow-2xl bg-zinc-950 border-zinc-800"
+      panelClassName={`w-full max-w-md shadow-2xl ${
+        theme.isLight ? 'border-[#cfcac0] bg-[#dedad0]' : 'border-zinc-800 bg-zinc-950'
+      }`}
     >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800 bg-zinc-950">
+        <div className={`flex items-center justify-between px-5 py-4 border-b ${
+          theme.isLight ? 'border-[#cfcac0] bg-[#dedad0]' : 'border-zinc-800 bg-zinc-950'
+        }`}>
           <div className="flex items-center gap-2.5">
             <div className={`w-8 h-8 rounded-xl border flex items-center justify-center ${theme.accentSoft}`}>
               <HardDrive className="w-4 h-4" />
             </div>
             <div>
-              <h2 id="missing-rom-dialog-title" className="text-sm sm:text-base font-black text-white">Locate Game ROM</h2>
-              <p className="text-[11px] text-zinc-400 font-medium">
+              <h2 id="missing-rom-dialog-title" className={`text-sm sm:text-base font-black ${theme.isLight ? 'text-[#121214]' : 'text-white'}`}>Locate Game ROM</h2>
+              <p className={`text-[11px] font-medium ${theme.isLight ? 'text-[#575654]' : 'text-zinc-400'}`}>
                 Cloud saves ready • Link ROM file for this device
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white tactile-btn border border-zinc-800"
+            className={`p-2 rounded-xl border tactile-btn transition ${
+              theme.isLight
+                ? 'bg-[#d0cbc0] hover:bg-[#c5bfb3] text-zinc-700 hover:text-zinc-950 border-[#b8b2a6]'
+                : 'bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white border-zinc-800'
+            }`}
             aria-label="Close"
           >
             <X className="w-4 h-4" />
@@ -95,36 +103,42 @@ export const MissingRomModal: React.FC<MissingRomModalProps> = ({
 
         {/* Body */}
         <div className="p-5 space-y-4 overflow-y-auto modal-scroll">
-          <div className="p-3.5 rounded-2xl bg-zinc-900/60 border border-zinc-800/80 flex items-start gap-3">
+          <div className={`p-3.5 rounded-2xl border flex items-start gap-3 ${
+            theme.isLight ? 'bg-stone-200/80 border-stone-300' : 'bg-zinc-900/60 border-zinc-800/80'
+          }`}>
             <div className={`p-2 rounded-xl ${theme.accentSoft} shrink-0 mt-0.5`}>
               <ShieldCheck className="w-4 h-4" />
             </div>
             <div className="text-xs space-y-1">
-              <div className="font-extrabold text-white flex items-center gap-1.5">
+              <div className={`font-extrabold flex items-center gap-1.5 ${theme.isLight ? 'text-zinc-900' : 'text-white'}`}>
                 <span>Save Progress Synced</span>
                 <span className={`text-[11px] px-1.5 py-0.5 rounded uppercase font-black tracking-wider ${theme.accentSoft}`}>
                   Ready
                 </span>
               </div>
-              <p className="text-zinc-400 leading-snug">
+              <p className={`leading-snug ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
                 Your save state slots and battery saves for this game are synced in your Cloud Vault. Select your local ROM file once to play on this device.
               </p>
             </div>
           </div>
 
-          <div className="p-4 rounded-2xl bg-zinc-900/90 border border-zinc-800 space-y-2">
+          <div className={`p-4 rounded-2xl border space-y-2 ${
+            theme.isLight ? 'bg-stone-200/80 border-stone-300' : 'bg-zinc-900/90 border-zinc-800'
+          }`}>
             <div className="flex items-center gap-2">
-              <Gamepad2 className="w-4 h-4 text-zinc-400" />
-              <span className="text-xs font-bold text-zinc-200">
+              <Gamepad2 className={`w-4 h-4 ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`} />
+              <span className={`text-xs font-bold ${theme.isLight ? 'text-zinc-900' : 'text-zinc-200'}`}>
                 {formatGameTitle(game.title)}
               </span>
             </div>
-            <div className="flex items-center gap-2 text-[11px] text-zinc-400">
-              <span className="px-2 py-0.5 rounded-md bg-zinc-800 text-zinc-300 font-mono text-[11px]">
+            <div className={`flex items-center gap-2 text-[11px] ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
+              <span className={`px-2 py-0.5 rounded-md font-mono text-[11px] ${
+                theme.isLight ? 'bg-stone-300 text-zinc-800' : 'bg-zinc-800 text-zinc-300'
+              }`}>
                 {game.shortSystem || game.system}
               </span>
               <span>•</span>
-              <span className="font-mono text-[11px] text-zinc-400 truncate max-w-[200px]">
+              <span className={`font-mono text-[11px] truncate max-w-[200px] ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
                 {game.fileName || `${game.title}.rom`}
               </span>
             </div>
@@ -145,7 +159,7 @@ export const MissingRomModal: React.FC<MissingRomModalProps> = ({
                 disabled={downloadingCloud}
                 className={`w-full py-3 px-4 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg tactile-btn transition ${
                   theme.accentBg
-                } disabled:opacity-50`}
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
               >
                 {downloadingCloud ? (
                   <>
@@ -162,7 +176,11 @@ export const MissingRomModal: React.FC<MissingRomModalProps> = ({
 
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="w-full py-2.5 px-4 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-zinc-800 font-semibold text-xs tactile-btn transition flex items-center justify-center gap-2"
+                className={`w-full py-2.5 px-4 rounded-2xl border font-semibold text-xs tactile-btn transition flex items-center justify-center gap-2 ${
+                  theme.isLight
+                    ? 'bg-stone-200 hover:bg-stone-300 text-zinc-900 border-stone-300'
+                    : 'bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white border-zinc-800'
+                }`}
               >
                 <FolderPlus className="w-4 h-4" />
                 <span>Select Local ROM File</span>
@@ -180,7 +198,11 @@ export const MissingRomModal: React.FC<MissingRomModalProps> = ({
 
           <button
             onClick={onClose}
-            className="w-full py-2.5 px-4 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white border border-zinc-800 font-semibold text-xs tactile-btn transition"
+            className={`w-full py-2.5 px-4 rounded-2xl border font-semibold text-xs tactile-btn transition ${
+              theme.isLight
+                ? 'bg-stone-200/80 hover:bg-stone-300 text-stone-700 hover:text-zinc-950 border-stone-300'
+                : 'bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white border-zinc-800'
+            }`}
           >
             Cancel
           </button>

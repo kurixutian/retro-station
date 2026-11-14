@@ -333,7 +333,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               </span>
                             )}
                           </div>
-                          <p className={`text-[10px] leading-snug ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
+                          <p className={`text-xs leading-snug ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
                             {prof.desc}
                           </p>
                         </div>
@@ -416,7 +416,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         </div>
                         <div>
                           <div className={`text-xs font-bold ${theme.isLight ? 'text-zinc-900' : 'text-white'}`}>{item.title}</div>
-                          <div className={`text-[10px] leading-snug mt-0.5 ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
+                          <div className={`text-xs leading-snug mt-0.5 ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
                             {item.desc}
                           </div>
                         </div>
