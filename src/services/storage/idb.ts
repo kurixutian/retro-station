@@ -62,9 +62,33 @@ export const idbDeleteGameData = async (gameId: string): Promise<void> => {
     `state:${gameId}:3`,
     `state:${gameId}:4`,
   ];
-  for (const k of keys) {
-    await idbDelete(k).catch(() => {});
-  }
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const tx = db.transaction('roms', 'readwrite');
+    const store = tx.objectStore('roms');
+    for (const k of keys) store.delete(k);
+    tx.oncomplete = () => res();
+    tx.onerror = () => rej(tx.error);
+  });
+};
+
+export const idbGetEntriesByPrefix = async (prefix: string): Promise<Array<[string, any]>> => {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const entries: Array<[string, any]> = [];
+    const req = db.transaction('roms', 'readonly').objectStore('roms').openCursor();
+    req.onsuccess = (e) => {
+      const cursor = (e.target as IDBRequest<IDBCursorWithValue | null>).result;
+      if (cursor) {
+        const key = String(cursor.key);
+        if (key.startsWith(prefix)) entries.push([key, cursor.value]);
+        cursor.continue();
+      } else {
+        res(entries);
+      }
+    };
+    req.onerror = () => rej(req.error);
+  });
 };
 
 export const idbGetAllKeys = async (): Promise<string[]> => {

@@ -46,6 +46,9 @@ function getRegionScore(fullKey) {
 const SPECIAL_TOKENS =
   / (sample|beta|proto|debug|kiosk|promo|unl|bios|aftermarket|homebrew|hack|redux|romhack|fan|reborn|rebalanced) /;
 
+const PATCH_MOD_TOKENS =
+  /^(patched|patch|mod|modded|hack|romhack|redux|kaizo|randomizer|randomized|rando|nuzlocke|translated|translation|english|eng|uncensored|restored|rebalanced|reborn|remix|beta|alpha|proto|demo|ips|bps|ups|v\d+|\d+)$/;
+
 function buildCandidates(titles) {
   return titles.map((title) => {
     const fullKey = getFullKey(title);
@@ -104,6 +107,26 @@ function matchBoxartTitle(romName, titles) {
   if (bestAll) return { title: bestAll.title, level: 0 };
   if (bestCore) return { title: bestCore.title, level: 1 };
   if (bestFuzzy) return { title: bestFuzzy.title, level: 2 };
+
+  const baseTokens = romTokens.filter((t) => !PATCH_MOD_TOKENS.test(t));
+  if (baseTokens.length >= 2 && baseTokens.length < romTokens.length) {
+    const baseCore = baseTokens.join(' ');
+    let bestBaseCore = null;
+    let bestBaseFuzzy = null;
+    for (const c of candidates) {
+      if (c.coreKey === baseCore) {
+        bestBaseCore = bestBaseCore ? betterCandidate(c, bestBaseCore) : c;
+        continue;
+      }
+      if (baseTokens.every((t) => c.coreTokens.has(t))) {
+        const withExtra = { ...c, extra: c.coreTokens.size - baseTokens.length };
+        bestBaseFuzzy = bestBaseFuzzy ? betterCandidate(withExtra, bestBaseFuzzy, true) : withExtra;
+      }
+    }
+    if (bestBaseCore) return { title: bestBaseCore.title, level: 1 };
+    if (bestBaseFuzzy) return { title: bestBaseFuzzy.title, level: 2 };
+  }
+
   return null;
 }
 
@@ -197,4 +220,18 @@ test('diacritics and quotes are folded for matching', () => {
 
 test('core of real SGB-tagged file equals clean rom title core', () => {
   assert.equal(getCoreKey('Pokemon - Gold Version (USA, Europe) (SGB Enhanced) (GB Compatible).png'), 'pokemon gold version');
+});
+
+test('patched and modded ROM filenames fall back to base game boxart', () => {
+  const r1 = matchBoxartTitle('Pokemon - Crystal Version (Patched) [v1.2].gbc', GBC_TITLES);
+  assert.equal(r1?.title, 'Pokemon - Crystal Version (USA).png');
+
+  const r2 = matchBoxartTitle('Pokemon Crystal Kaizo v2.1.gbc', GBC_TITLES);
+  assert.equal(r2?.title, 'Pokemon - Crystal Version (USA).png');
+
+  const r3 = matchBoxartTitle('Pokemon_Gold_Randomized_Eng.gbc', GBC_TITLES);
+  assert.equal(r3?.title, 'Pokemon - Gold Version (USA, Europe) (SGB Enhanced) (GB Compatible).png');
+
+  const r4 = matchBoxartTitle('Tetris DX Redux.gbc', GBC_TITLES);
+  assert.equal(r4?.title, 'Tetris DX (World) (SGB Enhanced) (GB Compatible).png');
 });

@@ -29,9 +29,10 @@ import {
   Pencil,
   Check,
   Tv,
+  Move,
 } from 'lucide-react';
 import { Game, Theme, PadLayout, PadGroupId, SaveSlot } from '../../types';
-import { coreRatio, formatGameTitle, EJS_CORES } from '../../constants/cores';
+import { coreRatio, getGameDisplayTitle, EJS_CORES } from '../../constants/cores';
 import {
   DEFAULT_PAD_LAYOUT,
   DEFAULT_LANDSCAPE_PAD_LAYOUT,
@@ -44,6 +45,8 @@ import { getComputedGameFilter } from '../../constants/shaders';
 import { buildPlayerHtml } from '../../services/emulator/playerBridge';
 import { haptics } from '../../services/haptics';
 import { PadGroup, SnapGuide } from '../controls/PadGroup';
+import { DpadControl } from '../controls/DpadControl';
+import { CartridgeInstallOverlay } from '../common/CartridgeInstallOverlay';
 
 interface InGameViewProps {
   activeGame: Game;
@@ -155,29 +158,55 @@ export const InGameView: React.FC<InGameViewProps> = ({
   savesByGameId,
   onToggleLightDark,
 }) => {
-  const dpadContainerRef = React.useRef<HTMLDivElement | null>(null);
-  const dpadRectRef = React.useRef<DOMRect | null>(null);
-  const dpadArmRefs = React.useRef<Record<'up' | 'down' | 'left' | 'right', HTMLElement | null>>({
-    up: null,
-    down: null,
-    left: null,
-    right: null,
-  });
   const landscapeDeckRef = React.useRef<HTMLDivElement | null>(null);
-  const activeDpadPointerId = React.useRef<number | null>(null);
-  const activeDpadMaskRef = React.useRef<number>(0);
-  const activeDpadDirs = React.useRef<Record<string, boolean>>({
-    up: false,
-    down: false,
-    left: false,
-    right: false,
-  });
 
   const touchStartYRef = React.useRef<number | null>(null);
+  const padSnapshotRef = React.useRef<{ portrait: PadLayout; landscape: PadLayout } | null>(null);
+  const prevCustomizingRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (customizing && !prevCustomizingRef.current) {
+      padSnapshotRef.current = {
+        portrait: JSON.parse(JSON.stringify(padLayoutPortrait)),
+        landscape: JSON.parse(JSON.stringify(padLayoutLandscape)),
+      };
+    }
+    prevCustomizingRef.current = customizing;
+  }, [customizing, padLayoutPortrait, padLayoutLandscape]);
   const [isPoweringOff, setIsPoweringOff] = React.useState(false);
   const [isPoweringOn, setIsPoweringOn] = React.useState(true);
+  const [emuReady, setEmuReady] = React.useState(false);
+  const [quickMenuOpen, setQuickMenuOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    setEmuReady(false);
+  }, [romUrl, activeGame.id]);
+
+  React.useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      if (e.data?.type === 'ejs-ready') {
+        setEmuReady(true);
+      }
+    };
+    window.addEventListener('message', onMsg);
+    return () => window.removeEventListener('message', onMsg);
+  }, []);
   const [showCartridgeTools, setShowCartridgeTools] = React.useState(false);
   const [saveFormat, setSaveFormat] = React.useState<'sav' | 'srm'>('sav');
+  const [showPadHint, setShowPadHint] = React.useState(() => {
+    try {
+      return localStorage.getItem('retro_pad_hint_seen') !== '1';
+    } catch {
+      return false;
+    }
+  });
+
+  const dismissPadHint = React.useCallback(() => {
+    setShowPadHint(false);
+    try {
+      localStorage.setItem('retro_pad_hint_seen', '1');
+    } catch {}
+  }, []);
 
   React.useEffect(() => {
     setIsPoweringOn(true);
@@ -266,8 +295,11 @@ export const InGameView: React.FC<InGameViewProps> = ({
 
   const padFitScale = React.useMemo(() => {
     if (!deckBox.w || !deckBox.h) return 1;
-    return Math.max(0.55, Math.min(1, Math.min(deckBox.w / 440, deckBox.h / 540)));
-  }, [deckBox]);
+    if (isLandscape) {
+      return Math.max(0.75, Math.min(1.08, Math.min(deckBox.w / 760, deckBox.h / 360)));
+    }
+    return Math.max(0.78, Math.min(1.12, Math.min(deckBox.w / 375, deckBox.h / 310)));
+  }, [deckBox, isLandscape]);
 
   const activePadLayout = React.useMemo(() => {
     const base = isLandscape ? DEFAULT_LANDSCAPE_PAD_LAYOUT : DEFAULT_PAD_LAYOUT;
@@ -381,37 +413,49 @@ export const InGameView: React.FC<InGameViewProps> = ({
     };
   }, [romUrl, emuFrameRef]);
 
-  const toggleFullscreen = React.useCallback(() => {
+  const toggleFullscreen = React.useCallback(async () => {
     const androidOrient = (window as any).AndroidOrientation;
-    const goingLandscape = !isLandscape && !document.fullscreenElement;
+    const doc = document as any;
+    const el = document.documentElement as any;
+    const fsEl = doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement;
+    const entering = androidOrient?.setOrientation ? !isLandscape && !fsEl : !fsEl;
 
-    if (goingLandscape) {
+    if (entering) {
       if (androidOrient?.setOrientation) {
         androidOrient.setOrientation('landscape');
       }
-      if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
-        document.documentElement.requestFullscreen().then(() => {
+      const reqFs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
+      if (reqFs) {
+        try {
+          await reqFs.call(el);
+          setIsFullscreen(true);
           try {
-            (screen.orientation as any)?.lock?.('landscape').catch(() => {});
-          } catch (e) {}
-        }).catch(() => {
-          try {
-            (screen.orientation as any)?.lock?.('landscape').catch(() => {});
-          } catch (e) {}
-        });
+            await (screen.orientation as any)?.lock?.('landscape');
+          } catch {}
+        } catch {
+          if (!androidOrient?.setOrientation) {
+            showToast?.('Fullscreen is blocked by this browser');
+          }
+        }
+      } else if (!androidOrient?.setOrientation) {
+        showToast?.('Fullscreen is not supported in this browser');
       }
     } else {
       if (androidOrient?.setOrientation) {
         androidOrient.setOrientation('portrait');
       }
-      if (document.fullscreenElement) {
-        document.exitFullscreen().catch(() => {});
+      const exitFs = doc.exitFullscreen || doc.webkitExitFullscreen || doc.mozCancelFullScreen || doc.msExitFullscreen;
+      if (fsEl && exitFs) {
+        try {
+          await exitFs.call(doc);
+        } catch {}
       }
+      setIsFullscreen(false);
       try {
-        (screen.orientation as any)?.lock?.('portrait').catch(() => {});
-      } catch (e) {}
+        (screen.orientation as any)?.unlock?.();
+      } catch {}
     }
-  }, [isLandscape]);
+  }, [isLandscape, showToast]);
 
   React.useEffect(() => {
     return () => {
@@ -487,233 +531,41 @@ export const InGameView: React.FC<InGameViewProps> = ({
     return () => window.removeEventListener('retro_layout_updated', handleLayoutUpdate);
   }, [isLandscape, systemKey]);
 
-  React.useEffect(() => {
-    const refreshDpadRect = () => {
-      if (dpadContainerRef.current) {
-        dpadRectRef.current = dpadContainerRef.current.getBoundingClientRect();
-      }
-    };
-    refreshDpadRect();
-    let ro: ResizeObserver | null = null;
-    if (typeof ResizeObserver !== 'undefined' && dpadContainerRef.current) {
-      ro = new ResizeObserver(refreshDpadRect);
-      ro.observe(dpadContainerRef.current);
-    }
-    window.addEventListener('resize', refreshDpadRect);
-    window.addEventListener('orientationchange', refreshDpadRect);
-    return () => {
-      ro?.disconnect();
-      window.removeEventListener('resize', refreshDpadRect);
-      window.removeEventListener('orientationchange', refreshDpadRect);
-    };
-  }, [isLandscape, padLayout.dpad, customizing]);
-
-  const syncDpadArmVisuals = React.useCallback((mask: number) => {
-    const arms = dpadArmRefs.current;
-    if (arms.up) arms.up.dataset.pressed = (mask & 16) !== 0 ? 'true' : 'false';
-    if (arms.down) arms.down.dataset.pressed = (mask & 32) !== 0 ? 'true' : 'false';
-    if (arms.left) arms.left.dataset.pressed = (mask & 64) !== 0 ? 'true' : 'false';
-    if (arms.right) arms.right.dataset.pressed = (mask & 128) !== 0 ? 'true' : 'false';
-  }, []);
-
-  const updateDpadByCoords = React.useCallback((clientX: number, clientY: number) => {
-    const rect = dpadRectRef.current;
-    if (!rect || rect.width === 0) return;
-    const cx = rect.left + rect.width * 0.5;
-    const cy = rect.top + rect.height * 0.5;
-    const dx = clientX - cx;
-    const dy = clientY - cy;
-    const distSq = dx * dx + dy * dy;
-
-    // 5px radial deadzone (25px^2) ensures edge & inner-arm taps register immediately without sqrt()
-    const outsideDeadzone = distSq > 25;
-    const absDx = Math.abs(dx);
-    const absDy = Math.abs(dy);
-
-    const up = outsideDeadzone && dy < -4 && absDy > absDx * 0.42;
-    const down = outsideDeadzone && dy > 4 && absDy > absDx * 0.42;
-    const left = outsideDeadzone && dx < -4 && absDx > absDy * 0.42;
-    const right = outsideDeadzone && dx > 4 && absDx > absDy * 0.42;
-
-    const nextMask = (up ? 16 : 0) | (down ? 32 : 0) | (left ? 64 : 0) | (right ? 128 : 0);
-    if (nextMask === activeDpadMaskRef.current) return;
-
-    activeDpadMaskRef.current = nextMask;
-    syncDpadArmVisuals(nextMask);
-
-    const nextDirs = { up, down, left, right };
-    (['up', 'down', 'left', 'right'] as const).forEach((dir) => {
-      if (nextDirs[dir] && !activeDpadDirs.current[dir]) {
-        activeDpadDirs.current[dir] = true;
-        setButtonDown?.(dir);
-      } else if (!nextDirs[dir] && activeDpadDirs.current[dir]) {
-        activeDpadDirs.current[dir] = false;
-        setButtonUp?.(dir);
-      }
-    });
-  }, [setButtonDown, setButtonUp, syncDpadArmVisuals]);
-
-  const releaseDpadAll = React.useCallback(() => {
-    activeDpadPointerId.current = null;
-    if (activeDpadMaskRef.current === 0) return;
-    activeDpadMaskRef.current = 0;
-    syncDpadArmVisuals(0);
-    (['up', 'down', 'left', 'right'] as const).forEach((dir) => {
-      if (activeDpadDirs.current[dir]) {
-        activeDpadDirs.current[dir] = false;
-        setButtonUp?.(dir);
-      }
-    });
-  }, [setButtonUp, syncDpadArmVisuals]);
-
-  const renderDpad = () => (
-    <div
-      ref={dpadContainerRef}
-      className="relative w-36 h-36 select-none touch-none gb-dpad-base rounded-2xl flex items-center justify-center"
-      style={{
-        touchAction: 'none',
-        userSelect: 'none',
-        WebkitUserSelect: 'none',
-        WebkitTouchCallout: 'none',
-      }}
-      onContextMenu={(e) => e.preventDefault()}
-      onPointerDown={(e) => {
-        if (customizing) return;
-        if (e.cancelable) e.preventDefault();
-        e.stopPropagation();
-        activeDpadPointerId.current = e.pointerId;
-        const win = emuFrameRef.current?.contentWindow as any;
-        if (win && typeof win.unlockAudio === 'function') {
-          try { win.unlockAudio(); } catch (err) {}
-        }
-        if (!dpadRectRef.current || dpadRectRef.current.width === 0) {
-          dpadRectRef.current = e.currentTarget.getBoundingClientRect();
-        }
-        try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
-        updateDpadByCoords(e.clientX, e.clientY);
-      }}
-      onPointerMove={(e) => {
-        if (customizing || activeDpadPointerId.current !== e.pointerId) return;
-        updateDpadByCoords(e.clientX, e.clientY);
-      }}
-      onPointerUp={(e) => {
-        if (customizing || activeDpadPointerId.current !== e.pointerId) return;
-        try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (err) {}
-        releaseDpadAll();
-      }}
-      onPointerCancel={(e) => {
-        if (customizing || activeDpadPointerId.current !== e.pointerId) return;
-        releaseDpadAll();
-      }}
-      onPointerLeave={(e) => {
-        if (customizing || activeDpadPointerId.current !== e.pointerId) return;
-        try {
-          if (e.currentTarget.hasPointerCapture(e.pointerId)) return;
-        } catch (err) {}
-        releaseDpadAll();
-      }}
-    >
-      {/* Seamless unified cross body with authentic Game Boy matte dark molding & drop shadow */}
-      <div className="absolute inset-0 pointer-events-none filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.7)]">
-        <svg className="w-full h-full" viewBox="0 0 144 144" aria-hidden="true">
-          <defs>
-            <linearGradient id="gbDpadCrossGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="#36363d" />
-              <stop offset="45%" stopColor="#222227" />
-              <stop offset="100%" stopColor="#141418" />
-            </linearGradient>
-          </defs>
-          <path
-            d="M 48,10 A 10,10 0 0,1 58,0 L 86,0 A 10,10 0 0,1 96,10 L 96,48 L 134,48 A 10,10 0 0,1 144,58 L 144,86 A 10,10 0 0,1 134,96 L 96,96 L 96,134 A 10,10 0 0,1 86,144 L 58,144 A 10,10 0 0,1 48,134 L 48,96 L 10,96 A 10,10 0 0,1 0,86 L 0,58 A 10,10 0 0,1 10,48 L 48,48 Z"
-            fill="url(#gbDpadCrossGrad)"
-            stroke="#40404a"
-            strokeWidth="0.75"
-          />
-        </svg>
-      </div>
-
-      {/* Up */}
-      <div
-        ref={(el) => { dpadArmRefs.current.up = el; }}
-        className="absolute top-0 left-12 w-12 h-14 rounded-t-xl gb-dpad-arm flex items-start justify-center pt-2.5 pointer-events-none select-none dpad-arm z-10"
-        aria-hidden="true"
-      >
-        <svg className="w-2.5 h-2.5 fill-black/80 drop-shadow-[0_1px_0_rgba(255,255,255,0.25)]" viewBox="0 0 10 10" aria-hidden="true">
-          <polygon points="5,1 9,8 1,8" />
-        </svg>
-      </div>
-      {/* Down */}
-      <div
-        ref={(el) => { dpadArmRefs.current.down = el; }}
-        className="absolute bottom-0 left-12 w-12 h-14 rounded-b-xl gb-dpad-arm flex items-end justify-center pb-2.5 pointer-events-none select-none dpad-arm z-10"
-        aria-hidden="true"
-      >
-        <svg className="w-2.5 h-2.5 fill-black/80 drop-shadow-[0_1px_0_rgba(255,255,255,0.25)]" viewBox="0 0 10 10" aria-hidden="true">
-          <polygon points="1,2 9,2 5,9" />
-        </svg>
-      </div>
-      {/* Left */}
-      <div
-        ref={(el) => { dpadArmRefs.current.left = el; }}
-        className="absolute top-12 left-0 w-14 h-12 rounded-l-xl gb-dpad-arm flex items-center justify-start pl-2.5 pointer-events-none select-none dpad-arm z-10"
-        aria-hidden="true"
-      >
-        <svg className="w-2.5 h-2.5 fill-black/80 drop-shadow-[0_1px_0_rgba(255,255,255,0.25)]" viewBox="0 0 10 10" aria-hidden="true">
-          <polygon points="8,1 8,9 1,5" />
-        </svg>
-      </div>
-      {/* Right */}
-      <div
-        ref={(el) => { dpadArmRefs.current.right = el; }}
-        className="absolute top-12 right-0 w-14 h-12 rounded-r-xl gb-dpad-arm flex items-center justify-end pr-2.5 pointer-events-none select-none dpad-arm z-10"
-        aria-hidden="true"
-      >
-        <svg className="w-2.5 h-2.5 fill-black/80 drop-shadow-[0_1px_0_rgba(255,255,255,0.25)]" viewBox="0 0 10 10" aria-hidden="true">
-          <polygon points="2,1 2,9 9,5" />
-        </svg>
-      </div>
-      {/* Molded Center Pivot Dish (Authentic Game Boy Concave indentation) */}
-      <div
-        className="absolute top-12 left-12 w-12 h-12 flex items-center justify-center pointer-events-none z-20"
-      >
-        <div className="w-5 h-5 rounded-full gb-pivot-dish" />
-      </div>
-    </div>
-  );
-
   const renderActions = () => (
-    <div className="relative select-none touch-none flex items-center justify-center p-2">
+    <div
+      className="relative select-none touch-none flex items-center justify-center p-2"
+      style={{ contain: 'layout style', transform: 'translateZ(0)' }}
+    >
       {/* Molded Recessed Shell Socket Bed with -25deg Rotation */}
       <div
-        className="rounded-[40px] gb-socket-bed flex items-center gap-4 px-3.5 py-2.5 -rotate-[25deg]"
-        aria-hidden="true"
+        className="rounded-[40px] gb-socket-bed flex items-center gap-4 px-3.5 py-2.5 -rotate-[25deg] touch-none select-none"
       >
         {/* Button B (Left in rotated frame -> lower-left physically) */}
-        <div className="flex flex-col items-center">
+        <div className="flex flex-col items-center touch-none select-none">
           <button
             type="button"
             tabIndex={0}
             {...safeBindPadButton('actionB')}
-            className="rounded-full font-black text-base flex items-center justify-center touch-none select-none gb-action-dome"
+            className="relative rounded-full font-black text-base flex items-center justify-center touch-none select-none gb-action-dome before:content-[''] before:absolute before:-inset-1.5"
             style={{ width: '3.4rem', height: '3.4rem' }}
             aria-label="Button B"
           />
-          <span className={`mt-1.5 text-[12px] font-black italic tracking-widest ${theme.accentText} dark:text-zinc-400 select-none`}>
+          <span className={`mt-1.5 text-[12px] font-black italic tracking-widest ${theme.accentText} dark:text-zinc-400 select-none pointer-events-none`}>
             B
           </span>
         </div>
 
         {/* Button A (Right in rotated frame -> upper-right physically) */}
-        <div className="flex flex-col items-center">
+        <div className="flex flex-col items-center touch-none select-none">
           <button
             type="button"
             tabIndex={0}
             {...safeBindPadButton('actionA')}
-            className="rounded-full font-black text-base flex items-center justify-center touch-none select-none gb-action-dome"
+            className="relative rounded-full font-black text-base flex items-center justify-center touch-none select-none gb-action-dome before:content-[''] before:absolute before:-inset-1.5"
             style={{ width: '3.4rem', height: '3.4rem' }}
             aria-label="Button A"
           />
-          <span className={`mt-1.5 text-[12px] font-black italic tracking-widest ${theme.accentText} dark:text-zinc-400 select-none`}>
+          <span className={`mt-1.5 text-[12px] font-black italic tracking-widest ${theme.accentText} dark:text-zinc-400 select-none pointer-events-none`}>
             A
           </span>
         </div>
@@ -728,7 +580,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
       }}
       className={`rounded-xl transition ${
         customizing && selectedPad === 'btnL'
-          ? `border-2 border-[${theme.hex}] ring-2 ring-[${theme.hex}]/50 cursor-pointer`
+          ? 'border-2 accent-ring cursor-pointer'
           : customizing
           ? 'border-2 border-white/30 cursor-pointer'
           : ''
@@ -738,10 +590,10 @@ export const InGameView: React.FC<InGameViewProps> = ({
         type="button"
         tabIndex={0}
         {...safeBindPadButton('btnL')}
-        className={`${isLandscape ? 'w-20 h-10' : 'w-16 h-8'} rounded-xl font-mono font-black text-xs shadow-md flex items-center justify-center tactile-btn touch-none select-none ${
+        className={`${isLandscape ? 'w-20 h-10' : 'w-16 h-8'} rounded-xl font-mono font-black text-xs shadow-md flex items-center justify-center tactile-btn touch-none select-none accent-active ${
           shaders.amoled
-            ? `bg-zinc-950 text-zinc-200 border border-white/10 active:bg-[${theme.hex}] active:text-zinc-950`
-            : `bg-zinc-900/90 text-zinc-100 border border-white/15 active:bg-[${theme.hex}] active:text-zinc-950 shadow-inner`
+            ? 'bg-zinc-950 text-zinc-200 border border-white/10'
+            : 'bg-zinc-900/90 text-zinc-100 border border-white/15 shadow-inner'
         }`}
         aria-label="L Shoulder"
       >
@@ -757,7 +609,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
       }}
       className={`rounded-xl transition ${
         customizing && selectedPad === 'btnR'
-          ? `border-2 border-[${theme.hex}] ring-2 ring-[${theme.hex}]/50 cursor-pointer`
+          ? 'border-2 accent-ring cursor-pointer'
           : customizing
           ? 'border-2 border-white/30 cursor-pointer'
           : ''
@@ -767,10 +619,10 @@ export const InGameView: React.FC<InGameViewProps> = ({
         type="button"
         tabIndex={0}
         {...safeBindPadButton('btnR')}
-        className={`${isLandscape ? 'w-20 h-10' : 'w-16 h-8'} rounded-xl font-mono font-black text-xs shadow-md flex items-center justify-center tactile-btn touch-none select-none ${
+        className={`${isLandscape ? 'w-20 h-10' : 'w-16 h-8'} rounded-xl font-mono font-black text-xs shadow-md flex items-center justify-center tactile-btn touch-none select-none accent-active ${
           shaders.amoled
-            ? `bg-zinc-950 text-zinc-200 border border-white/10 active:bg-[${theme.hex}] active:text-zinc-950`
-            : `bg-zinc-900/90 text-zinc-100 border border-white/15 active:bg-[${theme.hex}] active:text-zinc-950 shadow-inner`
+            ? 'bg-zinc-950 text-zinc-200 border border-white/10'
+            : 'bg-zinc-900/90 text-zinc-100 border border-white/15 shadow-inner'
         }`}
         aria-label="R Shoulder"
       >
@@ -897,7 +749,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
         }}
         className={`relative flex items-center justify-center gap-1.5 ${
           compact ? 'h-[28px] min-w-[92px] px-3.5 rounded-md before:content-[\'\'] before:absolute before:-top-4 before:-bottom-4 before:-inset-x-2' : 'py-1.5 px-2 min-h-[34px] rounded-lg text-[10px] font-bold'
-        } border transition active:scale-95 touch-none select-none tactile-btn ${
+        } border transition-transform duration-75 active:scale-95 touch-none select-none tactile-btn ${
           isPaused
             ? 'bg-amber-500 text-zinc-950 border-amber-300 shadow-lg'
             : shaders.amoled
@@ -955,7 +807,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
         onContextMenu={(e) => e.preventDefault()}
         className={`relative flex items-center justify-center gap-1.5 ${
           compact ? 'h-[28px] min-w-[92px] px-3.5 rounded-md before:content-[\'\'] before:absolute before:-top-4 before:-bottom-4 before:-inset-x-2' : 'py-1.5 px-2 min-h-[34px] rounded-lg text-[10px] font-bold'
-        } border transition active:scale-95 touch-none select-none tactile-btn ${
+        } border transition-transform duration-75 active:scale-95 touch-none select-none tactile-btn ${
           isRewinding
             ? 'bg-amber-400 text-zinc-950 border-amber-200 shadow-lg'
             : shaders.amoled
@@ -987,7 +839,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
         }}
         className={`relative flex items-center justify-center gap-1.5 ${
           compact ? 'h-[28px] min-w-[92px] px-3.5 rounded-md before:content-[\'\'] before:absolute before:-top-4 before:-bottom-4 before:-inset-x-2' : 'py-1.5 px-2 min-h-[34px] rounded-lg text-[10px] font-bold'
-        } border transition active:scale-95 touch-none select-none tactile-btn ${
+        } border transition-transform duration-75 active:scale-95 touch-none select-none tactile-btn ${
           isFastForward
             ? 'bg-sky-400 text-zinc-950 border-sky-200 shadow-lg'
             : shaders.amoled
@@ -1018,21 +870,33 @@ export const InGameView: React.FC<InGameViewProps> = ({
     return (
       <>
         {activeGame.real ? (
-          romUrl ? (
-            <iframe
-              key={romUrl}
-              ref={emuFrameRef}
-              title="emulator"
-              className="w-full h-full block border-0 bg-black pointer-events-none"
-              allow="autoplay; gamepad"
-              style={{ filter: gameFilter, contain: 'strict' }}
-              srcDoc={playerSrcDoc}
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-xs font-mono text-zinc-400">
-              Loading ROM...
-            </div>
-          )
+          <>
+            {romUrl && (
+              <iframe
+                key={romUrl}
+                ref={emuFrameRef}
+                title="emulator"
+                className="w-full h-full block border-0 bg-black pointer-events-none"
+                allow="autoplay; gamepad"
+                style={{
+                  filter: gameFilter && gameFilter !== 'none' ? gameFilter : undefined,
+                  transform: 'translateZ(0)',
+                  willChange: 'transform',
+                  backfaceVisibility: 'hidden',
+                  contain: 'strict',
+                }}
+                srcDoc={playerSrcDoc}
+              />
+            )}
+            {(!romUrl || !emuReady) && (
+              <CartridgeInstallOverlay
+                inline
+                game={activeGame}
+                title={getGameDisplayTitle(activeGame)}
+                mode="insert"
+              />
+            )}
+          </>
         ) : (
           <div className="w-full h-full flex items-center justify-center text-xs font-mono text-zinc-400">
             No ROM loaded
@@ -1047,7 +911,10 @@ export const InGameView: React.FC<InGameViewProps> = ({
             // taste-skill-ignore: emulator visual post-processing CRT scanlines shader
             backgroundImage:
               'linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.38) 50%), linear-gradient(90deg, rgba(255,0,0,0.04), rgba(0,255,0,0.02), rgba(0,0,255,0.04))',
-            backgroundSize: '100% 4px, 6px 100%'
+            backgroundSize: '100% 4px, 6px 100%',
+            transform: 'translateZ(0)',
+            willChange: 'transform',
+            contain: 'strict',
           }}
         />
       )}
@@ -1061,7 +928,10 @@ export const InGameView: React.FC<InGameViewProps> = ({
             backgroundImage: shaders.amoled
               ? 'linear-gradient(to right, rgba(0, 0, 0, 0.55) 0.5px, transparent 0.5px), linear-gradient(to bottom, rgba(0, 0, 0, 0.55) 0.5px, transparent 0.5px)'
               : 'linear-gradient(to right, rgba(15, 23, 42, 0.18) 0.5px, transparent 0.5px), linear-gradient(to bottom, rgba(15, 23, 42, 0.18) 0.5px, transparent 0.5px)',
-            backgroundSize: isGba ? '2px 2px' : '3px 3px'
+            backgroundSize: isGba ? '2px 2px' : '3px 3px',
+            transform: 'translateZ(0)',
+            willChange: 'transform',
+            contain: 'strict',
           }}
         />
       )}
@@ -1073,7 +943,10 @@ export const InGameView: React.FC<InGameViewProps> = ({
           style={{
             // taste-skill-ignore: emulator visual post-processing CRT tube vignette shader
             background:
-              'radial-gradient(circle at center, transparent 58%, rgba(0, 0, 0, 0.68) 100%)'
+              'radial-gradient(circle at center, transparent 58%, rgba(0, 0, 0, 0.68) 100%)',
+            transform: 'translateZ(0)',
+            willChange: 'transform',
+            contain: 'strict',
           }}
         />
       )}
@@ -1081,15 +954,49 @@ export const InGameView: React.FC<InGameViewProps> = ({
         {isPaused && (
           <div
             onClick={() => revealTopBar(5000)}
-            className="absolute inset-0 z-20 bg-black/70 flex flex-col items-center justify-center gap-2 cursor-pointer select-none"
+            className="absolute inset-0 z-20 bg-black/75 backdrop-blur-[2px] flex flex-col items-center justify-center gap-3 p-4 cursor-pointer select-none"
           >
-            <Pause className="w-8 h-8 text-amber-400" />
-            <span className="font-mono font-black text-sm tracking-widest text-white">
-              EMULATION PAUSED
-            </span>
-            <span className="text-[10px] text-zinc-400 font-sans tracking-normal">
-              Tap screen to show menu • Tap Resume to play
-            </span>
+            <div className="flex flex-col items-center gap-1">
+              <Pause className="w-7 h-7 text-amber-400" />
+              <span className="font-mono font-black text-sm tracking-widest text-white">
+                EMULATION PAUSED
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsPaused(false);
+                }}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold shadow-md transition active:scale-95 ${theme.accentBg}`}
+              >
+                <Play className="w-3.5 h-3.5 fill-current" />
+                <span>Resume</span>
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setInGameMenuOpen(true);
+                }}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700 text-xs font-semibold transition active:scale-95"
+              >
+                <Sliders className="w-3.5 h-3.5" />
+                <span>Menu & Saves</span>
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  triggerExitWithCeremony();
+                }}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-700 text-xs font-semibold transition active:scale-95"
+              >
+                <Home className="w-3.5 h-3.5" />
+                <span>Library</span>
+              </button>
+            </div>
           </div>
         )}
       </>
@@ -1152,8 +1059,8 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     const trimmed = nameInput.trim() || `Layout ${activeSlot}`;
-                    setLayoutName(isLandscape, activeSlot, trimmed);
-                    setLayoutNames(getLayoutNames(isLandscape));
+                    setLayoutName(isLandscape, activeSlot, trimmed, systemKey);
+                    setLayoutNames(getLayoutNames(isLandscape, systemKey));
                     setEditingLayoutName(false);
                     showToast(`Renamed to "${trimmed}"`);
                   } else if (e.key === 'Escape') {
@@ -1163,7 +1070,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 maxLength={20}
                 autoFocus
                 placeholder={`Layout ${activeSlot}`}
-                className={`flex-1 bg-zinc-800 ${theme.isLight ? 'text-emerald-700' : 'text-emerald-300'} font-bold text-xs rounded-lg px-2 py-1 border border-[${theme.hex}]/50 outline-none ${theme.focusRing}`}
+                className={`flex-1 bg-zinc-800 ${theme.accentText} font-bold text-xs rounded-lg px-2 py-1 border accent-focus outline-none ${theme.focusRing}`}
               />
               <button
                 onClick={() => {
@@ -1173,7 +1080,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                   setEditingLayoutName(false);
                   showToast(`Renamed to "${trimmed}"`);
                 }}
-                className={`p-1 rounded-lg bg-[${theme.hex}] hover:bg-[${theme.hex}]/80 text-zinc-950 font-bold transition active:scale-95`}
+                className={`p-1 rounded-lg font-bold transition active:scale-95 ${theme.accentBg}`}
                 title="Save layout name"
                 aria-label="Save layout name"
               >
@@ -1246,6 +1153,22 @@ export const InGameView: React.FC<InGameViewProps> = ({
             />
             <button
               onClick={() => {
+                if (padSnapshotRef.current) {
+                  setPadLayoutPortrait(padSnapshotRef.current.portrait);
+                  setPadLayoutLandscape(padSnapshotRef.current.landscape);
+                  padSnapshotRef.current = null;
+                }
+                setCustomizing(false);
+                setCustomizerPos(null);
+                showToast('Changes discarded');
+              }}
+              className="px-2.5 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-700 text-xs font-semibold transition active:scale-95"
+              title="Discard changes and revert layout"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => {
                 if (isLandscape) {
                   setPadLayoutLandscape(DEFAULT_LANDSCAPE_PAD_LAYOUT);
                 } else {
@@ -1260,6 +1183,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
             </button>
             <button
               onClick={() => {
+                padSnapshotRef.current = null;
                 setCustomizing(false);
                 setCustomizerPos(null);
                 showToast('Controls saved');
@@ -1347,7 +1271,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
               onClick={() => setSelectedPad(key)}
               className={`py-1 px-2 rounded-lg text-[10px] font-bold border transition ${
                 selectedPad === key
-                  ? `bg-[${theme.hex}]/20 border-[${theme.hex}] ${theme.isLight ? 'text-emerald-700' : 'text-emerald-300'}`
+                  ? `accent-surface ${theme.accentText}`
                   : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'
               }`}
             >
@@ -1391,7 +1315,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
 
   // Transport bar className (depends on theme, customizing state)
   const transportBorderClass = customizing && selectedPad === 'transport'
-    ? `border-[${theme.hex}] ring-2 ring-[${theme.hex}]/50 bg-[${theme.hex}]/20 cursor-pointer`
+    ? 'accent-ring accent-surface cursor-pointer'
     : customizing
     ? 'border-white/30 cursor-pointer'
     : 'border-white/10';
@@ -1399,8 +1323,8 @@ export const InGameView: React.FC<InGameViewProps> = ({
 
   return (
     <div
-      className={`fixed inset-0 w-full overflow-hidden ${shaders.amoled ? 'bg-black' : 'bg-zinc-950'}`}
-      style={{ height: '100lvh' }}
+      className={`fixed inset-0 w-full overflow-hidden touch-none select-none ${shaders.amoled ? 'bg-black' : 'bg-zinc-950'}`}
+      style={{ height: '100lvh', touchAction: 'none' }}
     >
       {/* Handheld Shell — portrait: flex-col, landscape: flex-row (game + controls side by side) */}
       <div
@@ -1410,179 +1334,177 @@ export const InGameView: React.FC<InGameViewProps> = ({
           shaders.amoled ? 'bg-black border-zinc-900' : theme.shellBg
         } ${isLandscape ? '' : 'safe-bottom'}`}
       >
-        {/* Tap & Swipe zone at top: reveals the auto-hiding top bar */}
-        <button
-          type="button"
-          aria-label="Show top bar"
-          onClick={() => revealTopBar()}
-          onTouchStart={(e) => {
-            touchStartYRef.current = e.touches[0].clientY;
-          }}
-          onTouchMove={(e) => {
-            if (touchStartYRef.current !== null) {
-              const deltaY = e.touches[0].clientY - touchStartYRef.current;
-              if (deltaY > 15) {
-                revealTopBar(5000);
-                touchStartYRef.current = null;
-              }
-            }
-          }}
-          onTouchEnd={() => {
-            touchStartYRef.current = null;
-          }}
-          className={`absolute top-0 ${isLandscape ? 'left-1/3 right-1/3' : 'left-0 right-0'} z-30 cursor-pointer flex flex-col items-center justify-start bg-transparent border-0`}
-          style={{
-            height: 'max(env(safe-area-inset-top, 0px) + 24px, 36px)',
-            paddingTop: 'max(env(safe-area-inset-top, 0px) + 4px, 10px)',
-          }}
-        >
-          <span className="w-10 h-1 rounded-full bg-white/20 border border-white/10 shadow-sm opacity-50 hover:opacity-100 transition-opacity" />
-        </button>
+        {/* Fixed Bottom-Left Icon-Only Menu Trigger */}
+        {!customizing && (
+          <button
+            type="button"
+            aria-label="Open Game Menu"
+            onClick={() => setQuickMenuOpen((o) => !o)}
+            className={`fixed z-50 w-9 h-9 rounded-full flex items-center justify-center border backdrop-blur-md shadow-sm transition active:scale-95 ${
+              shaders.amoled
+                ? 'bg-black/60 border-white/10 text-zinc-400 hover:text-zinc-100'
+                : theme.isLight
+                ? 'bg-black/10 border-black/10 text-zinc-700 hover:bg-black/15'
+                : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white'
+            }`}
+            style={{
+              left: 'max(env(safe-area-inset-left, 0px) + 12px, 12px)',
+              bottom: 'max(env(safe-area-inset-bottom, 0px) + 12px, 12px)',
+            }}
+          >
+            <Sliders className="w-4 h-4" />
+          </button>
+        )}
 
-        {/* 1. TOP BAR (auto-hides) */}
-        <div
-          className={`absolute top-0 left-0 right-0 z-40 flex items-center justify-between px-3.5 pb-2.5 ${
-            shaders.amoled
-              ? 'bg-black border-b border-zinc-900'
-              : 'bg-black/90 border-b border-white/10'
-          } transition-[transform,opacity] var(--duration-base) var(--ease-standard) shadow-xl ${
-            topBarVisible
-              ? 'translate-y-0 opacity-100 pointer-events-auto'
-              : '-translate-y-full opacity-0 pointer-events-none'
-          }`}
-          style={{ paddingTop: 'max(env(safe-area-inset-top, 0px) + 8px, 36px)' }}
-          onClick={() => revealTopBar()}
-        >
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={triggerExitWithCeremony}
-              className="p-2 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-zinc-200 border border-white/10 text-xs font-bold transition active:scale-95 tactile-btn"
-              aria-label="Library"
-              title="Save & Return to Cartridge Binder"
-            >
-              <Home className={`w-3.5 h-3.5 ${theme.isLight ? 'text-emerald-600' : 'text-emerald-400'}`} />
-            </button>
-            <button
-              onClick={() => setInGameMenuOpen((o) => !o)}
-              className={`p-2 rounded-xl border text-xs font-bold transition active:scale-95 tactile-btn ${
-                inGameMenuOpen
-                  ? `${theme.accentBg} text-white shadow-emerald-500/20`
-                  : 'bg-zinc-900/90 hover:bg-zinc-800 text-zinc-100 border-white/10 hover:border-white/20'
+        {/* ANCHORED ICON-ONLY DROP-UP QUICK MENU */}
+        {quickMenuOpen && (
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setQuickMenuOpen(false)}
+          >
+            <div
+              className={`fixed z-50 flex flex-col gap-1 p-1 rounded-2xl border backdrop-blur-md shadow-xl modal-pop ${
+                shaders.amoled
+                  ? 'bg-black/85 border-white/10 text-zinc-300'
+                  : theme.isLight
+                  ? 'bg-white/85 border-black/10 text-zinc-800'
+                  : 'bg-[#16161b]/85 border-white/10 text-zinc-300'
               }`}
-              aria-label="Pause Menu & Controls"
-              title="Pause Menu & Controls"
+              style={{
+                left: 'max(env(safe-area-inset-left, 0px) + 12px, 12px)',
+                bottom: 'max(env(safe-area-inset-bottom, 0px) + 56px, 56px)',
+              }}
+              onClick={(e) => e.stopPropagation()}
             >
-              <Sliders className={`w-3.5 h-3.5 ${inGameMenuOpen ? 'text-white' : theme.isLight ? 'text-emerald-600' : 'text-emerald-400'}`} />
-            </button>
-          </div>
-
-          <div className="flex flex-col items-center text-center truncate px-2">
-            <span className="text-xs font-extrabold text-zinc-100 truncate max-w-[180px]">
-              {formatGameTitle(activeGame.title)}
-            </span>
-            <div className="flex items-center gap-1.5 text-[11px] font-mono text-zinc-300">
-              <span className="px-1.5 py-0.5 rounded bg-zinc-800 text-amber-300 font-bold uppercase">{activeGame.shortSystem || activeGame.core}</span>
-              <span>•</span>
-              <span className={`font-bold ${theme.isLight ? 'text-emerald-600' : 'text-emerald-400'}`}>
-                {fps || 60} FPS
-              </span>
-              {isMuted && (
-                <>
-                  <span>•</span>
-                  <span className="text-rose-400 font-bold">MUTED</span>
-                </>
-              )}
+              <button
+                onClick={() => {
+                  setQuickMenuOpen(false);
+                  triggerExitWithCeremony();
+                }}
+                aria-label="Home"
+                title="Home"
+                className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-white/10 transition active:scale-95"
+              >
+                <Home className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => {
+                  setQuickMenuOpen(false);
+                  setInGameMenuOpen(true);
+                }}
+                aria-label="Config Dialog"
+                title="Config Dialog"
+                className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-white/10 transition active:scale-95"
+              >
+                <Sliders className={`w-4 h-4 ${theme.accentText}`} />
+              </button>
+              <button
+                onClick={() => {
+                  setQuickMenuOpen(false);
+                  dismissPadHint();
+                  setHidePad(false);
+                  setCustomizing(true);
+                  setSelectedPad('dpad');
+                }}
+                aria-label="Edit Buttons"
+                title="Edit Buttons"
+                className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-white/10 transition active:scale-95"
+              >
+                <Move className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => {
+                  setQuickMenuOpen(false);
+                  const next = !hidePad;
+                  setHidePad(next);
+                  try { localStorage.setItem('retro_hide_pad', next ? '1' : '0'); } catch {}
+                  showToast?.(next ? 'On-screen buttons hidden' : 'On-screen buttons visible');
+                }}
+                aria-label={hidePad ? 'Show Buttons' : 'Hide Buttons'}
+                title={hidePad ? 'Show Buttons' : 'Hide Buttons'}
+                className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-white/10 transition active:scale-95"
+              >
+                {hidePad ? <Eye className="w-4 h-4 text-amber-400" /> : <EyeOff className="w-4 h-4" />}
+              </button>
+              <button
+                onClick={() => {
+                  setQuickMenuOpen(false);
+                  toggleFullscreen();
+                }}
+                aria-label={isFullscreen ? 'Exit Full Screen' : 'Full Screen'}
+                title={isFullscreen ? 'Exit Full Screen' : 'Full Screen'}
+                className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-white/10 transition active:scale-95"
+              >
+                {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+              </button>
             </div>
           </div>
+        )}
 
-          {/* Top Controls Toggle + Fullscreen Toggle */}
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => {
-                const next = !hidePad;
-                setHidePad(next);
-                try { localStorage.setItem('retro_hide_pad', next ? '1' : '0'); } catch {}
-                showToast?.(next ? 'On-screen buttons hidden' : 'On-screen buttons visible');
-              }}
-              className={`p-2 rounded-xl border text-xs font-bold transition active:scale-95 tactile-btn ${
-                hidePad
-                  ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
-                  : 'bg-zinc-900/90 hover:bg-zinc-800 text-zinc-100 border-white/10'
-              }`}
-              aria-label={hidePad ? 'Show touch controls' : 'Hide touch controls'}
-              title={hidePad ? 'Show on-screen touch controls' : 'Hide on-screen touch controls'}
-            >
-              {hidePad ? <EyeOff className="w-3.5 h-3.5 text-amber-400" /> : <Gamepad2 className={`w-3.5 h-3.5 ${theme.isLight ? 'text-emerald-600' : 'text-emerald-400'}`} />}
-            </button>
-            <button
-              onClick={toggleFullscreen}
-              className="p-2 rounded-xl border text-xs font-bold transition active:scale-95 tactile-btn bg-zinc-900/90 hover:bg-zinc-800 text-zinc-100 border-white/10"
-              aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
-              title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
-            >
-              {isFullscreen ? <Minimize className={`w-3.5 h-3.5 ${theme.isLight ? 'text-emerald-600' : 'text-emerald-400'}`} /> : <Maximize className={`w-3.5 h-3.5 ${theme.isLight ? 'text-emerald-600' : 'text-emerald-400'}`} />}
-            </button>
-          </div>
-        </div>
-
-        {/* DROPDOWN DRAWER FROM TOP SETTINGS BUTTON */}
+        {/* CENTERED PAUSE / CONFIG DIALOG */}
         {inGameMenuOpen && (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"
             style={{
               paddingTop: 'max(env(safe-area-inset-top, 0px) + 20px, 36px)',
-              paddingBottom: 'max(env(safe-area-inset-bottom, 0px) + 20px, 36px)'
+              paddingBottom: 'max(env(safe-area-inset-bottom, 0px) + 20px, 36px)',
             }}
             onClick={() => setInGameMenuOpen(false)}
           >
             <div
-              className="w-full max-w-sm max-h-[85vh] overflow-y-auto modal-scroll bg-[#131316] border border-[#222227] rounded-3xl shadow-xl p-4 space-y-3 hardware-panel text-[#f4f4f6]"
+              className="w-full max-w-[340px] max-h-[85vh] overflow-y-auto modal-scroll bg-[#131316] border border-[#222227] rounded-2xl shadow-2xl p-3.5 space-y-2.5 text-[#f4f4f6]"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between pb-1 border-b border-[#222227]">
-                <div className="flex items-center gap-2">
-                  <span className={`w-2 h-2 rounded-full ${theme.isLight ? 'bg-emerald-600' : 'bg-emerald-400'} hardware-led`} />
-                  <span className="text-xs font-bold text-[#f4f4f6]">
-                    Pause Menu
+              <div className="flex items-center justify-between gap-2 pb-2 border-b border-[#222227]">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span
+                    className="w-2 h-2 rounded-full accent-dot hardware-led shrink-0"
+                    style={{ color: theme.hex }}
+                  />
+                  <span className="font-display text-sm font-bold text-[#f4f4f6] truncate">
+                    {getGameDisplayTitle(activeGame)}
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded bg-zinc-800 text-[10px] font-mono text-zinc-300 shrink-0">
+                    {activeGame.shortSystem || activeGame.core}
+                  </span>
+                  <span className={`text-[10px] font-mono font-bold shrink-0 ${theme.accentText}`}>
+                    {fps || 60} FPS
                   </span>
                 </div>
                 <button
                   onClick={() => setInGameMenuOpen(false)}
-                  className="p-1.5 rounded-xl bg-[#1c1c21] text-[#8e8e93] hover:text-white tactile-btn border border-[#222227]"
+                  className="p-1.5 rounded-lg bg-[#1c1c21] text-[#8e8e93] hover:text-white tactile-btn border border-[#222227] shrink-0"
                   aria-label="Close Pause Menu"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
 
-              {/* Primary CTA: Resume Playing */}
+              {/* Primary CTA: Resume */}
               <button
                 onClick={() => setInGameMenuOpen(false)}
-                className={`w-full py-2.5 px-4 rounded-2xl ${theme.accentBg} text-xs font-bold flex items-center justify-center gap-2 shadow-sm tactile-btn transition active:scale-[0.98]`}
+                className={`w-full py-2.5 px-4 rounded-xl ${theme.accentBg} text-xs font-bold flex items-center justify-center gap-2 tactile-btn transition active:scale-[0.98]`}
               >
                 <Play className="w-3.5 h-3.5 fill-current" />
-                <span>Resume Playing</span>
+                <span>Resume</span>
               </button>
 
-              {/* Tier 1: Primary State Actions */}
+              {/* Save / Load State */}
               <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={() => {
                     setInGameMenuOpen(false);
                     setInGameSaveModalMode('save');
                   }}
-                  className={`flex flex-col items-start gap-1 p-3 rounded-2xl ${theme.accentSoft} transition active:scale-[0.98] tactile-btn text-left`}
+                  className={`flex items-center gap-2.5 p-2.5 rounded-xl ${theme.accentSoft} transition active:scale-[0.98] tactile-btn text-left`}
                 >
-                  <div className="flex items-center gap-1.5 w-full justify-between">
-                    <Save className={`w-4 h-4 ${theme.accentText}`} />
-                    <span className={`text-[11px] font-mono px-1.5 py-0.5 rounded font-bold uppercase ${theme.accentSoft}`}>
-                      {latestSaveSlot ? `SLOT ${latestSaveSlot.slot}` : 'SLOTS'}
-                    </span>
+                  <Save className={`w-4 h-4 shrink-0 ${theme.accentText}`} />
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-white">Save State</div>
+                    <div className={`text-[10px] font-mono ${theme.accentText} opacity-85 truncate`}>
+                      {latestSaveSlot ? `Slot ${latestSaveSlot.slot}` : 'New slot'}
+                    </div>
                   </div>
-                  <span className="text-xs font-bold text-white mt-1">Save State</span>
-                  <span className={`text-[11px] ${theme.accentText}/80 truncate max-w-full`}>
-                    {latestSaveSlot ? `Slot ${latestSaveSlot.slot} • ${latestSaveSlot.timestamp || 'Saved'}` : 'Capture frame • 4 slots'}
-                  </span>
                 </button>
 
                 <button
@@ -1590,80 +1512,61 @@ export const InGameView: React.FC<InGameViewProps> = ({
                     setInGameMenuOpen(false);
                     setInGameSaveModalMode('load');
                   }}
-                  className="flex flex-col items-start gap-1 p-3 rounded-2xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 transition active:scale-[0.98] tactile-btn text-left"
+                  className="flex items-center gap-2.5 p-2.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 transition active:scale-[0.98] tactile-btn text-left"
                 >
-                  <div className="flex items-center gap-1.5 w-full justify-between">
-                    <FolderOpen className="w-4 h-4 text-cyan-400" />
-                    <span className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-bold uppercase">
-                      {latestSaveSlot ? 'SAVED' : 'EMPTY'}
-                    </span>
+                  <FolderOpen className="w-4 h-4 shrink-0 text-cyan-400" />
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-white">Load State</div>
+                    <div className="text-[10px] font-mono text-cyan-400/85 truncate">
+                      {latestSaveSlot ? `Slot ${latestSaveSlot.slot}` : 'Empty'}
+                    </div>
                   </div>
-                  <span className="text-xs font-bold text-white mt-1">Load State</span>
-                  <span className="text-[11px] text-cyan-400/80 truncate max-w-full">
-                    {latestSaveSlot ? `Resume Slot ${latestSaveSlot.slot}` : 'No saved states yet'}
-                  </span>
                 </button>
               </div>
 
-              {/* On-Screen Touch Controls Quick Switch Card */}
-              <div className="flex items-center justify-between px-3 py-2 rounded-2xl bg-zinc-900/80 border border-zinc-800">
-                <div className="flex items-center gap-2.5">
-                  <div className={`p-1.5 rounded-xl ${hidePad ? 'bg-amber-500/20 text-amber-400' : theme.accentSoft}`}>
-                    {hidePad ? <EyeOff className="w-4 h-4" /> : <Gamepad2 className="w-4 h-4" />}
-                  </div>
-                  <div className="flex flex-col text-left">
-                    <span className="text-xs font-bold text-zinc-100">On-Screen Controls</span>
-                    <span className="text-[10px] text-zinc-400">
-                      {hidePad ? 'Hidden (playing with keyboard/gamepad)' : 'Visible (touch buttons active)'}
-                    </span>
-                  </div>
-                </div>
+              {/* 4-Button Quick Controls Row */}
+              <div className="grid grid-cols-4 gap-1.5">
                 <button
-                  type="button"
-                  role="switch"
-                  aria-checked={!hidePad}
+                  onClick={toggleAudio}
+                  className={`flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl border text-center transition active:scale-95 ${
+                    isMuted
+                      ? 'bg-rose-500/15 border-rose-500/40 text-rose-300'
+                      : 'bg-zinc-900/80 border-zinc-800 text-zinc-300 hover:bg-zinc-900'
+                  }`}
+                >
+                  {isMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className={`w-4 h-4 ${theme.accentText}`} />}
+                  <span className="text-[10px] font-semibold">{isMuted ? 'Muted' : 'Audio'}</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    dismissPadHint();
+                    setInGameMenuOpen(false);
+                    setHidePad(false);
+                    setCustomizing(true);
+                    setSelectedPad('dpad');
+                  }}
+                  className="flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl bg-zinc-900/80 hover:bg-zinc-900 border border-zinc-800 text-zinc-200 text-center transition active:scale-95"
+                >
+                  <Move className={`w-4 h-4 ${theme.accentText}`} />
+                  <span className="text-[10px] font-semibold">Edit Pad</span>
+                </button>
+
+                <button
                   onClick={() => {
                     const next = !hidePad;
                     setHidePad(next);
                     try { localStorage.setItem('retro_hide_pad', next ? '1' : '0'); } catch {}
                     showToast?.(next ? 'On-screen buttons hidden' : 'On-screen buttons visible');
                   }}
-                  className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors ${
-                    !hidePad ? `bg-[${theme.hex}] justify-end` : 'bg-zinc-700 justify-start'
-                  }`}
-                  aria-label="Toggle on-screen touch controls"
-                >
-                  <div className="w-4 h-4 rounded-full bg-white shadow-md transform transition-transform" />
-                </button>
-              </div>
-
-              {/* Tier 2: Quick Control & Display Toggles (Compact horizontal pill row) */}
-              <div className="grid grid-cols-3 gap-1.5">
-                <button
-                  onClick={toggleAudio}
-                  className={`flex flex-col items-center justify-center gap-1 p-2 rounded-xl border text-center transition active:scale-95 ${
-                    isMuted
-                      ? 'bg-rose-500/15 border-rose-500/40 text-rose-300'
+                  className={`flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl border text-center transition active:scale-95 ${
+                    hidePad
+                      ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
                       : 'bg-zinc-900/80 border-zinc-800 text-zinc-300 hover:bg-zinc-900'
                   }`}
-                  title="Toggle Audio Mute"
                 >
-                  {isMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className={`w-4 h-4 ${theme.isLight ? 'text-emerald-600' : 'text-emerald-400'}`} />}
-                  <span className="text-[11px] font-bold">{isMuted ? 'Muted' : 'Audio'}</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    setInGameMenuOpen(false);
-                    setHidePad(false);
-                    setCustomizing(true);
-                    setSelectedPad('dpad');
-                  }}
-                  className={`flex flex-col items-center justify-center gap-1 p-2 rounded-xl bg-zinc-900/80 hover:bg-zinc-900 border border-zinc-800 text-zinc-200 text-center transition active:scale-95 hover:border-[${theme.hex}]/40`}
-                  title="Configure touch controls, opacity & layout"
-                >
-                  <Sliders className={`w-4 h-4 ${theme.isLight ? 'text-emerald-600' : 'text-emerald-400'}`} />
-                  <span className="text-[11px] font-bold">Edit Pad</span>
+                  {hidePad ? <EyeOff className="w-4 h-4 text-amber-400" /> : <Gamepad2 className={`w-4 h-4 ${theme.accentText}`} />}
+                  <span className="text-[10px] font-semibold">{hidePad ? 'Show Pad' : 'Hide Pad'}</span>
                 </button>
 
                 <button
@@ -1671,11 +1574,10 @@ export const InGameView: React.FC<InGameViewProps> = ({
                     setInGameMenuOpen(false);
                     setGlobalSettingsOpen(true);
                   }}
-                  className="flex flex-col items-center justify-center gap-1 p-2 rounded-xl bg-zinc-900/80 hover:bg-zinc-900 border border-zinc-800 text-zinc-300 text-center transition active:scale-95 hover:border-zinc-700"
-                  title="System & Display Configuration"
+                  className="flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl bg-zinc-900/80 hover:bg-zinc-900 border border-zinc-800 text-zinc-300 text-center transition active:scale-95"
                 >
                   <Settings className="w-4 h-4 text-zinc-300" />
-                  <span className="text-[11px] font-bold">Config</span>
+                  <span className="text-[10px] font-semibold">Config</span>
                 </button>
               </div>
 
@@ -1818,7 +1720,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 isPoweringOff ? 'crt-power-off' : isPoweringOn ? 'crt-power-on' : ''
               } ${
                 customizing && selectedPad === 'screen'
-                  ? `border-2 border-[${theme.hex}] ring-2 ring-[${theme.hex}]/50 cursor-pointer`
+                  ? 'border-2 accent-ring cursor-pointer'
                   : customizing
                   ? 'border-2 border-white/30 cursor-pointer'
                   : shaders.edgeToEdge
@@ -1852,9 +1754,10 @@ export const InGameView: React.FC<InGameViewProps> = ({
                   : `min(100%, calc(48lvh * ${screenRatio} * ${screenScale}))`,
                 height: 'auto',
                 boxShadow: !shaders.edgeToEdge && !shaders.amoled && shaders.rgbBloom
-                  ? `0 0 28px ${theme.hex}33, inset 0 0 18px rgba(0,0,0,0.75)`
+                  ? `0 0 24px ${theme.hex}2b`
                   : 'none',
                 filter: 'none',
+                transform: 'translateZ(0)',
                 contain: 'layout paint'
               }}
             >
@@ -1863,7 +1766,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
               {/* Top-Right On-Screen Fast-Forward Indicator */}
               {isFastForward && (
                 <div
-                  className="absolute top-2 right-2 z-30 pointer-events-none select-none flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/85 border border-sky-400 text-sky-400 text-[10px] font-mono font-black shadow-lg backdrop-blur-sm animate-pulse"
+                  className="absolute top-2 right-2 z-30 pointer-events-none select-none flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/90 border border-sky-400 text-sky-400 text-[10px] font-mono font-black shadow-lg"
                   aria-label={`Fast forwarding at ${ffSpeed}x speed`}
                 >
                   <FastForward className="w-3.5 h-3.5" />
@@ -1876,8 +1779,8 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 <div
                   className={`absolute inset-0 touch-none cursor-ns-resize pointer-events-auto z-30 flex items-center justify-center ${
                     selectedPad === 'screen'
-                      ? `border-2 border-dashed border-[${theme.hex}] bg-[${theme.hex}]/15`
-                      : 'border-2 border-dashed border-white/40 bg-black/40 hover:border-emerald-400/60'
+                      ? 'border-2 border-dashed accent-surface'
+                      : 'border-2 border-dashed border-white/40 bg-black/40 hover:border-white/70'
                   }`}
                   onPointerDown={(e) => {
                     e.preventDefault();
@@ -1933,9 +1836,9 @@ export const InGameView: React.FC<InGameViewProps> = ({
                   }}
                 >
                   {selectedPad === 'screen' && (
-                    <div className={`px-3 py-1.5 rounded-xl bg-black/90 border border-[${theme.hex}]/80 ${theme.isLight ? 'text-emerald-700' : 'text-emerald-300'} text-xs font-semibold shadow-lg flex items-center gap-2 pointer-events-none select-none`}>
-                      <GripVertical className={`w-4 h-4 ${theme.isLight ? 'text-emerald-600' : 'text-emerald-400'}`} />
-                      <span>Slide Up / Down • Centered X</span>
+                    <div className={`px-3 py-1.5 rounded-xl bg-black/90 border accent-surface ${theme.accentText} text-xs font-semibold shadow-lg flex items-center gap-2 pointer-events-none select-none`}>
+                      <GripVertical className={`w-4 h-4 ${theme.accentText}`} />
+                      <span>Slide Up / Down (Centered X)</span>
                     </div>
                   )}
                 </div>
@@ -1946,15 +1849,23 @@ export const InGameView: React.FC<InGameViewProps> = ({
             {!shaders.edgeToEdge && !isLandscape && (
               <div className="w-full flex items-center justify-center pt-2 pb-0.5 select-none pointer-events-none">
                 {isGba ? (
-                  <div className="flex items-center gap-1.5 opacity-85 tracking-widest text-[11px] font-sans">
-                    <span className="font-black text-zinc-300">GAME BOY</span>
-                    <span className="italic font-black text-sky-400 text-xs">ADVANCE</span>
+                  <div className="flex items-center gap-2 opacity-90 tracking-widest text-[11px] font-display">
+                    <span
+                      className="w-1.5 h-1.5 rounded-full accent-dot hardware-led"
+                      style={{ color: theme.hex }}
+                    />
+                    <span className="font-bold text-zinc-300">GAME BOY</span>
+                    <span className="italic font-bold text-sky-400 text-xs">ADVANCE</span>
                   </div>
                 ) : isGbc ? (
-                  <div className="flex items-center gap-1 opacity-85 font-sans font-black tracking-widest text-[10px] text-zinc-300">
+                  <div className="flex items-center gap-1.5 opacity-90 font-display font-bold tracking-widest text-[10px] text-zinc-300">
+                    <span
+                      className="w-1.5 h-1.5 rounded-full accent-dot hardware-led mr-0.5"
+                      style={{ color: theme.hex }}
+                    />
                     <span>GAME BOY</span>
                     {/* taste-skill-ignore: authentic 1998 Nintendo Game Boy Color physical lens logo */}
-                    <span className="font-extrabold tracking-normal inline-flex text-[9px] gap-0.5">
+                    <span className="font-bold tracking-normal inline-flex text-[9px] gap-0.5">
                       <span className="text-rose-500">C</span>
                       <span className="text-amber-400">O</span>
                       <span className="text-emerald-400">L</span>
@@ -1963,9 +1874,9 @@ export const InGameView: React.FC<InGameViewProps> = ({
                     </span>
                   </div>
                 ) : isGb ? (
-                  <div className="w-full flex items-center justify-between px-3 opacity-75">
+                  <div className="w-full flex items-center justify-between px-3 opacity-80">
                     <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500 hardware-led" style={{ color: '#f43f5e' }} />
                       <span className="text-[8px] font-mono font-bold tracking-wider text-zinc-400">BATTERY</span>
                     </div>
                     <span className="text-[8px] font-mono font-bold tracking-widest text-zinc-400">
@@ -2055,7 +1966,13 @@ export const InGameView: React.FC<InGameViewProps> = ({
               opacity={padOpacity}
             >
               <div className="pointer-events-auto">
-                {renderDpad()}
+                <DpadControl
+                  customizing={customizing}
+                  isLandscape={isLandscape}
+                  dpadLayout={padLayout.dpad}
+                  setButtonDown={setButtonDown}
+                  setButtonUp={setButtonUp}
+                />
               </div>
             </PadGroup>
 
@@ -2151,7 +2068,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
           <>
             {/* Left Flank (order: -1 -> placed visually on the LEFT) */}
             <div
-              className={`flex-none ${isGba ? 'w-[96px] sm:w-[110px] md:w-[124px]' : 'w-[112px] sm:w-[130px] md:w-[150px]'} h-full select-none touch-none z-10 pointer-events-none ${
+              className={`flex-none ${isGba ? 'w-[96px] sm:w-[110px] md:w-[124px]' : 'w-[112px] sm:w-[130px] md:w-[150px]'} h-full select-none touch-none z-10 pointer-events-none relative overflow-hidden ${
                 shaders.amoled ? 'bg-black border-r border-zinc-900' : `${theme.deckBg} border-r border-white/5`
               }`}
               style={{
@@ -2160,11 +2077,13 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 WebkitTouchCallout: 'none',
                 userSelect: 'none',
               }}
-            />
+            >
+              {!shaders.amoled && <div className="absolute inset-y-8 left-1.5 w-2 rounded-full cartridge-grip opacity-25" />}
+            </div>
 
             {/* Right Flank (order: 1 -> placed visually on the RIGHT) */}
             <div
-              className={`flex-none ${isGba ? 'w-[96px] sm:w-[110px] md:w-[124px]' : 'w-[112px] sm:w-[130px] md:w-[150px]'} h-full select-none touch-none z-10 pointer-events-none ${
+              className={`flex-none ${isGba ? 'w-[96px] sm:w-[110px] md:w-[124px]' : 'w-[112px] sm:w-[130px] md:w-[150px]'} h-full select-none touch-none z-10 pointer-events-none relative overflow-hidden ${
                 shaders.amoled ? 'bg-black border-l border-zinc-900' : `${theme.deckBg} border-l border-white/5`
               }`}
               style={{
@@ -2173,7 +2092,9 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 WebkitTouchCallout: 'none',
                 userSelect: 'none',
               }}
-            />
+            >
+              {!shaders.amoled && <div className="absolute inset-y-8 right-1.5 w-2 rounded-full cartridge-grip opacity-25" />}
+            </div>
           </>
         )}
 
@@ -2237,7 +2158,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
             {(!hidePad || customizing) && (
               <PadGroup
                 id="btnL"
-                layout={activePadLayout}
+                layout={scaledPadLayout}
                 customizing={customizing}
                 selected={customizing && selectedPad === 'btnL'}
                 onSelect={setSelectedPad}
@@ -2256,7 +2177,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
             {(!hidePad || customizing) && (
               <PadGroup
                 id="btnR"
-                layout={activePadLayout}
+                layout={scaledPadLayout}
                 customizing={customizing}
                 selected={customizing && selectedPad === 'btnR'}
                 onSelect={setSelectedPad}
@@ -2298,7 +2219,13 @@ export const InGameView: React.FC<InGameViewProps> = ({
                 opacity={padOpacity}
               >
                 <div className="pointer-events-auto">
-                  {renderDpad()}
+                  <DpadControl
+                    customizing={customizing}
+                    isLandscape={isLandscape}
+                    dpadLayout={padLayout.dpad}
+                    setButtonDown={setButtonDown}
+                    setButtonUp={setButtonUp}
+                  />
                 </div>
               </PadGroup>
             )}
@@ -2335,7 +2262,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
             {(!hidePad || customizing) && (
               <PadGroup
                 id="select"
-                layout={activePadLayout}
+                layout={scaledPadLayout}
                 customizing={customizing}
                 selected={customizing && selectedPad === 'select'}
                 onSelect={setSelectedPad}
@@ -2354,7 +2281,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
             {(!hidePad || customizing) && (
               <PadGroup
                 id="start"
-                layout={activePadLayout}
+                layout={scaledPadLayout}
                 customizing={customizing}
                 selected={customizing && selectedPad === 'start'}
                 onSelect={setSelectedPad}
@@ -2367,6 +2294,17 @@ export const InGameView: React.FC<InGameViewProps> = ({
                   {renderStart()}
                 </div>
               </PadGroup>
+            )}
+
+            {/* First-run subtle hint for new users to discover Edit Pad */}
+            {showPadHint && !hidePad && !customizing && (
+              <button
+                type="button"
+                onClick={dismissPadHint}
+                className="absolute bottom-2 left-1/2 -translate-x-1/2 z-30 px-2.5 py-1 rounded-full bg-black/75 border border-white/15 text-[10px] text-zinc-300 whitespace-nowrap"
+              >
+                Tap top bar → Move icon to resize &amp; drag controls
+              </button>
             )}
           </div>
         )}

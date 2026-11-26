@@ -43,7 +43,25 @@ html, body {
   overscroll-behavior: none;
   -webkit-tap-highlight-color: transparent;
   -webkit-text-size-adjust: 100%;
+  font-family: 'IBM Plex Sans', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+h1, h2, .font-display {
+  font-family: 'Chakra Petch', 'IBM Plex Sans', system-ui, sans-serif;
+  letter-spacing: -0.02em;
+}
+
+code, pre, .font-mono {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 html.dark body, body {
@@ -103,6 +121,35 @@ html.dark :focus-visible {
 html.light :focus-visible {
   outline: 2px solid var(--accent-focus);
   outline-offset: 2px;
+}
+
+/* Theme-aware dynamic accent helpers (replaces uncompiled template classes) */
+.accent-surface {
+  background-color: var(--accent-soft-bg);
+  border-color: var(--accent-soft-border);
+}
+
+.accent-solid {
+  background-color: var(--accent);
+  border-color: var(--accent);
+}
+
+.accent-dot {
+  background-color: var(--accent);
+}
+
+.accent-ring {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--accent-focus);
+}
+
+.accent-focus:focus {
+  border-color: var(--accent);
+}
+
+.accent-active:active {
+  background-color: var(--accent);
+  color: #09090b;
 }
 
 .font-tabular,
@@ -167,12 +214,15 @@ html.light :focus-visible {
   -webkit-user-select: none;
   -webkit-touch-callout: none;
   box-shadow: 0 1.5px 0 0 rgba(0, 0, 0, 0.35), inset 0 1px 0 0 rgba(255, 255, 255, 0.15);
-  transition: transform var(--duration-fast) var(--ease-standard);
+  contain: layout style;
+  will-change: transform;
+  transform: translateZ(0);
+  transition: transform 40ms ease-out;
 }
 
 .tactile-btn:active,
 .tactile-btn[data-pressed="true"] {
-  transform: translateY(1.5px) scale(0.98);
+  transform: translate3d(0, 1.5px, 0) scale(0.98);
 }
 
 .dpad-cross {
@@ -184,13 +234,15 @@ html.light :focus-visible {
 }
 
 .dpad-arm {
-  transition: transform var(--duration-fast) ease, opacity var(--duration-fast) ease;
+  contain: layout style;
+  will-change: transform;
+  transform: translateZ(0);
+  transition: transform 40ms ease-out;
 }
 
 .dpad-arm:active,
 .dpad-arm[data-pressed="true"] {
-  transform: scale(0.93);
-  opacity: 0.85;
+  transform: translateZ(0) scale(0.93);
 }
 
 .hardware-led {
@@ -199,6 +251,17 @@ html.light :focus-visible {
 
 .crt-bezel {
   box-shadow: inset 0 3px 8px rgba(0, 0, 0, 0.8), 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* Subtle modern-retro CRT micro-scanline overlay */
+.retro-scanlines {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.03) 0px,
+    rgba(255, 255, 255, 0.03) 1px,
+    transparent 1px,
+    transparent 3px
+  );
 }
 
 .binder-page {
@@ -410,14 +473,15 @@ html.light .hero-deck-card {
 /* taste-skill-ignore: authentic physical molded Nintendo Game Boy D-Pad, dome buttons, and rubber pills */
 .gb-dpad-arm {
   background: transparent;
-  transition: transform var(--duration-fast) ease, filter var(--duration-fast) ease, background var(--duration-fast) ease;
+  contain: layout style;
+  will-change: transform;
+  transform: translateZ(0);
 }
 
 .gb-dpad-arm:active,
 .gb-dpad-arm[data-pressed="true"] {
   background: radial-gradient(circle, rgba(0, 0, 0, 0.45) 0%, rgba(0, 0, 0, 0.15) 75%, transparent 100%);
   transform: scale(0.96);
-  filter: brightness(0.9);
 }
 
 .gb-pivot-dish {
@@ -433,7 +497,18 @@ html.light .hero-deck-card {
 .gb-action-dome {
   background: radial-gradient(circle at 38% 32%, #a82a72 0%, #8d1d5c 45%, #63123f 85%, #470d2c 100%);
   box-shadow: inset 0 2px 3px rgba(255, 255, 255, 0.35), inset 0 -3px 4px rgba(0, 0, 0, 0.55), 0 6px 14px -1px rgba(0, 0, 0, 0.75);
-  transition: transform var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) ease;
+}
+
+html[data-theme="atomic"] .gb-action-dome {
+  background: radial-gradient(circle at 38% 32%, #5eead4 0%, #14b8a6 45%, #0f766e 85%, #115e59 100%);
+}
+
+html[data-theme="famicom"] .gb-action-dome {
+  background: radial-gradient(circle at 38% 32%, #fb7185 0%, #e11d48 45%, #9f1239 85%, #881337 100%);
+}
+
+html[data-theme="silver"] .gb-action-dome {
+  background: radial-gradient(circle at 38% 32%, #fb923c 0%, #f97316 45%, #c2410c 85%, #9a3412 100%);
 }
 
 .gb-action-dome:active,
@@ -445,11 +520,11 @@ html.light .hero-deck-card {
 .gb-rubber-pill {
   background: linear-gradient(180deg, #44444a 0%, #2b2b30 60%, #1c1c20 100%);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 -1px 2px rgba(0, 0, 0, 0.6), 0 3px 6px rgba(0, 0, 0, 0.6);
-  transition: transform var(--duration-fast) ease;
 }
 
 .gb-rubber-pill:active,
-.gb-rubber-pill[data-pressed="true"] {
+.gb-rubber-pill[data-pressed="true"],
+.group[data-pressed="true"] .gb-rubber-pill {
   transform: translateY(1.5px) scale(0.95) rotate(-25deg);
 }
 
@@ -512,4 +587,50 @@ html.light button[aria-label="Select button"]:focus-visible,
 html.light button[aria-label="Start button"]:focus-visible {
   outline: 2px solid var(--accent-focus);
   outline-offset: 3px;
+}
+
+@keyframes cartridgeInsert {
+  0% {
+    transform: translateY(-34px) scale(0.97);
+    opacity: 0.4;
+  }
+  45% {
+    transform: translateY(2px) scale(1);
+    opacity: 1;
+  }
+  58% {
+    transform: translateY(-2px) scale(1);
+  }
+  75%, 100% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes slotContactGlow {
+  0%, 40% {
+    opacity: 0.2;
+    transform: scaleX(0.75);
+  }
+  65% {
+    opacity: 1;
+    transform: scaleX(1.04);
+  }
+  100% {
+    opacity: 0.55;
+    transform: scaleX(0.95);
+  }
+}
+
+.cartridge-insert {
+  animation: cartridgeInsert 1.35s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.slot-contact-glow {
+  animation: slotContactGlow 1.35s ease-in-out infinite;
+}
+
+html.reduce-motion .cartridge-insert,
+html.reduce-motion .slot-contact-glow {
+  animation: none !important;
 }

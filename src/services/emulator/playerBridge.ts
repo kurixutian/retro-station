@@ -35,8 +35,8 @@ export function buildPlayerHtml(core: string, romUrl: string, title?: string): s
     '  {name:"fastforward_ratio",default:0.0,isString:false},' +
     '  {name:"input_poll_type_behavior",default:2,isString:false},' +
     '  {name:"rewind_enable",default:true,isString:false},' +
-    '  {name:"rewind_granularity",default:1,isString:false},' +
-    '  {name:"rewind_buffer_size",default:30,isString:false}' +
+    '  {name:"rewind_granularity",default:6,isString:false},' +
+    '  {name:"rewind_buffer_size",default:20,isString:false}' +
     '];' +
     'var _realGM=undefined;' +
     'Object.defineProperty(window,"EJS_GameManager",{' +
@@ -56,8 +56,8 @@ export function buildPlayerHtml(core: string, romUrl: string, title?: string): s
     '        cfg+="fastforward_ratio = 0.0\\n";' +
     '        cfg+="input_poll_type_behavior = 2\\n";' +
     '        cfg+="rewind_enable = \\"true\\"\\n";' +
-    '        cfg+="rewind_granularity = \\"1\\"\\n";' +
-    '        cfg+="rewind_buffer_size = \\"30\\"\\n";' +
+    '        cfg+="rewind_granularity = \\"6\\"\\n";' +
+    '        cfg+="rewind_buffer_size = \\"20\\"\\n";' +
     '        return cfg;' +
     '      };' +
     '    }' +
@@ -105,19 +105,63 @@ export function buildPlayerHtml(core: string, romUrl: string, title?: string): s
     '  }' +
     '};' +
     'var _btnIndexMap={actionb:0,b:0,actiony:1,y:1,select:2,start:3,up:4,down:5,left:6,right:7,actiona:8,a:8,actionx:9,x:9,btnl:10,l:10,btnr:11,r:11};' +
+    'var _btnDownFrame={};' +
+    'var _btnReleaseRaf={};' +
+    'var _btnReleaseTimer={};' +
+    'var _clearPendingRelease=function(idx){' +
+    '  if(_btnReleaseRaf[idx]){cancelAnimationFrame(_btnReleaseRaf[idx]);delete _btnReleaseRaf[idx];}' +
+    '  if(_btnReleaseTimer[idx]){clearTimeout(_btnReleaseTimer[idx]);delete _btnReleaseTimer[idx];}' +
+    '};' +
+    'var _getFrameNum=function(gm){' +
+    '  try{return gm&&typeof gm.getFrameNum==="function"?gm.getFrameNum():-1;}catch(e){return -1;}' +
+    '};' +
+    'var _commitButtonBit=function(idx,down){' +
+    '  var emu=window.EJS_emulator;' +
+    '  var gm=emu&&emu.gameManager;' +
+    '  if(!gm||typeof gm.simulateInput!=="function")return false;' +
+    '  _clearPendingRelease(idx);' +
+    '  if(down){' +
+    '    _btnDownFrame[idx]=_getFrameNum(gm);' +
+    '    gm.simulateInput(0,idx,1);' +
+    '    return true;' +
+    '  }' +
+    '  var downFrame=_btnDownFrame[idx];' +
+    '  var curFrame=_getFrameNum(gm);' +
+    '  if(curFrame===-1||downFrame===undefined||curFrame>downFrame){' +
+    '    delete _btnDownFrame[idx];' +
+    '    gm.simulateInput(0,idx,0);' +
+    '    return true;' +
+    '  }' +
+    '  var waitNextFrame=function(){' +
+    '    delete _btnReleaseRaf[idx];' +
+    '    var f=_getFrameNum(gm);' +
+    '    if(f===-1||f>downFrame){' +
+    '      _clearPendingRelease(idx);' +
+    '      delete _btnDownFrame[idx];' +
+    '      try{gm.simulateInput(0,idx,0);}catch(e){}' +
+    '      return;' +
+    '    }' +
+    '    _btnReleaseRaf[idx]=requestAnimationFrame(waitNextFrame);' +
+    '  };' +
+    '  _btnReleaseRaf[idx]=requestAnimationFrame(waitNextFrame);' +
+    '  _btnReleaseTimer[idx]=setTimeout(function(){' +
+    '    _clearPendingRelease(idx);' +
+    '    delete _btnDownFrame[idx];' +
+    '    try{gm.simulateInput(0,idx,0);}catch(e){}' +
+    '  },34);' +
+    '  return true;' +
+    '};' +
     'window.simulateButton=function(name,down){' +
     '  var key=String(name).toLowerCase();' +
     '  var idx=_btnIndexMap[key];' +
     '  window._markInteracted&&window._markInteracted();' +
-    '  if(down){' +
+    '  if(down&&!window._audioUnlocked){' +
+    '    window._audioUnlocked=true;' +
     '    window.unlockAudio&&window.unlockAudio();' +
     '  }' +
     '  var handled=false;' +
-    '  if(idx!==undefined&&window.EJS_emulator&&window.EJS_emulator.gameManager){' +
-    '    try{' +
-    '      window.EJS_emulator.gameManager.simulateInput(0,idx,down?1:0);' +
-    '      handled=true;' +
-    '    }catch(e){}' +
+    '  if(idx!==undefined){' +
+    '    try{handled=_commitButtonBit(idx,down);}catch(e){}' +
     '  }' +
     '  if(!handled){' +
     '    _dispatchKb(key,down);' +
@@ -125,13 +169,10 @@ export function buildPlayerHtml(core: string, romUrl: string, title?: string): s
     '};' +
     'window.setButtonBit=function(idx,down){' +
     '  window._markInteracted&&window._markInteracted();' +
-    '  if(down)window.unlockAudio&&window.unlockAudio();' +
-    '  if(window.EJS_emulator&&window.EJS_emulator.gameManager){' +
-    '    try{' +
-    '      window.EJS_emulator.gameManager.simulateInput(0,idx,down?1:0);' +
-    '      return;' +
-    '    }catch(e){}' +
-    '  }' +
+    '  if(down&&!window._audioUnlocked){window._audioUnlocked=true;window.unlockAudio&&window.unlockAudio();}' +
+    '  try{' +
+    '    if(_commitButtonBit(idx,down))return;' +
+    '  }catch(e){}' +
     '  var revMap={0:"actionb",1:"actiony",2:"select",3:"start",4:"up",5:"down",6:"left",7:"right",8:"actiona",9:"actionx",10:"btnl",11:"btnr"};' +
     '  var name=revMap[idx];' +
     '  if(name)_dispatchKb(name,down);' +
@@ -411,6 +452,22 @@ export function buildPlayerHtml(core: string, romUrl: string, title?: string): s
     '    var el=document.querySelector(".ejs_virtualGamepad_parent");if(el)el.remove();' +
     '  }catch(e){}' +
     '  parent.postMessage({type:"ejs-ready"},"*");' +
+    '};' +
+    'var _lastFpsFrame=null,_lastFpsTime=0,_lastFpsVal=60;' +
+    'window.getMeasuredFps=function(){' +
+    '  try{' +
+    '    var gm=window.EJS_emulator&&window.EJS_emulator.gameManager;' +
+    '    if(!gm||typeof gm.getFrameNum!=="function")return 60;' +
+    '    var f=gm.getFrameNum(),t=performance.now();' +
+    '    if(_lastFpsFrame!==null&&t-_lastFpsTime>=250){' +
+    '      var df=f-_lastFpsFrame,dt=t-_lastFpsTime;' +
+    '      if(df>0&&dt>0)_lastFpsVal=Math.min(60,Math.max(1,Math.round((df*1000)/dt)));' +
+    '      _lastFpsFrame=f;_lastFpsTime=t;' +
+    '    }else if(_lastFpsFrame===null){' +
+    '      _lastFpsFrame=f;_lastFpsTime=t;' +
+    '    }' +
+    '    return _lastFpsVal;' +
+    '  }catch(e){return 60;}' +
     '};' +
     'window.setAudioMuted=function(m){' +
     '  try{' +

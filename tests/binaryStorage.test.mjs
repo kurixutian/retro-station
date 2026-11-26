@@ -14,5 +14,8 @@ test('normalizeBinaryData converts views, strings and buffers', () => {
   assert.deepEqual(normalizeBinaryData(bytes), bytes);
   assert.deepEqual(normalizeBinaryData(bytes.buffer), bytes);
   assert.deepEqual(normalizeBinaryData(uint8ArrayToBase64(bytes)), bytes);
+  assert.deepEqual(normalizeBinaryData({ base64: uint8ArrayToBase64(bytes) }), bytes);
+  assert.deepEqual(normalizeBinaryData(JSON.stringify({ 0: 10, 1: 20, 2: 30, 3: 40 })), bytes);
+  assert.equal(normalizeBinaryData(new Uint8Array(0)), null);
   assert.equal(normalizeBinaryData(null), null);
 });

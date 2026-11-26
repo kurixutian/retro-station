@@ -4,20 +4,16 @@ import { Game, SaveSlot, PadLayout, PadGroupId, Theme } from './types';
 import { CORE_MAP } from './constants/cores';
 import { THEMES } from './constants/themes';
 import {
-  loadPadLayout,
-  savePadLayout,
-  getActiveSlot,
-  setActiveSlot,
-  LayoutSlot,
   EMU_INPUT_MAP,
   PAD_KEYS,
 } from './constants/controls';
-import { idbOpen, idbPut, idbGet, idbDelete, idbDeleteGameData } from './services/storage/idb';
+import { usePadLayoutState } from './hooks/usePadLayoutState';
+import { idbGetEntriesByPrefix, idbPut, idbGet, idbDelete, idbDeleteGameData } from './services/storage/idb';
 import { soundFX } from './services/audio/synth';
 import { haptics } from './services/haptics';
 import { createEmptySlotsForGame, downloadBinaryFile } from './services/storage/saveSlots';
+import { normalizeBinaryData } from './services/storage/binary';
 import {
-  normalizeBinaryData,
   markLocalSaveModified,
   onDataUpdated,
   subscribeSyncStatus,
@@ -43,7 +39,11 @@ import { SaveSlotsModal } from './components/modals/SaveSlotsModal';
 import { CloudSyncModal } from './components/modals/CloudSyncModal';
 import { ControlsModal } from './components/modals/ControlsModal';
 import { MissingRomModal } from './components/modals/MissingRomModal';
-import { isZipFile, isZipBuffer, extractRomsFromZip } from './services/romArchive';
+import { PatchManagerModal } from './components/modals/PatchManagerModal';
+import { CartridgeInstallOverlay } from './components/common/CartridgeInstallOverlay';
+import { computeCrc32, formatCrc32Hex } from './services/bpsPatcher';
+import { autoFetchAndCacheBoxart } from './services/boxartResolver';
+import { isZipFile, isZipBuffer, extractRomsFromZip, isRarFile, isRarBuffer, extractRomsFromRar } from './services/romArchive';
 import { useGamepadInput } from './hooks/useGamepadInput';
 
 const INITIAL_GAMES: Game[] = [];
@@ -134,6 +134,18 @@ function applySlotUpdates(
   return next;
 }
 
+async function readSavedSlotsFromIdb(): Promise<SlotUpdateRecord[]> {
+  const entries = await idbGetEntriesByPrefix('state:');
+  const pendingSlots: SlotUpdateRecord[] = [];
+  for (const [key, val] of entries) {
+    const parts = key.split(':');
+    const slotN = parseInt(parts[parts.length - 1], 10);
+    const gId = parts.slice(1, parts.length - 1).join(':');
+    if (val && gId && slotN) pendingSlots.push({ gId, slotN, key, val });
+  }
+  return pendingSlots;
+}
+
 const STUB_GAME: Game = {
   id: 'none',
   title: '',
@@ -148,6 +160,8 @@ const STUB_GAME: Game = {
 export default function App() {
   // Navigation View: 'home' (Netflix Library) | 'ingame' (Vertical Handheld)
   const [currentView, setCurrentView] = useState<'home' | 'ingame'>('home');
+  const [patchManagerOpen, setPatchManagerOpen] = useState(false);
+  const [patchTargetGameId, setPatchTargetGameId] = useState<string | null>(null);
 
   // Games Library & Filter State
   const [games, setGames] = useState<Game[]>(() => {
@@ -222,6 +236,8 @@ export default function App() {
     setGames((prev) =>
       prev.map((g) => (g.id === gameId ? { ...g, customCover: dataUrl || undefined } : g))
     );
+    setDetailGame((d) => (d?.id === gameId ? { ...d, customCover: dataUrl || undefined } : d));
+    setActiveGame((a) => (a.id === gameId ? { ...a, customCover: dataUrl || undefined } : a));
     if (dataUrl) {
       idbPut(`cover:${gameId}`, dataUrl)
         .then(() => markLocalSaveModified(`cover:${gameId}`))
@@ -246,7 +262,12 @@ export default function App() {
         pending.map(async (g) => {
           try {
             const val = await idbGet(`cover:${g.id}`);
-            if (typeof val === 'string' && val.startsWith('data:image')) found[g.id] = val;
+            if (
+              typeof val === 'string' &&
+              (val.startsWith('data:image') || val.startsWith('https://') || val.startsWith('http://'))
+            ) {
+              found[g.id] = val;
+            }
           } catch (e) {}
         })
       );
@@ -267,6 +288,7 @@ export default function App() {
   const [cloudModalOpen, setCloudModalOpen] = useState(false);
   const [cloudStatus, setCloudStatus] = useState<CloudSyncStatus>('unlinked');
   const [missingRomData, setMissingRomData] = useState<{ game: Game; optionalStateData?: any } | null>(null);
+  const [cartridgeLoading, setCartridgeLoading] = useState<{ title?: string; mode: 'install' | 'insert' } | null>(null);
   const missingRomDataRef = useRef(missingRomData);
   useEffect(() => {
     missingRomDataRef.current = missingRomData;
@@ -320,33 +342,13 @@ export default function App() {
             return next;
           });
           // Re-bind any save states in IndexedDB (including alias IDs) to the updated game list
-          (async () => {
-            try {
-              const db = await idbOpen();
-              const tx = db.transaction('roms', 'readonly');
-              const store = tx.objectStore('roms');
-              const req = store.openCursor();
-              const pendingSlots: Array<{ gId: string; slotN: number; key: string; val: any }> = [];
-              req.onsuccess = (e) => {
-                const cursor = (e.target as IDBRequest).result;
-                if (cursor) {
-                  const key = String(cursor.key);
-                  if (key.startsWith('state:')) {
-                    const parts = key.split(':');
-                    const slotN = parseInt(parts[parts.length - 1], 10);
-                    const gId = parts.slice(1, parts.length - 1).join(':');
-                    const val = cursor.value;
-                    if (val && gId && slotN) {
-                      pendingSlots.push({ gId, slotN, key, val });
-                    }
-                  }
-                  cursor.continue();
-                } else if (pendingSlots.length > 0) {
-                  setSavesByGameId((prev) => applySlotUpdates(prev, pendingSlots));
-                }
-              };
-            } catch (err) {}
-          })();
+          readSavedSlotsFromIdb()
+            .then((pendingSlots) => {
+              if (pendingSlots.length > 0) {
+                setSavesByGameId((prev) => applySlotUpdates(prev, pendingSlots));
+              }
+            })
+            .catch(() => {});
         };
 
         let saved: any[] | null = null;
@@ -391,6 +393,29 @@ export default function App() {
             return prev;
           }
         });
+      }
+      const coverKeys = keys.filter((k) => k.startsWith('cover:'));
+      if (coverKeys.length > 0) {
+        (async () => {
+          const found: Record<string, string> = {};
+          for (const key of coverKeys) {
+            const gId = key.slice('cover:'.length);
+            const val = await idbGet(key).catch(() => null);
+            if (
+              gId &&
+              typeof val === 'string' &&
+              (val.startsWith('data:image') || val.startsWith('https://') || val.startsWith('http://'))
+            ) {
+              found[gId] = val;
+            }
+          }
+          if (Object.keys(found).length > 0) {
+            setGames((prev) =>
+              prev.map((g) => (found[g.id] ? { ...g, customCover: found[g.id] } : g))
+            );
+            setDetailGame((d) => (d && found[d.id] ? { ...d, customCover: found[d.id] } : d));
+          }
+        })();
       }
       const stateKeys = keys.filter((k) => k.startsWith('state:'));
       if (stateKeys.length > 0) {
@@ -450,8 +475,8 @@ export default function App() {
       gbGrid: false,
       amoled: false,
       edgeToEdge: false,
-      colorCorrection: true,
-      colorProfile: 'vivid',
+      colorCorrection: false,
+      colorProfile: 'off',
     };
     try {
       const saved = localStorage.getItem('retro_shaders');
@@ -473,36 +498,13 @@ export default function App() {
 
   // Restore saved slots from IndexedDB on startup
   useEffect(() => {
-    (async () => {
-      try {
-        const db = await idbOpen();
-        const tx = db.transaction('roms', 'readonly');
-        const store = tx.objectStore('roms');
-        const req = store.openCursor();
-        const pendingSlots: Array<{ gId: string; slotN: number; key: string; val: any }> = [];
-        req.onsuccess = (e) => {
-          const cursor = (e.target as IDBRequest).result;
-          if (cursor) {
-            const key = String(cursor.key);
-            if (key.startsWith('state:')) {
-              const parts = key.split(':');
-              const slotN = parseInt(parts[parts.length - 1], 10);
-              const gId = parts.slice(1, parts.length - 1).join(':');
-              const val = cursor.value;
-              if (val && gId && slotN) {
-                pendingSlots.push({ gId, slotN, key, val });
-              }
-            }
-            cursor.continue();
-          } else {
-            // Cursor complete: single batched state update
-            if (pendingSlots.length > 0) {
-              setSavesByGameId((prev) => applySlotUpdates(prev, pendingSlots));
-            }
-          }
-        };
-      } catch (err) {}
-    })();
+    readSavedSlotsFromIdb()
+      .then((pendingSlots) => {
+        if (pendingSlots.length > 0) {
+          setSavesByGameId((prev) => applySlotUpdates(prev, pendingSlots));
+        }
+      })
+      .catch(() => {});
   }, []);
 
   // In-Game Emulation Runtime State
@@ -529,6 +531,12 @@ export default function App() {
     }
   }, [isPaused, revealTopBar]);
 
+  useEffect(() => {
+    if (currentView === 'ingame') {
+      revealTopBar(2500);
+    }
+  }, [currentView, revealTopBar]);
+
   const [isRewinding, setIsRewinding] = useState(false);
   // 0 = off; 2 / 3 / 4 / 8 = fast-forward multiplier
   const [ffSpeed, setFfSpeed] = useState<number>(0);
@@ -546,59 +554,23 @@ export default function App() {
     };
   }, [currentView, isPaused]);
 
-  const [hidePad, setHidePad] = useState(() => {
-    try {
-      return localStorage.getItem('retro_hide_pad') === '1';
-    } catch {
-      return false;
-    }
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('retro_hide_pad', hidePad ? '1' : '0');
-    } catch {}
-  }, [hidePad]);
-  const [slotPortrait, setSlotPortrait] = useState<LayoutSlot>(() => getActiveSlot(false, currentSystemKey));
-  const [slotLandscape, setSlotLandscape] = useState<LayoutSlot>(() => getActiveSlot(true, currentSystemKey));
-  const [padLayoutPortrait, setPadLayoutPortrait] = useState<PadLayout>(() => loadPadLayout(false, getActiveSlot(false, currentSystemKey), currentSystemKey));
-  const [padLayoutLandscape, setPadLayoutLandscape] = useState<PadLayout>(() => loadPadLayout(true, getActiveSlot(true, currentSystemKey), currentSystemKey));
-  const [customizing, setCustomizing] = useState(false);
-  const [selectedPad, setSelectedPad] = useState<PadGroupId>('dpad');
+  const {
+    hidePad,
+    setHidePad,
+    slotPortrait,
+    switchSlotPortrait,
+    slotLandscape,
+    switchSlotLandscape,
+    padLayoutPortrait,
+    setPadLayoutPortrait,
+    padLayoutLandscape,
+    setPadLayoutLandscape,
+    customizing,
+    setCustomizing,
+    selectedPad,
+    setSelectedPad,
+  } = usePadLayoutState(currentSystemKey);
   const deckRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    savePadLayout(false, slotPortrait, padLayoutPortrait, currentSystemKey);
-  }, [slotPortrait, padLayoutPortrait, currentSystemKey]);
-
-  useEffect(() => {
-    savePadLayout(true, slotLandscape, padLayoutLandscape, currentSystemKey);
-  }, [slotLandscape, padLayoutLandscape, currentSystemKey]);
-
-  useEffect(() => {
-    const handleLayoutUpdate = () => {
-      const sp = getActiveSlot(false, currentSystemKey);
-      const sl = getActiveSlot(true, currentSystemKey);
-      setSlotPortrait(sp);
-      setSlotLandscape(sl);
-      setPadLayoutPortrait(loadPadLayout(false, sp, currentSystemKey));
-      setPadLayoutLandscape(loadPadLayout(true, sl, currentSystemKey));
-    };
-    window.addEventListener('retro_layout_updated', handleLayoutUpdate);
-    return () => window.removeEventListener('retro_layout_updated', handleLayoutUpdate);
-  }, [currentSystemKey]);
-
-  const switchSlotPortrait = useCallback((slot: LayoutSlot) => {
-    setSlotPortrait(slot);
-    setActiveSlot(false, slot, currentSystemKey);
-    setPadLayoutPortrait(loadPadLayout(false, slot, currentSystemKey));
-  }, [currentSystemKey]);
-
-  const switchSlotLandscape = useCallback((slot: LayoutSlot) => {
-    setSlotLandscape(slot);
-    setActiveSlot(true, slot, currentSystemKey);
-    setPadLayoutLandscape(loadPadLayout(true, slot, currentSystemKey));
-  }, [currentSystemKey]);
 
   const [recentGameIds, setRecentGameIds] = useState<string[]>(() => {
     try {
@@ -650,10 +622,6 @@ export default function App() {
   const sendKey = useCallback((name: string, down: boolean) => {
     if (down) {
       hasUserInteractedRef.current = true;
-      try {
-        const win = emuFrameRef.current?.contentWindow as any;
-        if (typeof win?.unlockAudio === 'function') win.unlockAudio();
-      } catch (e) {}
     }
     const win = emuFrameRef.current?.contentWindow as any;
     if (!win) return;
@@ -805,6 +773,7 @@ export default function App() {
   useEffect(() => {
     const root = document.documentElement;
     const isLight = !!theme.isLight;
+    root.dataset.theme = theme.id;
     if (isLight) {
       root.classList.remove('dark');
       root.classList.add('light');
@@ -815,6 +784,13 @@ export default function App() {
       root.style.colorScheme = 'dark';
     }
 
+    // Keep CSS accent tokens synced with the active console edition theme
+    root.style.setProperty('--accent', theme.hex);
+    root.style.setProperty('--accent-soft-bg', `color-mix(in srgb, ${theme.hex} 14%, transparent)`);
+    root.style.setProperty('--accent-soft-border', `color-mix(in srgb, ${theme.hex} 42%, transparent)`);
+    root.style.setProperty('--accent-focus', `color-mix(in srgb, ${theme.hex} 85%, transparent)`);
+    root.style.setProperty('--accent-selection', `color-mix(in srgb, ${theme.hex} 32%, transparent)`);
+
     const themeColor = isLight ? '#eae6dd' : (shaders.amoled ? '#000000' : '#0a0a0c');
     document.body.style.backgroundColor = themeColor;
 
@@ -822,7 +798,7 @@ export default function App() {
     if (metaThemeColor) {
       metaThemeColor.setAttribute('content', themeColor);
     }
-  }, [theme.isLight, shaders.amoled]);
+  }, [theme.id, theme.hex, theme.isLight, shaders.amoled]);
 
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
@@ -895,7 +871,7 @@ export default function App() {
       }
 
       if (isZip) {
-        showToast('Extracting ROM from zip...');
+        setCartridgeLoading({ title: game.title, mode: 'install' });
         const extracted = await extractRomsFromZip(file);
         if (!extracted.length) {
           showToast('No supported ROM found in zip file');
@@ -916,6 +892,8 @@ export default function App() {
       launchGame(game, optionalStateData);
     } catch (e) {
       showToast('Could not store ROM file on this device');
+    } finally {
+      setCartridgeLoading(null);
     }
   };
 
@@ -965,11 +943,15 @@ export default function App() {
       const updated = prev.map((g) =>
         g.id === gameId ? { ...g, customTitle: trimmed } : g
       );
-      localStorage.setItem('retro_games', JSON.stringify(updated));
+      try {
+        localStorage.setItem('retro_games', JSON.stringify(updated));
+      } catch (e) {}
       const userImportedOnly = updated.filter((g) => g.real && g.id !== 'pokemon_gold');
       idbPut('library_games', userImportedOnly).catch(() => {});
       return updated;
     });
+    setDetailGame((d) => (d?.id === gameId ? { ...d, customTitle: trimmed } : d));
+    setActiveGame((a) => (a.id === gameId ? { ...a, customTitle: trimmed } : a));
     markLocalSaveModified('retro_games');
     markLocalSaveModified('library_games');
     showToast('Game renamed');
@@ -1006,28 +988,24 @@ export default function App() {
         badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
       };
 
-      const buffer = await file.slice(0, 4096).arrayBuffer();
-      const bytes = new Uint8Array(buffer);
-      let hash = 0x811c9dc5;
-      for (let i = 0; i < bytes.length; i++) {
-        hash ^= bytes[i];
-        hash = Math.imul(hash, 0x01000193) >>> 0;
-      }
-      const crcHex = '0x' + hash.toString(16).toUpperCase().padStart(8, '0');
+      const fullBytes = new Uint8Array(await file.arrayBuffer());
+      const crcHex = formatCrc32Hex(computeCrc32(fullBytes));
       const engineType = coreToEngine[detected.core] || 'pokegold';
       const coverGradient = cartridgeTones[(games.length + index) % cartridgeTones.length];
       const cleanTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ');
 
+      // Only match an existing game if the full-file CRC-32 matches (exact same ROM binary),
+      // or if the existing entry had no CRC-32 recorded and shares the exact filename.
+      // This guarantees patched ROMs never overwrite the original ROM.
       const existingGame = games.find(
         (g: any) =>
           (g.crc32 && String(g.crc32).toLowerCase() === String(crcHex).toLowerCase()) ||
-          (g.fileName && g.fileName.toLowerCase() === file.name.toLowerCase()) ||
-          (g.title && g.title.toLowerCase() === cleanTitle.toLowerCase() && g.core === detected.core)
+          (!g.crc32 && g.fileName && g.fileName.toLowerCase() === file.name.toLowerCase())
       );
 
       const deterministicId =
         existingGame?.id ||
-        (crcHex && crcHex !== '00000000' ? `rom_${String(crcHex).toLowerCase()}` : `rom_${Date.now()}_${index}`);
+        (crcHex && crcHex !== '0x00000000' ? `rom_${String(crcHex).toLowerCase()}` : `rom_${Date.now()}_${index}`);
 
       const newGame: Game = {
         id: deterministicId,
@@ -1038,6 +1016,8 @@ export default function App() {
         shortSystem: detected.shortSystem,
         engineType,
         coverGradient: existingGame?.coverGradient || coverGradient,
+        customCover: existingGame?.customCover,
+        customTitle: existingGame?.customTitle,
         real: true,
         fileSize: file.size,
         crc32: crcHex,
@@ -1062,19 +1042,9 @@ export default function App() {
     markLocalSaveModified('retro_games');
 
     const addedIds = new Set(newGamesToAdd.map((n) => n.game.id));
-    const addedFileNames = new Set(newGamesToAdd.map((n) => n.game.fileName.toLowerCase()));
 
     setGames((prev) => {
-      const remaining = prev.filter(
-        (g) =>
-          !addedIds.has(g.id) &&
-          !addedFileNames.has(String(g.fileName || '').toLowerCase()) &&
-          !newGamesToAdd.some(
-            (n) =>
-              n.game.title.toLowerCase() === String(g.title || '').toLowerCase() &&
-              n.game.core === g.core
-          )
-      );
+      const remaining = prev.filter((g) => !addedIds.has(g.id));
       const nextGames = [...newGamesToAdd.map((n) => n.game), ...remaining];
       const userImportedOnly = nextGames.filter((g) => g.real && g.id !== 'pokemon_gold');
       localStorage.setItem('retro_games', JSON.stringify(nextGames));
@@ -1096,12 +1066,47 @@ export default function App() {
     setDetailGame(firstItem.game);
     soundFX.save();
 
+    // Pre-fetch Libretro box art in the background on import
+    for (const item of newGamesToAdd) {
+      autoFetchAndCacheBoxart(item.game).catch(() => {});
+    }
+
     if (newGamesToAdd.length === 1) {
       showToast(`Auto-Detected ${firstItem.detected.shortSystem} ROM (${firstItem.detected.core}): ${firstItem.game.title}`);
     } else {
       showToast(`Imported ${newGamesToAdd.length} ROMs into library`);
     }
   };
+
+  const updateExistingGameRom = useCallback(async (gameId: string, file: File) => {
+    const fullBytes = new Uint8Array(await file.arrayBuffer());
+    const crcHex = formatCrc32Hex(computeCrc32(fullBytes));
+
+    await idbPut(gameId, file);
+    markLocalSaveModified(`rom:${gameId}`).catch(() => {});
+
+    setGames((prev) => {
+      const nextGames = prev.map((g) =>
+        g.id === gameId
+          ? {
+              ...g,
+              fileName: file.name,
+              fileSize: file.size,
+              crc32: crcHex,
+            }
+          : g
+      );
+      const userImportedOnly = nextGames.filter((g) => g.real && g.id !== 'pokemon_gold');
+      localStorage.setItem('retro_games', JSON.stringify(nextGames));
+      idbPut('library_games', userImportedOnly).catch(() => {});
+      return nextGames;
+    });
+
+    markLocalSaveModified('library_games');
+    markLocalSaveModified('retro_games');
+    soundFX.save();
+    showToast('ROM updated — saves & artwork preserved');
+  }, [showToast]);
 
   const handleRomUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(e.target.files || []);
@@ -1110,31 +1115,54 @@ export default function App() {
 
     const romsToImport: File[] = [];
 
-    for (const file of selectedFiles) {
-      let isZip = isZipFile(file);
-      if (!isZip) {
-        const header = new Uint8Array(await file.slice(0, 4).arrayBuffer());
-        if (isZipBuffer(header)) isZip = true;
-      }
-
-      if (isZip) {
-        try {
-          const extracted = await extractRomsFromZip(file);
-          if (extracted.length === 0) {
-            showToast(`No supported ROM found in ${file.name}`);
-          } else {
-            romsToImport.push(...extracted);
-          }
-        } catch (err) {
-          showToast(`Failed to unzip ${file.name}: invalid or corrupt archive`);
+    try {
+      for (const file of selectedFiles) {
+        let isZip = isZipFile(file);
+        let isRar = isRarFile(file);
+        if (!isZip && !isRar) {
+          const header = new Uint8Array(await file.slice(0, 7).arrayBuffer());
+          if (isZipBuffer(header)) isZip = true;
+          else if (isRarBuffer(header)) isRar = true;
         }
-      } else {
-        romsToImport.push(file);
-      }
-    }
 
-    if (romsToImport.length > 0) {
-      await importRomFiles(romsToImport);
+        if (isZip) {
+          setCartridgeLoading({ title: file.name, mode: 'install' });
+          try {
+            const extracted = await extractRomsFromZip(file);
+            if (extracted.length === 0) {
+              showToast(`No supported ROM found in ${file.name}`);
+            } else {
+              romsToImport.push(...extracted);
+            }
+          } catch (err) {
+            showToast(`Failed to unzip ${file.name}: invalid or corrupt archive`);
+          }
+        } else if (isRar) {
+          setCartridgeLoading({ title: file.name, mode: 'install' });
+          try {
+            const extracted = await extractRomsFromRar(file);
+            if (extracted.length === 0) {
+              showToast(`No supported ROM found in ${file.name}`);
+            } else {
+              romsToImport.push(...extracted);
+            }
+          } catch (err) {
+            showToast(`Failed to extract ${file.name}: invalid or unsupported RAR archive`);
+          }
+        } else {
+          romsToImport.push(file);
+        }
+      }
+
+      if (romsToImport.length > 0) {
+        setCartridgeLoading({
+          title: romsToImport.length === 1 ? romsToImport[0].name : `${romsToImport.length} cartridges`,
+          mode: 'install',
+        });
+        await importRomFiles(romsToImport);
+      }
+    } finally {
+      setCartridgeLoading(null);
     }
   };
 
@@ -1156,17 +1184,18 @@ export default function App() {
           // If Google Drive is linked, attempt seamless on-demand download from Cloud Vault
           const user = getCachedUserProfile();
           if (user && hasValidToken()) {
-            showToast(`Downloading ${game.title} from Cloud Vault...`);
+            setCartridgeLoading({ title: game.title, mode: 'insert' });
             try {
               const res = await fetchRomFromCloud(game.id, game.fileName, false);
               if (res.file) {
                 blob = res.file;
-                showToast(`Downloaded ${game.title}! Launching...`);
               } else if (res.error) {
                 showToast(res.error);
               }
             } catch (err) {
               console.warn('[App] Automatic cloud ROM fetch error:', err);
+            } finally {
+              setCartridgeLoading(null);
             }
           }
         }
@@ -1634,9 +1663,10 @@ export default function App() {
       try {
         const win = emuFrameRef.current?.contentWindow as any;
         const measured = typeof win?.getMeasuredFps === 'function' ? win.getMeasuredFps() : 60;
-        setFps(Number.isFinite(measured) && measured > 0 ? measured : 60);
+        const clamped = Number.isFinite(measured) && measured > 0 ? Math.min(60, Math.round(measured)) : 60;
+        setFps((prev) => (prev === clamped ? prev : clamped));
       } catch {
-        setFps(60);
+        setFps((prev) => (prev === 60 ? prev : 60));
       }
     };
     syncMeasuredFps();
@@ -1745,10 +1775,82 @@ export default function App() {
     });
   }, [games, systemFilter, searchQuery]);
 
+  const activePadPointersRef = useRef<Record<string, number | null>>({});
+  const activePadTouchesRef = useRef<Record<string, number | null>>({});
+  const padRefCallbacksRef = useRef<Record<string, (el: HTMLElement | null) => void>>({});
+  const padElMapRef = useRef<Record<string, HTMLElement | null>>({});
+  const padCleanupMapRef = useRef<Record<string, (() => void) | null>>({});
+  const setButtonDownRef = useRef(setButtonDown);
+  const setButtonUpRef = useRef(setButtonUp);
+  setButtonDownRef.current = setButtonDown;
+  setButtonUpRef.current = setButtonUp;
+
+  const getPadButtonRef = useCallback((keyName: string) => {
+    if (!padRefCallbacksRef.current[keyName]) {
+      padRefCallbacksRef.current[keyName] = (el: HTMLElement | null) => {
+        const prevEl = padElMapRef.current[keyName];
+        if (prevEl === el) return;
+
+        if (padCleanupMapRef.current[keyName]) {
+          padCleanupMapRef.current[keyName]!();
+          padCleanupMapRef.current[keyName] = null;
+        }
+
+        padElMapRef.current[keyName] = el;
+        if (!el) return;
+
+        const onTouchStart = (e: TouchEvent) => {
+          if (e.cancelable) e.preventDefault();
+          e.stopPropagation();
+          const t = e.changedTouches[0];
+          if (t) activePadTouchesRef.current[keyName] = t.identifier;
+          el.dataset.pressed = 'true';
+          setButtonDownRef.current(keyName);
+        };
+
+        const onTouchEnd = (e: TouchEvent) => {
+          const activeId = activePadTouchesRef.current[keyName];
+          if (activeId == null) return;
+          let matched = false;
+          for (let i = 0; i < e.changedTouches.length; i++) {
+            if (e.changedTouches[i].identifier === activeId) {
+              matched = true;
+              break;
+            }
+          }
+          if (!matched) return;
+          if (e.cancelable) e.preventDefault();
+          e.stopPropagation();
+          activePadTouchesRef.current[keyName] = null;
+          el.dataset.pressed = 'false';
+          setButtonUpRef.current(keyName);
+        };
+
+        el.addEventListener('touchstart', onTouchStart, { passive: false });
+        el.addEventListener('touchend', onTouchEnd, { passive: false });
+        el.addEventListener('touchcancel', onTouchEnd, { passive: false });
+
+        padCleanupMapRef.current[keyName] = () => {
+          el.removeEventListener('touchstart', onTouchStart);
+          el.removeEventListener('touchend', onTouchEnd);
+          el.removeEventListener('touchcancel', onTouchEnd);
+          if (activePadTouchesRef.current[keyName] != null) {
+            activePadTouchesRef.current[keyName] = null;
+            el.dataset.pressed = 'false';
+            setButtonUpRef.current(keyName);
+          }
+        };
+      };
+    }
+    return padRefCallbacksRef.current[keyName];
+  }, []);
+
   const bindPadButton = useCallback((keyName: string) => {
     const handleDown = (e: React.PointerEvent) => {
+      if (e.pointerType === 'touch') return;
       if (e.cancelable) e.preventDefault();
       e.stopPropagation();
+      activePadPointersRef.current[keyName] = e.pointerId;
       const el = e.currentTarget as HTMLElement | null;
       if (el) {
         el.dataset.pressed = 'true';
@@ -1758,8 +1860,12 @@ export default function App() {
     };
 
     const handleUp = (e: React.PointerEvent) => {
+      if (e.pointerType === 'touch') return;
+      const activeId = activePadPointersRef.current[keyName];
+      if (activeId != null && e.pointerId !== activeId) return;
       if (e.cancelable) e.preventDefault();
       e.stopPropagation();
+      activePadPointersRef.current[keyName] = null;
       const el = e.currentTarget as HTMLElement | null;
       if (el) {
         el.dataset.pressed = 'false';
@@ -1773,22 +1879,27 @@ export default function App() {
     };
 
     const handleLeave = (e: React.PointerEvent) => {
+      if (e.pointerType === 'touch') return;
+      const activeId = activePadPointersRef.current[keyName];
+      if (activeId == null || e.pointerId !== activeId) return;
       const el = e.currentTarget as HTMLElement | null;
       try {
         if (el?.hasPointerCapture?.(e.pointerId)) return;
       } catch {}
+      activePadPointersRef.current[keyName] = null;
       if (el) el.dataset.pressed = 'false';
       setButtonUp(keyName);
     };
 
     return {
+      ref: getPadButtonRef(keyName),
       onPointerDown: handleDown,
       onPointerUp: handleUp,
       onPointerCancel: handleUp,
       onPointerLeave: handleLeave,
       onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
     };
-  }, [setButtonDown, setButtonUp]);
+  }, [getPadButtonRef, setButtonDown, setButtonUp]);
 
   return (
     <div className={`min-h-[100vh] min-h-[100lvh] w-full ${shaders.amoled ? 'bg-black text-zinc-100' : theme.appBg} font-sans select-none overflow-x-hidden`}>
@@ -1796,7 +1907,7 @@ export default function App() {
       <input
         ref={romInputRef}
         type="file"
-        accept=".gb,.gbc,.gba,.zip,application/zip"
+        accept="*/*"
         onChange={handleRomUpload}
         className="hidden"
         multiple
@@ -1813,7 +1924,10 @@ export default function App() {
               : 'bg-[#131316] border-[#222227] text-[#f4f4f6]'
           }`}
         >
-          <span className="w-2 h-2 rounded-full bg-emerald-400 hardware-led shrink-0" />
+          <span
+            className="w-2 h-2 rounded-full hardware-led shrink-0"
+            style={{ backgroundColor: theme.hex, color: theme.hex }}
+          />
           <span>{toastMessage}</span>
         </div>
       )}
@@ -1833,6 +1947,10 @@ export default function App() {
           onLaunchGame={(g) => launchGame(g)}
           onOpenSettings={() => setGlobalSettingsOpen(true)}
           onTriggerAddRom={() => romInputRef.current?.click()}
+          onOpenPatcher={() => {
+            setPatchTargetGameId(null);
+            setPatchManagerOpen(true);
+          }}
           onOpenCloudSync={() => setCloudModalOpen(true)}
           cloudStatus={cloudStatus}
           recentGameIds={recentGameIds}
@@ -1917,6 +2035,11 @@ export default function App() {
         }}
         onRenameGame={renameGame}
         onChangeArtwork={setGameCustomCover}
+        onOpenPatcher={(g) => {
+          setDetailGame(null);
+          setPatchTargetGameId(g.id);
+          setPatchManagerOpen(true);
+        }}
         onClose={() => {
           setDetailGame(null);
           setInGameSaveModalMode(null);
@@ -1965,6 +2088,23 @@ export default function App() {
         theme={theme}
       />
 
+      {/* MODAL 5: BUILT-IN BPS ROM PATCHER */}
+      <PatchManagerModal
+        isOpen={patchManagerOpen}
+        onClose={() => {
+          setPatchManagerOpen(false);
+          setPatchTargetGameId(null);
+        }}
+        games={games}
+        initialGameId={patchTargetGameId}
+        theme={theme}
+        onImportPatchedRom={async (patchedFile) => {
+          await importRomFiles([patchedFile]);
+        }}
+        onUpdateExistingGameRom={updateExistingGameRom}
+        showToast={showToast}
+      />
+
       {/* MODAL 5: LOCATE MISSING ROM FOR SYNCED GAME */}
       <MissingRomModal
         isOpen={Boolean(missingRomData)}
@@ -1974,6 +2114,13 @@ export default function App() {
         onRomSelected={handleRomSelectedForMissingGame}
         showToast={showToast}
       />
+
+      {cartridgeLoading && (
+        <CartridgeInstallOverlay
+          title={cartridgeLoading.title}
+          mode={cartridgeLoading.mode}
+        />
+      )}
     </div>
   );
 }

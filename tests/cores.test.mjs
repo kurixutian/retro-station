@@ -40,3 +40,11 @@ test('input polling is configured for late reads during fast-forward', async () 
   assert.ok(!/input_poll_type_behavior",default:1/.test(html));
   assert.ok(!/input_poll_type_behavior = 1/.test(html));
 });
+
+test('emulator player avoids per-frame rewind serialization overhead and exposes FPS probe', async () => {
+  const { buildPlayerHtml } = await import('../src/services/emulator/playerBridge.ts');
+  const html = buildPlayerHtml('gba', 'rom.gba');
+  assert.ok(!/"rewind_granularity",default:1\b/.test(html));
+  assert.ok(!/rewind_granularity = \\"1\\"/.test(html));
+  assert.match(html, /window\.getMeasuredFps=function/);
+});

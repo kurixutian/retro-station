@@ -42,9 +42,11 @@ class HapticsService {
     if (!this.enabled) return;
     if (typeof window === 'undefined' || typeof navigator === 'undefined') return;
     if (!('vibrate' in navigator)) return;
-    try {
-      navigator.vibrate(pattern);
-    } catch {}
+    queueMicrotask(() => {
+      try {
+        navigator.vibrate(pattern);
+      } catch {}
+    });
   }
 
   /** Quick, crisp tactile click for action buttons (A, B, X, Y, Select, Start) */

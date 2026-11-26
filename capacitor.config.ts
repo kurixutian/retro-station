@@ -24,8 +24,6 @@ const config: CapacitorConfig = {
   plugins: {
     Browser: { presentationStyle: 'fullscreen' },
     Filesystem: { enabled: true },
-    Preferences: { enabled: true },
-    Haptics: { enabled: true },
     // Disabled: CapacitorHttp patches fetch() and fails to serialize Blob bodies for Drive uploads
     CapacitorHttp: { enabled: false },
   },

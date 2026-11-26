@@ -6,11 +6,13 @@
 // Named_Boxarts folder from the libretro-thumbnails GitHub repo, caches it in
 // IndexedDB, and fuzzy-matches a ROM name against the actual titles.
 
+import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { getLibretroSystem } from '../constants/cores';
 import { idbGet, idbPut } from './storage/idb';
+import { markLocalSaveModified } from '../cloudSync';
 
 const GH_API = 'https://api.github.com/repos/libretro-thumbnails';
-const THUMB_HOST = 'https://thumbnails.libretro.com';
+const RAW_HOST = 'https://raw.githubusercontent.com/libretro-thumbnails';
 const INDEX_TTL = 14 * 24 * 60 * 60 * 1000; // 14 days
 const FETCH_COOLDOWN = 60 * 1000; // wait before re-asking GitHub after a failure
 
@@ -85,6 +87,9 @@ function getRegionScore(fullKey: string): number {
 
 const SPECIAL_TOKENS =
   / (sample|beta|proto|debug|kiosk|promo|unl|bios|aftermarket|homebrew|hack|redux|romhack|fan|reborn|rebalanced) /;
+
+const PATCH_MOD_TOKENS =
+  /^(patched|patch|mod|modded|hack|romhack|redux|kaizo|randomizer|randomized|rando|nuzlocke|translated|translation|english|eng|uncensored|restored|rebalanced|reborn|remix|beta|alpha|proto|demo|ips|bps|ups|v\d+|\d+)$/;
 
 interface Candidate {
   title: string;
@@ -164,6 +169,28 @@ export function matchBoxartTitle(romName: string, titles: string[]): MatchResult
   if (bestAll) return { title: bestAll.title, level: 0 };
   if (bestCore) return { title: bestCore.title, level: 1 };
   if (bestFuzzy) return { title: bestFuzzy.title, level: 2 };
+
+  // Fallback for patched/modded ROM filenames (e.g. "Pokemon Emerald Kaizo v1.2.gba"):
+  // strip common patch/mod/version tokens and retry exact/fuzzy matching against base titles.
+  const baseTokens = romTokens.filter((t) => !PATCH_MOD_TOKENS.test(t));
+  if (baseTokens.length >= 2 && baseTokens.length < romTokens.length) {
+    const baseCore = baseTokens.join(' ');
+    let bestBaseCore: Candidate | null = null;
+    let bestBaseFuzzy: Candidate | null = null;
+    for (const c of candidates) {
+      if (c.coreKey === baseCore) {
+        bestBaseCore = bestBaseCore ? betterCandidate(c, bestBaseCore) : c;
+        continue;
+      }
+      if (baseTokens.every((t) => c.coreTokens.has(t))) {
+        const withExtra = { ...c, extra: c.coreTokens.size - baseTokens.length };
+        bestBaseFuzzy = bestBaseFuzzy ? betterCandidate(withExtra, bestBaseFuzzy, true) : withExtra;
+      }
+    }
+    if (bestBaseCore) return { title: bestBaseCore.title, level: 1 };
+    if (bestBaseFuzzy) return { title: bestBaseFuzzy.title, level: 2 };
+  }
+
   return null;
 }
 
@@ -258,22 +285,30 @@ export async function fetchBoxartIndex(repo: string): Promise<BoxartIndex | null
  * cannot be matched (verified miss is memoized for the session) or when the
  * listing cannot be fetched.
  */
-export async function resolveBoxartUrl(game: any): Promise<string | null> {
+export async function resolveBoxartUrl(game: any, force = false): Promise<string | null> {
   const gid = game?.id;
   if (!gid) return null;
-  if (verifiedMisses.has(gid)) return null;
-  const inflight = resolveInFlight.get(gid);
+  const missKey = `${gid}:${game?.customTitle?.trim() || ''}`;
+  if (force) verifiedMisses.delete(missKey);
+  if (verifiedMisses.has(missKey)) return null;
+  const inflight = resolveInFlight.get(missKey);
   if (inflight) return inflight;
 
   const p = (async () => {
     try {
       const libSystem = getLibretroSystem(game);
       if (!libSystem) {
-        verifiedMisses.add(gid);
+        verifiedMisses.add(missKey);
         return null;
       }
       const index = await fetchBoxartIndex(libSystem.replace(/ /g, '_'));
       if (!index) return null; // fetch failed, do not memo — may retry later
+
+      const customName = game.customTitle?.trim() || '';
+      const fromCustom = customName ? matchBoxartTitle(customName, index.titles) : null;
+      if (fromCustom && fromCustom.level <= 1) {
+        return buildUrl(libSystem, fromCustom.title);
+      }
 
       const romName = (game.fileName || game.title || '').trim();
       const fromFile = romName ? matchBoxartTitle(romName, index.titles) : null;
@@ -282,31 +317,320 @@ export async function resolveBoxartUrl(game: any): Promise<string | null> {
       }
       // The clean title can match exactly where the raw filename can't
       const fromTitle = game.title?.trim() ? matchBoxartTitle(game.title.trim(), index.titles) : null;
-      const best =
-        fromFile && fromTitle
-          ? fromFile.level <= fromTitle.level
-            ? fromFile
-            : fromTitle
-          : fromFile || fromTitle;
-      if (!best) {
-        verifiedMisses.add(gid);
-        return null;
+      const candidates = [fromCustom, fromFile, fromTitle].filter(Boolean) as MatchResult[];
+      const best = candidates.sort((a, b) => a.level - b.level)[0] || null;
+      if (best) {
+        return buildUrl(libSystem, best.title);
       }
-      return buildUrl(libSystem, best.title);
+
+      verifiedMisses.add(missKey);
+      return null;
     } catch {
       return null;
     } finally {
-      resolveInFlight.delete(game.id);
+      resolveInFlight.delete(missKey);
     }
   })();
-  resolveInFlight.set(gid, p);
+  resolveInFlight.set(missKey, p);
   return p;
 }
 
 function buildUrl(libSystem: string, title: string): string {
-  // Listing titles are already in Libretro's on-disk form (their own sanitizer
-  // turned `&` -> `_`, dropped illegal chars, ...) — use them verbatim.
-  return `${THUMB_HOST}/${encodeURIComponent(libSystem)}/Named_Boxarts/${encodeURIComponent(title)}.png`;
+  // Listing titles come directly from the GitHub repo tree, so serve from
+  // raw.githubusercontent.com (thumbnails.libretro.com can be out of sync/404).
+  const repo = libSystem.replace(/ /g, '_');
+  return `${RAW_HOST}/${repo}/master/Named_Boxarts/${encodeURIComponent(title)}.png`;
+}
+
+function tokenMatchesWithTypo(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (a.length < 5 || Math.abs(a.length - b.length) > 1) return false;
+  // Allow 1-character substitution, transposition, insertion, or deletion
+  let i = 0;
+  let j = 0;
+  let diffs = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) {
+      i++;
+      j++;
+      continue;
+    }
+    diffs++;
+    if (diffs > 1) return false;
+    if (a[i + 1] === b[j] && a[i] === b[j + 1]) {
+      i += 2;
+      j += 2;
+    } else if (a.length > b.length) {
+      i++;
+    } else if (b.length > a.length) {
+      j++;
+    } else {
+      i++;
+      j++;
+    }
+  }
+  if (i < a.length || j < b.length) diffs++;
+  return diffs <= 1;
+}
+
+export interface BoxartSearchCandidate {
+  url: string;
+  label: string;
+  source: 'LaunchBox' | 'Libretro' | 'Wikimedia' | 'Wikipedia' | 'Archive.org';
+}
+
+async function fetchLaunchBoxHtml(titleQuery: string): Promise<string | null> {
+  const path = `/games/results?title=${encodeURIComponent(titleQuery)}`;
+  if (Capacitor.isNativePlatform()) {
+    const res = await CapacitorHttp.get({
+      url: `https://gamesdb.launchbox-app.com${path}`,
+      headers: { Accept: 'text/html' },
+    });
+    return typeof res.data === 'string' ? res.data : null;
+  }
+  // In Vite dev, /api/launchbox is proxied to https://gamesdb.launchbox-app.com
+  const res = await fetch(`/api/launchbox${path}`);
+  if (!res.ok) return null;
+  const text = await res.text();
+  // Guard against SPA index.html fallback when running outside Vite dev proxy
+  if (!text.includes('images.launchbox-app.com') && text.includes('<!doctype html>')) {
+    return null;
+  }
+  return text;
+}
+
+function parseLaunchBoxCandidates(html: string): BoxartSearchCandidate[] {
+  const out: BoxartSearchCandidate[] = [];
+  const seen = new Set<string>();
+  // Match <img ... src="https://images.launchbox-app.com/..." alt="..." />
+  const imgRe = /<img[^>]+src="(https:\/\/images\.launchbox-app\.com\/[^"]+)"[^>]*alt="([^"]*)"/gi;
+  let m: RegExpExecArray | null;
+  while ((m = imgRe.exec(html)) !== null) {
+    const url = m[1];
+    const alt = m[2]
+      .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
+      .replace(/&amp;/g, '&')
+      .replace(/&quot;/g, '"')
+      .trim();
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    out.push({
+      url,
+      label: alt || 'LaunchBox Box Art',
+      source: 'LaunchBox',
+    });
+  }
+  // Prefer .jpg box art over .png clear logos
+  return out.sort((a, b) => {
+    const aJpg = /\.jpe?g$/i.test(a.url) ? 0 : 1;
+    const bJpg = /\.jpe?g$/i.test(b.url) ? 0 : 1;
+    return aJpg - bJpg;
+  });
+}
+
+/**
+ * Search multiple CORS-friendly online sources (Libretro partial match,
+ * Wikimedia Commons, Wikipedia, and Internet Archive) and return candidate
+ * box art thumbnails for the user to choose from.
+ */
+export async function searchOnlineBoxartCandidates(
+  rawQuery: string,
+  game?: any
+): Promise<BoxartSearchCandidate[]> {
+  const cleanQuery = rawQuery.trim();
+  if (!cleanQuery) return [];
+
+  const coreQuery = getCoreKey(cleanQuery);
+  const queryTokens = coreQuery
+    .split(' ')
+    .filter(
+      (t) =>
+        t.length >= 2 &&
+        ![
+          'cartridge', 'box', 'art', 'boxart', 'cover', 'game', 'rom',
+          'full', 'release', 'rip', 'edition', 'version', 'patched', 'hack',
+          'gbc', 'gba', 'gb', 'nes', 'snes', 'sfc', 'gen',
+        ].includes(t)
+    );
+  const titleQuery = queryTokens.join(' ') || coreQuery || cleanQuery;
+
+  const results: BoxartSearchCandidate[] = [];
+  const seenUrls = new Set<string>();
+  const pushResult = (item: BoxartSearchCandidate) => {
+    if (!item.url || seenUrls.has(item.url)) return;
+    seenUrls.add(item.url);
+    results.push(item);
+  };
+
+  // 0. LaunchBox GamesDB (via CapacitorHttp on Android or /api/launchbox proxy in Vite dev)
+  const launchBoxPromise = (async () => {
+    try {
+      const queries: string[] = [titleQuery];
+      const words = titleQuery.split(' ').filter(Boolean);
+      if (words.length > 1) {
+        queries.push(words.slice(0, -1).join(' '));
+        if (words[0].length >= 4 && !queries.includes(words[0])) {
+          queries.push(words[0]);
+        }
+      } else if (titleQuery.length >= 6) {
+        // Handle 1-char trailing typo or stem (e.g. "dragonhymn" -> "dragonhym", "dragon")
+        queries.push(titleQuery.slice(0, -1));
+        if (titleQuery.length >= 7) {
+          queries.push(titleQuery.slice(0, 6));
+        }
+      }
+      for (const q of queries) {
+        const html = await fetchLaunchBoxHtml(q);
+        if (!html) continue;
+        const parsed = parseLaunchBoxCandidates(html);
+        if (parsed.length > 0) {
+          for (const item of parsed.slice(0, 10)) {
+            pushResult(item);
+          }
+          break;
+        }
+      }
+    } catch {
+      /* non-fatal */
+    }
+  })();
+
+  // 1. Libretro partial / token matches for the game's system
+  const libPromise = (async () => {
+    try {
+      const libSystem = getLibretroSystem(game);
+      if (!libSystem || !queryTokens.length) return;
+      const index = await fetchBoxartIndex(libSystem.replace(/ /g, '_'));
+      if (!index?.titles?.length) return;
+      const scored = index.titles
+        .map((title) => {
+          const titleTokens = getCoreKey(title).split(' ').filter(Boolean);
+          const hits = queryTokens.filter((qt) =>
+            titleTokens.some((tt) => tokenMatchesWithTypo(qt, tt))
+          ).length;
+          return { title, hits };
+        })
+        .filter((x) => x.hits > 0)
+        .sort((a, b) => b.hits - a.hits || a.title.length - b.title.length)
+        .slice(0, 6);
+      for (const s of scored) {
+        pushResult({
+          url: buildUrl(libSystem, s.title),
+          label: s.title,
+          source: 'Libretro',
+        });
+      }
+    } catch {
+      /* non-fatal */
+    }
+  })();
+
+  // 2. Wikimedia Commons image search (CORS-enabled)
+  const commonsPromise = (async () => {
+    try {
+      const q = encodeURIComponent(cleanQuery);
+      const res = await fetch(
+        `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${q}&gsrnamespace=6&gsrlimit=6&prop=imageinfo&iiprop=url|mime&iiurlwidth=400&format=json&origin=*`
+      );
+      if (!res.ok) return;
+      const json = await res.json();
+      const pages = Object.values(json?.query?.pages || {}) as Array<{
+        title?: string;
+        imageinfo?: Array<{ thumburl?: string; url?: string; mime?: string }>;
+      }>;
+      for (const p of pages) {
+        const info = p.imageinfo?.[0];
+        if (!info || (info.mime && !info.mime.startsWith('image/'))) continue;
+        const url = info.thumburl || info.url;
+        if (url) {
+          pushResult({
+            url,
+            label: (p.title || 'Wikimedia image').replace(/^File:/i, '').replace(/\.[^.]+$/, ''),
+            source: 'Wikimedia',
+          });
+        }
+      }
+    } catch {
+      /* non-fatal */
+    }
+  })();
+
+  // 3. Wikipedia PageImages (CORS-enabled)
+  const wikiPromise = (async () => {
+    try {
+      const q = encodeURIComponent(cleanQuery);
+      const res = await fetch(
+        `https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${q}&gsrlimit=5&prop=pageimages&pithumbsize=400&format=json&origin=*`
+      );
+      if (!res.ok) return;
+      const json = await res.json();
+      const pages = Object.values(json?.query?.pages || {}) as Array<{
+        title?: string;
+        thumbnail?: { source?: string };
+      }>;
+      for (const p of pages) {
+        if (!p.thumbnail?.source || !p.title) continue;
+        pushResult({
+          url: p.thumbnail.source,
+          label: p.title,
+          source: 'Wikipedia',
+        });
+      }
+    } catch {
+      /* non-fatal */
+    }
+  })();
+
+  // 4. Internet Archive (CORS-enabled)
+  const archivePromise = (async () => {
+    try {
+      const q = encodeURIComponent(titleQuery);
+      const res = await fetch(
+        `https://archive.org/advancedsearch.php?q=${q}&fl[]=identifier,title,mediatype&rows=6&output=json`
+      );
+      if (!res.ok) return;
+      const json = await res.json();
+      const docs: Array<{ identifier?: string; title?: string }> = json?.response?.docs || [];
+      for (const d of docs) {
+        if (!d.identifier) continue;
+        pushResult({
+          url: `https://archive.org/services/img/${encodeURIComponent(d.identifier)}`,
+          label: d.title || d.identifier,
+          source: 'Archive.org',
+        });
+      }
+    } catch {
+      /* non-fatal */
+    }
+  })();
+
+  await Promise.all([launchBoxPromise, libPromise, commonsPromise, wikiPromise, archivePromise]);
+  return results;
+}
+
+/**
+ * Resolve box art for a game and persist the verified URL in IndexedDB so
+ * GameCoverImage can render it immediately without waiting for URL guesses.
+ */
+export async function autoFetchAndCacheBoxart(game: any, force = false): Promise<string | null> {
+  let url = await resolveBoxartUrl(game, force);
+  if (!url) {
+    const query = game?.customTitle || game?.title || game?.fileName || '';
+    if (query) {
+      const candidates = await searchOnlineBoxartCandidates(query, game);
+      const best = candidates.find((c) => c.source === 'LaunchBox') || candidates[0];
+      if (best?.url) url = best.url;
+    }
+  }
+  if (url && game?.id) {
+    try {
+      await idbPut(`cover:${game.id}`, url);
+      markLocalSaveModified(`cover:${game.id}`);
+    } catch {
+      /* cache write failures are non-fatal */
+    }
+  }
+  return url;
 }
 
 /** Test hook: clear module-level memo state */

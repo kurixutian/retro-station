@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Trash2, Layers, Camera, X, AlertTriangle, Pencil, ImagePlus, RotateCcw } from 'lucide-react';
+import { Play, Trash2, Layers, Camera, X, AlertTriangle, Pencil, ImagePlus, RotateCcw, Wand2, Sparkles, Search, ExternalLink, MoreHorizontal } from 'lucide-react';
 import { Game, SaveSlot, Theme } from '../../types';
 import { GameCoverImage } from '../common/GameCoverImage';
 import { ModalShell } from '../common/ModalShell';
-import { formatGameTitle } from '../../constants/cores';
+import { getGameDisplayTitle } from '../../constants/cores';
 import { createEmptySlotsForGame } from '../../services/storage/saveSlots';
+import { autoFetchAndCacheBoxart, BoxartSearchCandidate, searchOnlineBoxartCandidates } from '../../services/boxartResolver';
 
 // Resize + compress a picked image into a small data URL (WebP, ~30-60KB).
 const processArtworkFile = (file: File): Promise<string> =>
@@ -57,6 +58,7 @@ interface SaveSlotsModalProps {
   onRenameGame?: (gameId: string, newTitle: string) => void;
   initialMode?: 'save' | 'load' | null;
   onChangeArtwork?: (gameId: string, dataUrl: string | null) => void;
+  onOpenPatcher?: (game: Game) => void;
 }
 
 // Grows the slot list: always show base slots; when every visible slot is
@@ -92,6 +94,7 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
   onRenameGame,
   initialMode = null,
   onChangeArtwork,
+  onOpenPatcher,
 }) => {
   const [confirmDeleteRom, setConfirmDeleteRom] = useState(false);
   const [confirmAction, setConfirmAction] = useState<{ type: 'load' | 'overwrite'; slot: number } | null>(null);
@@ -100,7 +103,60 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
   const [editValue, setEditValue] = useState('');
   const [editingGameTitle, setEditingGameTitle] = useState(false);
   const [gameTitleEditValue, setGameTitleEditValue] = useState('');
+  const [isFetchingArt, setIsFetchingArt] = useState(false);
+  const [artRefreshKey, setArtRefreshKey] = useState(0);
+  const [artPickerOpen, setArtPickerOpen] = useState(false);
+  const [artSearchQuery, setArtSearchQuery] = useState('');
+  const [artSearchResults, setArtSearchResults] = useState<BoxartSearchCandidate[]>([]);
+  const [artSearching, setArtSearching] = useState(false);
+  const [artCustomUrl, setArtCustomUrl] = useState('');
+  const [manageMenuOpen, setManageMenuOpen] = useState(false);
   const artInputRef = useRef<HTMLInputElement | null>(null);
+  const manageMenuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!manageMenuOpen) return;
+    const handleOutside = (e: MouseEvent) => {
+      if (manageMenuRef.current && !manageMenuRef.current.contains(e.target as Node)) {
+        setManageMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [manageMenuOpen]);
+
+  const runArtSearch = async (query: string) => {
+    const trimmed = query.trim();
+    if (!trimmed || !targetGame) return;
+    setArtSearching(true);
+    try {
+      const results = await searchOnlineBoxartCandidates(trimmed, targetGame);
+      setArtSearchResults(results);
+    } finally {
+      setArtSearching(false);
+    }
+  };
+
+  const handleAutoFetchArtwork = async () => {
+    if (!targetGame || isFetchingArt) return;
+    setIsFetchingArt(true);
+    try {
+      const url = await autoFetchAndCacheBoxart(targetGame, true);
+      if (url) {
+        if (targetGame.customCover) onChangeArtwork?.(targetGame.id, null);
+        setArtRefreshKey((k) => k + 1);
+      } else {
+        const defaultQuery = getGameDisplayTitle(targetGame);
+        setArtSearchQuery(defaultQuery);
+        setArtSearchResults([]);
+        setArtCustomUrl('');
+        setArtPickerOpen(true);
+        runArtSearch(defaultQuery);
+      }
+    } finally {
+      setIsFetchingArt(false);
+    }
+  };
 
   const handleArtworkPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -121,6 +177,8 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
       setEditValue('');
       setEditingGameTitle(false);
       setGameTitleEditValue('');
+      setArtPickerOpen(false);
+      setArtSearchResults([]);
     }
   }, [isOpen]);
 
@@ -167,7 +225,7 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
       {/* Dialog Header Banner */}
       <div className="relative p-5 bg-[#18181c] flex-none border-b border-black/40">
         <div className="absolute inset-0">
-          <GameCoverImage game={targetGame} imgClassName="opacity-65" />
+          <GameCoverImage key={`${targetGame.id}-${artRefreshKey}`} game={targetGame} imgClassName="opacity-65" />
         </div>
         <div className="absolute inset-0 bg-zinc-950/70" />
         <div className="relative z-10 flex items-start justify-between gap-3">
@@ -177,7 +235,7 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
                 {targetGame.system}
               </span>
             </div>
-            <h2 id="save-slots-title" className="text-xl sm:text-2xl font-black text-white">{formatGameTitle(targetGame.title)}</h2>
+            <h2 id="save-slots-title" className="text-xl sm:text-2xl font-black text-white">{getGameDisplayTitle(targetGame)}</h2>
           </div>
 
           <button
@@ -190,83 +248,153 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
         </div>
 
         {/* Primary Play & Actions Bar */}
-        <div className="relative z-10 mt-4 flex flex-wrap items-center gap-2">
+        <div className="relative z-10 mt-3.5 flex flex-wrap items-center justify-between gap-2">
           {currentView === 'home' && (
             <button
               onClick={() => launchGame(targetGame)}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-zinc-950 text-xs font-black shadow-lg tactile-btn transition"
-              title={`Play ${formatGameTitle(targetGame.title)}`}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-zinc-950 text-xs font-bold shadow-md tactile-btn transition"
+              title={`Play ${getGameDisplayTitle(targetGame)}`}
             >
               <Play className="w-4 h-4 fill-current" />
-              <span>Play Cartridge</span>
+              <span>Play</span>
             </button>
           )}
 
-          <div className="flex items-center gap-1.5 ml-auto">
-            {/* Custom Cartridge Artwork (icon-only beside delete button) */}
-            <label
-              className={`p-2 rounded-xl border tactile-btn transition cursor-pointer flex items-center justify-center ${
-                theme?.isLight
-                  ? 'bg-stone-200/90 hover:bg-stone-300 text-stone-700 border-stone-300'
-                  : 'bg-zinc-900/90 hover:bg-zinc-800 text-zinc-300 hover:text-white border-zinc-800 hover:border-zinc-600'
-              }`}
-              title={targetGame.customCover ? 'Replace custom artwork' : 'Add custom artwork (great for ROM hacks)'}
-              aria-label={targetGame.customCover ? 'Replace custom artwork' : 'Add custom artwork'}
-            >
-              <ImagePlus className="w-4 h-4" />
-              <input
-                ref={artInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleArtworkPick}
-              />
-            </label>
+          <div className="relative flex items-center gap-1.5 ml-auto" ref={manageMenuRef}>
+            <input
+              ref={artInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleArtworkPick}
+            />
 
-            {targetGame.customCover && (
-              <button
-                onClick={() => onChangeArtwork?.(targetGame.id, null)}
-                className={`p-2 rounded-xl border tactile-btn transition ${
+            <button
+              type="button"
+              onClick={() => setManageMenuOpen((o) => !o)}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold tactile-btn transition ${
+                theme?.isLight
+                  ? 'bg-stone-200/90 hover:bg-stone-300 text-stone-800 border-stone-300'
+                  : 'bg-zinc-900/90 hover:bg-zinc-800 text-zinc-200 hover:text-white border-zinc-800 hover:border-zinc-600'
+              }`}
+              aria-haspopup="menu"
+              aria-expanded={manageMenuOpen}
+              aria-label="Manage cartridge"
+            >
+              <MoreHorizontal className="w-4 h-4" />
+              <span>Manage</span>
+            </button>
+
+            {manageMenuOpen && (
+              <div
+                role="menu"
+                className={`absolute right-0 top-[calc(100%+8px)] z-30 w-56 rounded-2xl border shadow-xl hardware-panel p-1.5 ${
                   theme?.isLight
-                    ? 'bg-stone-200/90 hover:bg-stone-300 text-stone-600 border-stone-300'
-                    : 'bg-zinc-900/90 hover:bg-zinc-800 text-zinc-400 hover:text-white border-zinc-800'
+                    ? 'border-[#cfcac0] bg-[#eae6dd] text-[#121214]'
+                    : 'border-[#222227] bg-[#131316] text-[#f4f4f6]'
                 }`}
-                title="Reset to online artwork"
-                aria-label="Reset artwork"
               >
-                <RotateCcw className="w-4 h-4" />
-              </button>
+                <button
+                  role="menuitem"
+                  type="button"
+                  onClick={() => {
+                    setManageMenuOpen(false);
+                    handleAutoFetchArtwork();
+                  }}
+                  disabled={isFetchingArt}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition text-left disabled:opacity-50 ${
+                    theme?.isLight ? 'hover:bg-[#dedad0]' : 'hover:bg-[#1c1c22]'
+                  }`}
+                >
+                  <Sparkles className={`w-4 h-4 shrink-0 ${isFetchingArt ? 'animate-pulse text-amber-400' : ''}`} />
+                  <span>Auto-fetch Artwork</span>
+                </button>
+
+                <button
+                  role="menuitem"
+                  type="button"
+                  onClick={() => {
+                    setManageMenuOpen(false);
+                    artInputRef.current?.click();
+                  }}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition text-left ${
+                    theme?.isLight ? 'hover:bg-[#dedad0]' : 'hover:bg-[#1c1c22]'
+                  }`}
+                >
+                  <ImagePlus className="w-4 h-4 shrink-0" />
+                  <span>{targetGame.customCover ? 'Replace Custom Artwork' : 'Custom Artwork'}</span>
+                </button>
+
+                {targetGame.customCover && (
+                  <button
+                    role="menuitem"
+                    type="button"
+                    onClick={() => {
+                      setManageMenuOpen(false);
+                      onChangeArtwork?.(targetGame.id, null);
+                    }}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition text-left ${
+                      theme?.isLight ? 'hover:bg-[#dedad0]' : 'hover:bg-[#1c1c22]'
+                    }`}
+                  >
+                    <RotateCcw className="w-4 h-4 shrink-0" />
+                    <span>Reset Artwork</span>
+                  </button>
+                )}
+
+                <button
+                  role="menuitem"
+                  type="button"
+                  onClick={() => {
+                    setManageMenuOpen(false);
+                    setGameTitleEditValue(targetGame.customTitle || targetGame.title || '');
+                    setEditingGameTitle(true);
+                  }}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition text-left ${
+                    theme?.isLight ? 'hover:bg-[#dedad0]' : 'hover:bg-[#1c1c22]'
+                  }`}
+                >
+                  <Pencil className="w-4 h-4 shrink-0" />
+                  <span>Rename Cartridge</span>
+                </button>
+
+                {onOpenPatcher && targetGame.real && (
+                  <button
+                    role="menuitem"
+                    type="button"
+                    onClick={() => {
+                      setManageMenuOpen(false);
+                      onOpenPatcher(targetGame);
+                    }}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition text-left ${
+                      theme?.isLight ? 'hover:bg-[#dedad0]' : 'hover:bg-[#1c1c22]'
+                    }`}
+                  >
+                    <Wand2 className="w-4 h-4 shrink-0" />
+                    <span>Patch ROM (.bps / .ups)</span>
+                  </button>
+                )}
+
+                <div className={`my-1 border-t ${theme?.isLight ? 'border-[#d2cdc3]' : 'border-[#222227]'}`} />
+
+                <button
+                  role="menuitem"
+                  type="button"
+                  onClick={() => {
+                    setManageMenuOpen(false);
+                    setConfirmDeleteRom(true);
+                  }}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition text-left ${
+                    theme?.isLight
+                      ? 'text-rose-600 hover:bg-rose-100'
+                      : 'text-rose-400 hover:bg-rose-950/50'
+                  }`}
+                >
+                  <Trash2 className="w-4 h-4 shrink-0" />
+                  <span>Delete ROM</span>
+                </button>
+              </div>
             )}
-
-            {/* Rename Game */}
-            <button
-              onClick={() => {
-                setGameTitleEditValue(targetGame.customTitle || targetGame.title || '');
-                setEditingGameTitle(true);
-              }}
-              className={`p-2 rounded-xl border tactile-btn transition ${
-                theme?.isLight
-                  ? 'bg-stone-200/90 hover:bg-stone-300 text-stone-700 border-stone-300'
-                  : 'bg-zinc-900/90 hover:bg-zinc-800 text-zinc-300 hover:text-white border-zinc-800 hover:border-zinc-600'
-              }`}
-              title="Rename game"
-              aria-label="Rename game"
-            >
-              <Pencil className="w-4 h-4" />
-            </button>
-
-            <button
-              onClick={() => setConfirmDeleteRom(true)}
-              className={`p-2 rounded-xl border tactile-btn transition ${
-                theme?.isLight
-                  ? 'bg-stone-200/90 hover:bg-rose-100 text-stone-600 hover:text-rose-600 border-stone-300 hover:border-rose-300'
-                  : 'bg-zinc-900/90 hover:bg-rose-900/30 text-zinc-400 hover:text-rose-400 border-zinc-800 hover:border-rose-500/40'
-              }`}
-              title="Delete ROM"
-              aria-label="Delete ROM"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
           </div>
         </div>
 
@@ -278,7 +406,7 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
               <span className="text-xs font-black">Confirm Cartridge Deletion</span>
             </div>
             <p className="text-[11px] text-rose-200/90 leading-snug">
-              Permanently delete <strong className="text-white">"{formatGameTitle(targetGame.title)}"</strong> from your local library? This will delete the ROM and cannot be undone.
+              Permanently delete <strong className="text-white">"{getGameDisplayTitle(targetGame)}"</strong> from your local library? This will delete the ROM and cannot be undone.
             </p>
             <div className="flex items-center gap-2 pt-1">
               <button
@@ -301,27 +429,20 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
         )}
       </div>
 
-      {/* Per-Game Save State Slots Grid (grows as slots fill up) */}
-      <div className="p-5 space-y-3 flex-1 overflow-y-auto modal-scroll">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className={`text-sm font-extrabold flex items-center gap-2 ${
-              theme?.isLight ? 'text-zinc-900' : 'text-zinc-100'
-            }`}>
-              <Layers className="w-4 h-4 text-emerald-500" />
-              <span>State Slots</span>
-            </h3>
-            <p className={`text-[11px] ${theme?.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
-              {initialMode === 'save'
-                ? 'Pick a slot to save into. Filled slots can be overwritten.'
-                : initialMode === 'load'
-                  ? 'Pick a saved state to resume.'
-                  : 'Each game has its own dedicated save state slots. Switch or resume anytime.'}
-            </p>
-            <p className={`text-xs mt-0.5 ${theme?.isLight ? 'text-stone-500' : 'text-zinc-500'}`}>
-              When all slots are full, a new empty slot is added automatically.
-            </p>
-          </div>
+      {/* Per-Game Save State Slots Grid */}
+      <div className="p-4 sm:p-5 space-y-3 flex-1 overflow-y-auto modal-scroll">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className={`text-sm font-bold flex items-center gap-2 ${
+            theme?.isLight ? 'text-zinc-900' : 'text-zinc-100'
+          }`}>
+            <Layers className="w-4 h-4 text-emerald-500" />
+            <span>State Slots</span>
+          </h3>
+          {(initialMode === 'save' || initialMode === 'load') && (
+            <span className={`text-[11px] ${theme?.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
+              {initialMode === 'save' ? 'Pick a slot to save' : 'Pick a slot to load'}
+            </span>
+          )}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -331,14 +452,14 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
             return (
             <div
               key={slotObj.slot}
-              className={`rounded-2xl border p-3 flex flex-col justify-between gap-2.5 transition ${
+              className={`rounded-xl border p-2.5 flex flex-col justify-between gap-2 transition ${
                 slotObj.empty
                   ? theme?.isLight
                     ? 'bg-stone-200/60 border-stone-300'
                     : 'bg-zinc-900/40 border-zinc-800/80'
                   : theme?.isLight
-                    ? 'bg-stone-100 border-emerald-600/40 shadow-sm'
-                    : 'bg-zinc-900/95 border-emerald-500/40 shadow-md'
+                    ? 'bg-stone-100 border-emerald-600/40'
+                    : 'bg-zinc-900/90 border-emerald-500/40'
               }`}
             >
               <div className="flex items-center gap-3">
@@ -395,7 +516,10 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
                         value={editValue}
                         onChange={(e) => setEditValue(e.target.value)}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === 'Escape') commitRename(slotObj.slot);
+                          if (e.key === 'Enter' || e.key === 'Escape') {
+                            e.stopPropagation();
+                            commitRename(slotObj.slot);
+                          }
                         }}
                         onBlur={() => commitRename(slotObj.slot)}
                         placeholder="Slot name"
@@ -598,9 +722,12 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
               onChange={(e) => setGameTitleEditValue(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') commitGameTitleRename();
-                else if (e.key === 'Escape') { setEditingGameTitle(false); setGameTitleEditValue(''); }
+                else if (e.key === 'Escape') {
+                  e.stopPropagation();
+                  setEditingGameTitle(false);
+                  setGameTitleEditValue('');
+                }
               }}
-              onBlur={commitGameTitleRename}
               placeholder="Game title"
               aria-label="New game title"
               className={`w-full px-3 py-2 rounded-xl border text-sm font-bold outline-none focus:border-emerald-500 ${
@@ -626,6 +753,171 @@ export const SaveSlotsModal: React.FC<SaveSlotsModalProps> = ({
               >
                 Cancel
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Online Box Art Picker Dialog (fallback when Libretro has no exact match) */}
+      {artPickerOpen && (
+        <div className="absolute inset-0 z-50 bg-black/80 flex items-center justify-center p-3 sm:p-4">
+          <div className={`w-full max-w-lg max-h-[82vh] rounded-2xl border shadow-xl p-4 flex flex-col gap-3 ${
+            theme?.isLight ? 'bg-[#eae6dd] border-[#cfcac0] text-zinc-900' : 'bg-zinc-950 border-zinc-700 text-zinc-100'
+          }`}>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+                <span className="text-xs font-black">Choose Online Box Art</span>
+              </div>
+              <button
+                onClick={() => setArtPickerOpen(false)}
+                className="p-1 rounded-lg hover:bg-zinc-800/60 text-zinc-400 hover:text-white"
+                aria-label="Close box art picker"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <input
+                type="text"
+                autoFocus
+                value={artSearchQuery}
+                onChange={(e) => setArtSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') runArtSearch(artSearchQuery);
+                  else if (e.key === 'Escape') {
+                    e.stopPropagation();
+                    setArtPickerOpen(false);
+                  }
+                }}
+                placeholder="Search box art..."
+                aria-label="Search box art query"
+                className={`flex-1 min-w-0 px-3 py-1.5 rounded-xl border text-xs font-bold outline-none focus:border-emerald-500 ${
+                  theme?.isLight
+                    ? 'bg-white border-stone-300 text-zinc-900'
+                    : 'bg-zinc-900 border-zinc-700 text-zinc-100'
+                }`}
+              />
+              <button
+                onClick={() => runArtSearch(artSearchQuery)}
+                disabled={artSearching}
+                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black flex items-center gap-1 tactile-btn disabled:opacity-50"
+              >
+                <Search className="w-3.5 h-3.5" />
+                <span>{artSearching ? '...' : 'Search'}</span>
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto modal-scroll min-h-[140px]">
+              {artSearching ? (
+                <div className="py-10 text-center text-xs text-zinc-400">
+                  Searching Libretro, Wikimedia, Wikipedia & Archive.org...
+                </div>
+              ) : artSearchResults.length === 0 ? (
+                <div className="py-8 text-center text-xs text-zinc-400 space-y-2">
+                  <p>No direct results found for that query.</p>
+                  <p className="text-[11px] text-zinc-500">
+                    Try shortening to the base game title, or search externally and paste the image URL below.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                  {artSearchResults.map((item) => (
+                    <button
+                      key={item.url}
+                      onClick={() => {
+                        onChangeArtwork?.(targetGame.id, item.url);
+                        setArtRefreshKey((k) => k + 1);
+                        setArtPickerOpen(false);
+                      }}
+                      className={`group rounded-xl border p-1.5 text-left transition flex flex-col gap-1.5 ${
+                        theme?.isLight
+                          ? 'bg-stone-100 hover:border-emerald-600 border-stone-300'
+                          : 'bg-zinc-900 hover:border-emerald-500 border-zinc-800'
+                      }`}
+                    >
+                      <div className="aspect-square w-full rounded-lg overflow-hidden bg-black flex items-center justify-center">
+                        <img
+                          src={item.url}
+                          alt={item.label}
+                          className="w-full h-full object-contain group-hover:scale-105 transition"
+                          onError={(e) => {
+                            (e.currentTarget.closest('button') as HTMLElement | null)?.style.setProperty('display', 'none');
+                          }}
+                        />
+                      </div>
+                      <div className="px-0.5">
+                        <div className="text-[10px] font-bold truncate">{item.label}</div>
+                        <div className="text-[9px] font-mono text-emerald-400">{item.source}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="pt-2 border-t border-zinc-800/60 space-y-2">
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="url"
+                  value={artCustomUrl}
+                  onChange={(e) => setArtCustomUrl(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && artCustomUrl.trim()) {
+                      onChangeArtwork?.(targetGame.id, artCustomUrl.trim());
+                      setArtRefreshKey((k) => k + 1);
+                      setArtPickerOpen(false);
+                    } else if (e.key === 'Escape') {
+                      e.stopPropagation();
+                      setArtPickerOpen(false);
+                    }
+                  }}
+                  placeholder="Or paste image URL (https://...)"
+                  aria-label="Paste image URL"
+                  className={`flex-1 min-w-0 px-2.5 py-1.5 rounded-lg border text-[11px] outline-none focus:border-emerald-500 ${
+                    theme?.isLight
+                      ? 'bg-white border-stone-300 text-zinc-900'
+                      : 'bg-zinc-900 border-zinc-700 text-zinc-100'
+                  }`}
+                />
+                <button
+                  disabled={!artCustomUrl.trim()}
+                  onClick={() => {
+                    const u = artCustomUrl.trim();
+                    if (!u) return;
+                    onChangeArtwork?.(targetGame.id, u);
+                    setArtRefreshKey((k) => k + 1);
+                    setArtPickerOpen(false);
+                  }}
+                  className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-[11px] font-black tactile-btn"
+                >
+                  Use URL
+                </button>
+              </div>
+              <div className="flex items-center justify-between gap-2 text-[10px]">
+                <span className="text-zinc-500">External search:</span>
+                <div className="flex items-center gap-2">
+                  <a
+                    href={`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(artSearchQuery)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-emerald-400 hover:underline font-bold"
+                  >
+                    <span>Google Images</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                  <a
+                    href={`https://gamesdb.launchbox-app.com/games/results?title=${encodeURIComponent(artSearchQuery || getGameDisplayTitle(targetGame))}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-emerald-400 hover:underline font-bold"
+                  >
+                    <span>LaunchBox DB</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              </div>
             </div>
           </div>
         </div>

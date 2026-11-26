@@ -41,6 +41,13 @@ export function formatGameTitle(rawTitle: string): string {
   return title || rawTitle;
 }
 
+export function getGameDisplayTitle(game: { title?: string; customTitle?: string } | null | undefined): string {
+  if (!game) return '';
+  const custom = game.customTitle?.trim();
+  if (custom) return custom;
+  return formatGameTitle(game.title || '');
+}
+
 /** Sanitize title to Libretro thumbnail filename standards (replaces & * / : ` < > ? \ | " with _) */
 export function sanitizeLibretroTitle(title: string): string {
   return title.replace(/[&*\/:\`<>?\\|"]/g, '_').trim();
@@ -143,6 +150,12 @@ export function getBoxartUrls(game: any): string[] {
     candidateTitles.add(clean);
     candidateTitles.add(`${clean} (USA)`);
     candidateTitles.add(`${clean} (World)`);
+    const spaceIdx = clean.indexOf(' ');
+    if (spaceIdx > 0 && !clean.includes(' - ')) {
+      const hyphenated = `${clean.slice(0, spaceIdx)} - ${clean.slice(spaceIdx + 1)}`;
+      candidateTitles.add(`${hyphenated} (USA)`);
+      candidateTitles.add(`${hyphenated} (USA, Europe)`);
+    }
   }
 
   // GitHub repo slug in libretro-thumbnails
@@ -163,5 +176,5 @@ export function getBoxartUrls(game: any): string[] {
     `https://thumbnails.libretro.com/${encodedLibSystem}/Named_Boxarts/${encodeURIComponent(clean || rawBase)}.png`
   ];
 
-  return Array.from(new Set(combined)).slice(0, 6);
+  return Array.from(new Set(combined)).slice(0, 10);
 }

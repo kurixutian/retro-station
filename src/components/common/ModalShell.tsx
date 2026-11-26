@@ -62,7 +62,7 @@ export const ModalShell: React.FC<ModalShellProps> = ({
       onClick={closeOnScrim ? onClose : undefined}
     >
       <div
-        className={`rounded-3xl border overflow-hidden my-auto flex flex-col hardware-panel modal-pop ${
+        className={`rounded-2xl border overflow-hidden my-auto flex flex-col modal-pop shadow-2xl ${
           closing ? 'modal-pop-out' : ''
         } ${panelClassName}`}
         onClick={closeOnScrim ? (e) => e.stopPropagation() : undefined}

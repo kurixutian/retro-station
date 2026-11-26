@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Sliders, X, Tv, Check, Vibrate, Cloud, ChevronRight, ChevronLeft, Sparkles, Gamepad2, Coffee, Moon, Move } from 'lucide-react';
 import { COLOR_PROFILES } from '../../constants/shaders';
+import { THEMES } from '../../constants/themes';
 import { Theme } from '../../types';
 import { haptics } from '../../services/haptics';
 import { ModalShell } from '../common/ModalShell';
@@ -32,6 +33,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
   onClose,
   theme,
+  themeId,
   applyTheme,
   shaders,
   toggleShader,
@@ -216,49 +218,52 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* PANEL 1: DISPLAY & APPEARANCE */}
           {activePanel === 'display' && (
             <div className="space-y-6">
-              {/* App Theme + AMOLED Toggles */}
+              {/* Console Shell Edition Picker */}
               <div className="space-y-2.5">
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={!theme.isLight}
-                  onClick={() => applyTheme(theme.isLight ? 'midnight' : 'trooper')}
-                  className={`w-full text-left p-4 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 tactile-btn focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
-                    theme.isLight
-                      ? 'bg-stone-100 border-stone-300 text-zinc-900 shadow-sm'
-                      : 'bg-zinc-900/70 border-zinc-800 text-white hover:bg-zinc-900'
-                  }`}
-                >
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <Moon className={`w-4 h-4 ${theme.accentText}`} />
-                      <span className={`text-sm font-extrabold ${theme.isLight ? 'text-zinc-900' : 'text-white'}`}>Dark Mode</span>
-                    </div>
-                    <p className={`text-xs leading-snug ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
-                      Switch between dark obsidian and warm retro stone across the library and console.
-                    </p>
-                  </div>
+                <h3 className={`text-xs font-bold ${theme.isLight ? 'text-[#575654]' : 'text-[#8e8e93]'}`}>
+                  Console Shell Edition
+                </h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {Object.values(THEMES).map((t) => {
+                    const active = themeId === t.id;
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => applyTheme(t.id)}
+                        className={`text-left p-2.5 rounded-xl border transition flex items-center gap-2.5 tactile-btn ${theme.focusRing} ${
+                          active
+                            ? theme.isLight
+                              ? 'accent-surface text-zinc-900 font-bold'
+                              : 'accent-surface text-white font-bold'
+                            : theme.isLight
+                              ? 'bg-stone-200/70 border-stone-300 text-zinc-800 hover:bg-stone-200'
+                              : 'bg-zinc-900/70 border-zinc-800 text-zinc-300 hover:bg-zinc-900'
+                        }`}
+                      >
+                        <span
+                          className="w-4 h-4 rounded-full shrink-0 border border-white/25"
+                          style={{ backgroundColor: t.hex }}
+                        />
+                        <span className="text-xs truncate">{t.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
-                  <div
-                    className={`shrink-0 w-12 h-6 rounded-full transition-colors p-0.5 flex items-center ${
-                      !theme.isLight ? 'justify-end' : 'bg-stone-300 border border-stone-400 justify-start'
-                    }`}
-                    style={{ backgroundColor: !theme.isLight ? theme.hex : undefined }}
-                  >
-                    <div className="w-5 h-5 rounded-full bg-white shadow-md" />
-                  </div>
-                </button>
-
+              {/* AMOLED Toggles */}
+              <div className="space-y-2.5">
                 <button
                   type="button"
                   role="switch"
                   aria-checked={Boolean(shaders.amoled)}
                   onClick={() => toggleShader('amoled')}
-                  className={`w-full text-left p-4 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 tactile-btn focus-visible:outline-none ${theme.focusRing} ${
+                  className={`w-full text-left p-3.5 rounded-xl border transition cursor-pointer flex items-center justify-between gap-3 tactile-btn focus-visible:outline-none ${theme.focusRing} ${
                     shaders.amoled
                       ? theme.isLight
-                        ? 'bg-emerald-500/10 border-emerald-600/50 text-zinc-900'
-                        : `bg-[${theme.hex}]/15 border-[${theme.hex}]/50 text-white`
+                        ? 'accent-surface text-zinc-900'
+                        : 'accent-surface text-white'
                       : theme.isLight
                         ? 'bg-stone-200/80 border-stone-300 text-zinc-800 hover:bg-stone-200'
                         : 'bg-zinc-900/70 border-zinc-800 text-zinc-300 hover:bg-zinc-900'
@@ -266,11 +271,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 >
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                      <span className={`w-2.5 h-2.5 rounded-full ${shaders.amoled ? `bg-[${theme.hex}]` : theme.isLight ? 'bg-stone-400' : 'bg-zinc-600'}`} />
-                      <span className={`text-sm font-extrabold ${theme.isLight ? 'text-zinc-900' : 'text-white'}`}>AMOLED Black Mode</span>
+                      <span className={`w-2.5 h-2.5 rounded-full ${shaders.amoled ? 'accent-dot' : theme.isLight ? 'bg-stone-400' : 'bg-zinc-600'}`} />
+                      <span className={`text-sm font-bold ${theme.isLight ? 'text-zinc-900' : 'text-white'}`}>AMOLED Black Mode</span>
                     </div>
                     <p className={`text-xs leading-snug ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
-                      Pure true-black in-game shell — OLED pixels turn off to save battery.
+                      Pure true-black in-game shell to save battery on OLED displays.
                     </p>
                   </div>
 
@@ -393,11 +398,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <button
                         key={item.key}
                         onClick={() => toggleShader(item.key)}
-                        className={`text-left p-3 rounded-2xl border transition flex items-start gap-3 ${theme.focusRing} ${
+                        className={`text-left p-3 rounded-xl border transition flex items-start gap-3 ${theme.focusRing} ${
                           checked
                             ? theme.isLight
-                              ? 'bg-emerald-500/10 border-emerald-600/50 text-zinc-900'
-                              : `bg-[${theme.hex}]/15 border-[${theme.hex}]/50 text-white`
+                              ? 'accent-surface text-zinc-900'
+                              : 'accent-surface text-white'
                             : theme.isLight
                               ? 'bg-stone-200/80 border-stone-300 text-zinc-700 hover:bg-stone-200'
                               : 'bg-zinc-900/70 border-zinc-800 text-zinc-400 hover:bg-zinc-900'
@@ -406,7 +411,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         <div
                           className={`mt-0.5 w-5 h-5 rounded-md flex items-center justify-center border shrink-0 ${
                             checked
-                              ? `bg-[${theme.hex}] border-[${theme.hex}]/70 text-zinc-950`
+                              ? 'accent-solid text-zinc-950'
                               : theme.isLight
                                 ? 'border-stone-400 bg-white'
                                 : 'border-zinc-700 bg-zinc-950'
@@ -442,11 +447,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   role="switch"
                   aria-checked={reduceMotion}
                   onClick={() => setReduceMotion(!reduceMotion)}
-                  className={`w-full text-left p-4 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 tactile-btn focus-visible:outline-none ${theme.focusRing} ${
+                  className={`w-full text-left p-4 rounded-xl border transition cursor-pointer flex items-center justify-between gap-3 tactile-btn focus-visible:outline-none ${theme.focusRing} ${
                     reduceMotion
                       ? theme.isLight
-                        ? 'bg-emerald-500/10 border-emerald-600/50 text-zinc-900'
-                        : `bg-[${theme.hex}]/15 border-[${theme.hex}]/50 text-white`
+                        ? 'accent-surface text-zinc-900'
+                        : 'accent-surface text-white'
                       : theme.isLight
                         ? 'bg-stone-200/80 border-stone-300 text-zinc-800 hover:bg-stone-200'
                         : 'bg-zinc-900/70 border-zinc-800 text-zinc-300 hover:bg-zinc-900'
@@ -454,8 +459,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 >
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                      <span className={`w-2.5 h-2.5 rounded-full ${reduceMotion ? `bg-[${theme.hex}]` : theme.isLight ? 'bg-stone-400' : 'bg-zinc-600'}`} />
-                      <span className={`text-sm font-extrabold ${theme.isLight ? 'text-zinc-900' : 'text-white'}`}>Reduce Motion</span>
+                      <span className={`w-2.5 h-2.5 rounded-full ${reduceMotion ? 'accent-dot' : theme.isLight ? 'bg-stone-400' : 'bg-zinc-600'}`} />
+                      <span className={`text-sm font-bold ${theme.isLight ? 'text-zinc-900' : 'text-white'}`}>Reduce Motion</span>
                     </div>
                     <p className={`text-xs leading-snug ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
                       Disable continuous animations (hero pan, backdrop drift) and shorten transitions.
@@ -550,7 +555,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   }`}
                 >
                   <div className="flex items-center gap-2.5">
-                    <div className={`w-7 h-7 rounded-lg bg-[${theme.hex}]/10 border border-[${theme.hex}]/30 flex items-center justify-center ${theme.accentText}`}>
+                    <div className={`w-7 h-7 rounded-lg accent-surface border flex items-center justify-center ${theme.accentText}`}>
                       <Gamepad2 className="w-4 h-4" />
                     </div>
                     <span>Open Full Keyboard & Gamepad Guide</span>

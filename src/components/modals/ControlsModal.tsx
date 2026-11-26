@@ -59,32 +59,20 @@ export const ControlsModal: React.FC<ControlsModalProps> = ({
       }`}
     >
         {/* Header */}
-        <div className={`flex-none flex items-center justify-between px-5 py-4 border-b ${
+        <div className={`flex-none flex items-center justify-between px-4 sm:px-5 py-3.5 border-b ${
           theme.isLight ? 'border-[#cfcac0] bg-[#dedad0]' : 'border-[#222227] bg-[#0a0a0c]'
         }`}>
           <div className="flex items-center gap-2.5">
             <Gamepad2 className={`w-5 h-5 ${theme.accentText}`} />
-            <div>
-              <h2 id="controls-dialog-title" className={`text-sm font-bold tracking-tight flex items-center gap-2 ${
-                theme.isLight ? 'text-[#121214]' : 'text-[#f4f4f6]'
-              }`}>
-                <span>Controls & Keybindings</span>
-                <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
-                  theme.isLight
-                    ? 'bg-[#dedad0] text-[#575654] border-[#cfcac0]'
-                    : 'bg-[#1c1c21] text-[#8e8e93] border-[#222227]'
-                }`}>
-                  Universal Map
-                </span>
-              </h2>
-              <p className={`text-[11px] ${theme.isLight ? 'text-[#575654]' : 'text-[#8e8e93]'}`}>
-                Plug-and-play desktop keyboard and Bluetooth controller support.
-              </p>
-            </div>
+            <h2 id="controls-dialog-title" className={`text-base font-bold tracking-tight ${
+              theme.isLight ? 'text-[#121214]' : 'text-[#f4f4f6]'
+            }`}>
+              Controls &amp; Keybindings
+            </h2>
           </div>
           <button
             onClick={onClose}
-            className={`p-1.5 rounded-xl border transition ${
+            className={`p-2 rounded-xl border transition ${
               theme.isLight
                 ? 'bg-[#dedad0] text-[#121214] border-[#cfcac0] hover:bg-[#d5d0c5]'
                 : 'bg-[#1c1c21] text-[#8e8e93] hover:text-[#f4f4f6] border-[#222227]'
@@ -96,7 +84,7 @@ export const ControlsModal: React.FC<ControlsModalProps> = ({
         </div>
 
         {/* Tab Picker */}
-        <div className={`px-5 pt-4 pb-2 flex items-center justify-between gap-3 border-b ${
+        <div className={`px-4 sm:px-5 pt-3.5 pb-2.5 flex flex-wrap items-center justify-between gap-2.5 border-b ${
           theme.isLight ? 'border-stone-300 bg-stone-200/50' : 'border-zinc-900 bg-zinc-950/50'
         }`}>
           <div role="tablist" aria-label="Control devices" className={`flex items-center gap-1.5 p-1 rounded-xl border ${
@@ -190,7 +178,7 @@ export const ControlsModal: React.FC<ControlsModalProps> = ({
                     }`}>
                       <span className="font-bold">{binding.name}</span>
                       <div className="flex items-center gap-2 font-mono">
-                        <kbd className={`px-2 py-0.5 rounded-md border font-bold shadow-xs ${
+                        <kbd className={`px-2 py-0.5 rounded-md border font-bold shadow-sm ${
                           theme.isLight ? 'bg-stone-200 border-stone-300 text-zinc-900' : 'bg-zinc-800 border-zinc-700 text-zinc-100'
                         }`}>
                           {binding.primaryKey}
@@ -225,7 +213,7 @@ export const ControlsModal: React.FC<ControlsModalProps> = ({
                       theme.isLight ? 'bg-stone-100 hover:bg-white text-zinc-900' : 'bg-zinc-950/60 hover:bg-zinc-900/40 text-zinc-300'
                     }`}>
                       <span className="font-bold">{binding.name}</span>
-                      <kbd className={`px-2 py-0.5 rounded-md border font-mono font-bold shadow-xs ${
+                      <kbd className={`px-2 py-0.5 rounded-md border font-mono font-bold shadow-sm ${
                         theme.isLight
                           ? 'bg-amber-100 border-amber-300 text-amber-800'
                           : 'bg-zinc-800 border-zinc-700 text-amber-300'

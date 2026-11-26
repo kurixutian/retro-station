@@ -19,6 +19,49 @@
 // ============================================================================
 
 import { idbGet, idbPut, idbDelete, idbGetAllKeys } from './services/storage/idb';
+import {
+  base64ToUint8Array as base64ToUint8,
+  uint8ArrayToBase64 as uint8ToBase64,
+  normalizeBinaryData,
+} from './services/storage/binary';
+import {
+  TOMBSTONES_DRIVE_FILENAME,
+  DEMO_GAME_IDS,
+  isRomKey,
+  romLocalIdbKey,
+  isSyncableKey,
+  keyToDriveFilename,
+  driveFilenameToKey,
+  DriveFileEntry,
+  UploadedFileInfo,
+  DriveUnauthorizedError,
+  listAppDataFiles as rawListAppDataFiles,
+  downloadDriveJson,
+  downloadDriveBinary as rawDownloadDriveBinary,
+  uploadDriveBinary,
+  uploadDriveJson,
+  deleteDriveFile,
+} from './services/cloud/driveApi';
+import {
+  SETTINGS_SYNC_KEY,
+  collectSettingsSnapshot,
+  applySettingsSnapshot,
+  isRomSyncEnabled,
+  setRomSyncEnabledStorage,
+  findLocalGame,
+  blobSizeOf,
+  getOrCreateDeviceId,
+} from './services/cloud/settingsSync';
+
+export {
+  SETTINGS_SYNC_KEY,
+  applySettingsSnapshot,
+  isRomSyncEnabled,
+  romLocalIdbKey,
+  isSyncableKey,
+  keyToDriveFilename,
+  driveFilenameToKey,
+};
 
 declare global {
   interface Window {
@@ -58,7 +101,7 @@ export interface SyncReport {
   revision: number;
 }
 
-export const EMPTY_SYNC_REPORT: SyncReport = {
+const EMPTY_SYNC_REPORT: SyncReport = {
   at: 0,
   success: false,
   pulled: 0,
@@ -74,9 +117,7 @@ const USER_PROFILE_STORAGE_KEY = 'retro_google_user';
 const TOKEN_STORAGE_KEY = 'retro_google_token';
 const LAST_SYNC_TIME_KEY = 'retro_last_sync_time';
 const SYNC_META_KEY = 'retro_sync_meta';
-const DEVICE_ID_KEY = 'retro_device_id';
 const DELETED_GAMES_KEY = 'retro_deleted_games';
-const TOMBSTONES_DRIVE_FILENAME = 'rs_v2___tombstones__.json';
 
 // Per-item size caps (visible in the sync report; no silent skips)
 const CAP_STATE_BYTES = 10 * 1024 * 1024; // 10 MB state payload
@@ -86,100 +127,8 @@ const CAP_ROM_BYTES = 150 * 1024 * 1024;  // 150 MB per ROM binary (covers SNES/
 const MAX_CONCURRENT_PULLS = 4;
 const ROM_UPLOAD_CHUNK_BYTES = 6 * 1024 * 1024; // resumable-upload chunk size
 
-// Demo-only pseudo-games are never synced
-const DEMO_GAME_IDS = new Set(['pokemon_gold']);
-
-// ============================================================================
-// SETTINGS SYNC (theme, shaders, on-screen pad layout, haptics)
-// ----------------------------------------------------------------------------
-// One bundled Drive item (`retro_settings`) holding every player-facing
-// preference as key -> raw JSON string value (exactly what localStorage holds
-// locally). Device/session keys (tokens, client id, sync meta, device id)
-// are intentionally NOT included.
-// ============================================================================
-
-export const SETTINGS_SYNC_KEY = 'retro_settings';
-
-const SETTINGS_SYNC_KEYS: string[] = [
-  'retro_theme',
-  'retro_shaders',
-  'retro_haptics',
-  'retro_sync_roms',
-  'retro_pad_opacity',
-  // On-screen pad configuration (layout JSON, layout names, active slot)
-  'retro_pad_layout',
-  'retro_pad_layout_portrait',
-  'retro_pad_layout_landscape',
-  'retro_pad_layout_portrait_1',
-  'retro_pad_layout_portrait_2',
-  'retro_pad_layout_portrait_3',
-  'retro_pad_layout_landscape_1',
-  'retro_pad_layout_landscape_2',
-  'retro_pad_layout_landscape_3',
-  'retro_layout_names_portrait',
-  'retro_layout_names_landscape',
-  'retro_pad_slot_portrait',
-  'retro_pad_slot_landscape',
-];
-
-export function collectSettingsSnapshot(): Record<string, string> {
-  const snap: Record<string, string> = {};
-  try {
-    for (const k of SETTINGS_SYNC_KEYS) {
-      const v = localStorage.getItem(k);
-      if (v != null) snap[k] = v;
-    }
-  } catch (e) {}
-  return snap;
-}
-
-/**
- * Writes a remote settings snapshot back to localStorage. Only keys present in
- * the snapshot are touched, and only when their value actually differs — this
- * prevents pull→mark→push ping-pong loops across devices.
- */
-export function applySettingsSnapshot(snapshot: any): boolean {
-  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return false;
-  let changed = false;
-  try {
-    for (const k of SETTINGS_SYNC_KEYS) {
-      const incoming = (snapshot as Record<string, any>)[k];
-      if (typeof incoming !== 'string') continue;
-      if (localStorage.getItem(k) !== incoming) {
-        localStorage.setItem(k, incoming);
-        changed = true;
-      }
-    }
-  } catch (e) {}
-  return changed;
-}
-
-// ============================================================================
-// ROM BINARY SYNC (opt-in)
-// ----------------------------------------------------------------------------
-// ROM files live locally in IndexedDB under the bare game id. On Drive they
-// are uploaded as RAW BINARY files (`rs_v2_rom%3A<gameId>.bin`) using the
-// resumable upload protocol — never base64-inflated, so a 20 MB ROM is 20 MB
-// on the wire. Syncing is opt-in because uploads/downloads can be large.
-// ============================================================================
-
-const ROM_SYNC_ENABLED_KEY = 'retro_sync_roms';
-
-export function isRomSyncEnabled(): boolean {
-  try {
-    if (typeof localStorage === 'undefined') return true;
-    // Enabled by default so ROMs sync and play seamlessly across devices;
-    // only disabled if the user explicitly turns it off ('0').
-    return localStorage.getItem(ROM_SYNC_ENABLED_KEY) !== '0';
-  } catch (e) {
-    return true;
-  }
-}
-
 export function setRomSyncEnabled(enabled: boolean): void {
-  try {
-    localStorage.setItem(ROM_SYNC_ENABLED_KEY, enabled ? '1' : '0');
-  } catch (e) {}
+  setRomSyncEnabledStorage(enabled);
   if (enabled) {
     markAllRomsForUpload();
   }
@@ -188,7 +137,7 @@ export function setRomSyncEnabled(enabled: boolean): void {
 }
 
 /** Queue every library ROM currently on this device for upload. */
-export function markAllRomsForUpload(): string[] {
+function markAllRomsForUpload(): string[] {
   const out: string[] = [];
   if (!isRomSyncEnabled()) return out;
   try {
@@ -207,57 +156,14 @@ export function markAllRomsForUpload(): string[] {
   return out;
 }
 
-const isRomKey = (key: string) => key.startsWith('rom:') && key.length > 'rom:'.length;
-
-/** Cloud sync key `rom:<gameId>` -> local IndexedDB key `<gameId>`. */
-export function romLocalIdbKey(key: string): string | null {
-  return isRomKey(key) ? key.slice('rom:'.length) : null;
-};
-
-function findLocalGame(gameId: string): any {
-  try {
-    const list: any[] = JSON.parse(localStorage.getItem('retro_games') || '[]') || [];
-    return list.find((g) => g && String(g.id) === gameId) || null;
-  } catch (e) {
-    return null;
-  }
-}
-
-function blobSizeOf(v: any): number | null {
-  if (v == null) return null;
-  if (typeof v === 'number') return null; // plain numbers are never binaries
-  if (typeof Blob !== 'undefined' && v instanceof Blob) return v.size;
-  if (v instanceof Uint8Array) return v.byteLength;
-  if (v instanceof ArrayBuffer) return v.byteLength;
-  if (ArrayBuffer.isView(v)) return v.byteLength;
-  return null;
-}
-
-export const DEFAULT_GOOGLE_CLIENT_ID =
+const DEFAULT_GOOGLE_CLIENT_ID =
   '812701015700-srefneer1disk609pa2s4pqj7s2c8ln0.apps.googleusercontent.com';
-
-// Persistent Device ID
-export function getOrCreateDeviceId(): string {
-  try {
-    let id = localStorage.getItem(DEVICE_ID_KEY);
-    if (!id) {
-      id =
-        typeof crypto !== 'undefined' && crypto.randomUUID
-          ? crypto.randomUUID().slice(0, 8)
-          : `dev-${Math.random().toString(36).substring(2, 10)}`;
-      localStorage.setItem(DEVICE_ID_KEY, id);
-    }
-    return id;
-  } catch (e) {
-    return 'dev-browser';
-  }
-}
 
 // ============================================================================
 // GOOGLE OAUTH 2.0 & USER PROFILE MANAGEMENT
 // ============================================================================
 
-export function getGoogleClientId(): string {
+function getGoogleClientId(): string {
   try {
     const custom = localStorage.getItem(CLIENT_ID_STORAGE_KEY);
     if (custom && custom.trim()) return custom.trim();
@@ -949,20 +855,6 @@ export function getSyncReport(): SyncReport {
 // KEY FILTERING, FILENAME ENCODING & BINARY HELPERS
 // ============================================================================
 
-export function isSyncableKey(key: string): boolean {
-  return (
-    key === 'retro_games' ||
-    key === 'library_games' ||
-    key === 'retro_deleted_games' ||
-    key === SETTINGS_SYNC_KEY ||
-    key.startsWith('state:') ||
-    key.startsWith('srm:') ||
-    key.startsWith('rtc:') ||
-    key.startsWith('cover:') ||
-    key.startsWith('rom:')
-  );
-}
-
 const isStateLikeKey = (key: string) => key.startsWith('state:');
 const isBinaryKey = (key: string) => key.startsWith('srm:') || key.startsWith('rtc:');
 const isItemKey = (key: string) =>
@@ -978,55 +870,6 @@ function gameIdFromItemKey(key: string): string | null {
   }
   if (isRomKey(key)) {
     return romLocalIdbKey(key);
-  }
-  return null;
-}
-
-export function keyToDriveFilename(key: string): string {
-  if (isRomKey(key)) {
-    return `rs_v2_${encodeURIComponent(key)}.bin`;
-  }
-  return `rs_v2_${encodeURIComponent(key)}.json`;
-}
-
-export function driveFilenameToKey(filename: string): string | null {
-  if (!filename || filename === TOMBSTONES_DRIVE_FILENAME) return null;
-  if (filename.startsWith('rs_v2_') && filename.endsWith('.json')) {
-    try {
-      const k = decodeURIComponent(filename.slice('rs_v2_'.length, -'.json'.length));
-      return isSyncableKey(k) ? k : null;
-    } catch (e) {
-      return null;
-    }
-  }
-  // Raw ROM binaries are stored as `.bin` files (never base64-inflated)
-  if (filename.startsWith('rs_v2_') && filename.endsWith('.bin')) {
-    try {
-      const k = decodeURIComponent(filename.slice('rs_v2_'.length, -'.bin'.length));
-      return isSyncableKey(k) ? k : null;
-    } catch (e) {
-      return null;
-    }
-  }
-  // Legacy v1 filename support (reads older saves if present in appDataFolder)
-  if (filename === 'retro_library_games.json') return 'library_games';
-  if (
-    filename.startsWith('retro_') &&
-    filename.endsWith('.json') &&
-    !filename.includes('.conflict.bak')
-  ) {
-    const raw = filename.slice('retro_'.length, -'.json'.length);
-    if (raw.startsWith('state__')) {
-      const rest = raw.slice('state__'.length);
-      const lastSep = rest.lastIndexOf('__');
-      if (lastSep > 0) {
-        const gId = rest.slice(0, lastSep);
-        const slot = rest.slice(lastSep + 2);
-        return `state:${gId}:${slot}`;
-      }
-    }
-    if (raw.startsWith('srm__')) return `srm:${raw.slice('srm__'.length)}`;
-    if (raw.startsWith('rtc__')) return `rtc:${raw.slice('rtc__'.length)}`;
   }
   return null;
 }
@@ -1103,88 +946,7 @@ export function mergeAndDeduplicateGames(
   return result.filter((g) => g && g.id && !deletedSet.has(g.id));
 }
 
-export function normalizeBinaryData(val: any): Uint8Array | null {
-  if (!val) return null;
-  let bytes: Uint8Array | null = null;
-
-  if (val instanceof Uint8Array) {
-    bytes = new Uint8Array(val.length);
-    bytes.set(val);
-  } else if (ArrayBuffer.isView(val)) {
-    const view = new Uint8Array(val.buffer, val.byteOffset, val.byteLength);
-    bytes = new Uint8Array(view.length);
-    bytes.set(view);
-  } else if (val instanceof ArrayBuffer) {
-    bytes = new Uint8Array(val.byteLength);
-    bytes.set(new Uint8Array(val));
-  } else if (Array.isArray(val)) {
-    if (val.length > 0 && typeof val[0] === 'number') {
-      bytes = new Uint8Array(val);
-    } else {
-      return null;
-    }
-  } else if (typeof val === 'string') {
-    const trimmed = val.trim();
-    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-      try {
-        const parsed = JSON.parse(trimmed);
-        return normalizeBinaryData(parsed);
-      } catch (e) {}
-    }
-    try {
-      const bin = atob(trimmed);
-      bytes = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    } catch (e) {
-      return null;
-    }
-  } else if (typeof val === 'object' && val !== null) {
-    if (typeof (val as any).base64 === 'string') {
-      return base64ToUint8((val as any).base64);
-    }
-    const keys = Object.keys(val);
-    if (keys.length > 0 && keys[0] === '0' && typeof (val as any)[0] === 'number') {
-      const vals = Object.values(val);
-      if (typeof vals[0] === 'number') {
-        bytes = new Uint8Array(vals as number[]);
-      }
-    }
-  }
-
-  if (bytes && bytes.length > 4) {
-    if (
-      (bytes[0] === 0x7b &&
-        bytes[1] === 0x22 &&
-        bytes[2] === 0x30 &&
-        bytes[3] === 0x22 &&
-        bytes[4] === 0x3a) ||
-      (bytes[0] === 0x5b && bytes[bytes.length - 1] === 0x5d)
-    ) {
-      try {
-        const text = new TextDecoder().decode(bytes);
-        const parsed = JSON.parse(text);
-        if (parsed && typeof parsed === 'object') {
-          const vals = Array.isArray(parsed) ? parsed : Object.values(parsed);
-          if (vals.length > 0 && typeof vals[0] === 'number') {
-            return new Uint8Array(vals as number[]);
-          }
-        }
-      } catch (e) {}
-    }
-  }
-
-  return bytes && bytes.length > 0 ? bytes : null;
-}
-
-import {
-  base64ToUint8Array as base64ToUint8,
-  uint8ArrayToBase64 as uint8ToBase64,
-  normalizeBinaryData as sharedNormalizeBinary,
-} from './services/storage/binary';
-
-export { base64ToUint8, uint8ToBase64 };
-
-export function areByteArraysEqual(a: Uint8Array | null, b: Uint8Array | null): boolean {
+function areByteArraysEqual(a: Uint8Array | null, b: Uint8Array | null): boolean {
   if (!a || !b) return a === b;
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
@@ -1249,7 +1011,7 @@ export function setGameplayActive(active: boolean): void {
   }
 }
 
-export function triggerDebouncedCloudSync(delayMs = 8000, allowDuringGameplay = false) {
+function triggerDebouncedCloudSync(delayMs = 8000, allowDuringGameplay = false) {
   if (debounceTimer) clearTimeout(debounceTimer);
   debounceTimer = setTimeout(() => {
     debounceTimer = null;
@@ -1314,114 +1076,30 @@ if (typeof window !== 'undefined') {
 // GOOGLE DRIVE REST API HELPERS (appDataFolder)
 // ============================================================================
 
-interface DriveFileEntry {
-  id: string;
-  name: string;
-  modifiedTime: string;
-  updatedAt: number;
-  size: number;
-}
-
 async function listAppDataFiles(token: string): Promise<DriveFileEntry[]> {
-  const results: DriveFileEntry[] = [];
-  let pageToken: string | undefined;
-
-  do {
-    const params = new URLSearchParams({
-      spaces: 'appDataFolder',
-      q: 'trashed=false',
-      fields: 'nextPageToken,files(id,name,modifiedTime,size)',
-      pageSize: '500',
-    });
-    if (pageToken) params.set('pageToken', pageToken);
-
-    const res = await fetch(`https://www.googleapis.com/drive/v3/files?${params.toString()}`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: 'no-store',
-    });
-
-    if (res.status === 401) {
+  try {
+    return await rawListAppDataFiles(token);
+  } catch (err) {
+    if (err instanceof DriveUnauthorizedError) {
       inMemoryAccessToken = null;
       saveStoredToken(null, 0);
       setStatus('needs_reauth', 'Session expired — tap Reconnect');
-      throw new Error('Google Drive session expired. Please tap Reconnect.');
     }
-
-    if (!res.ok) {
-      const txt = await res.text().catch(() => '');
-      throw new Error(`Drive list failed (HTTP ${res.status}): ${txt.slice(0, 120)}`);
-    }
-
-    const data = await res.json();
-    for (const f of data.files || []) {
-      results.push({
-        id: f.id,
-        name: f.name,
-        modifiedTime: f.modifiedTime,
-        updatedAt: Date.parse(f.modifiedTime) || 0,
-        size: Number(f.size) || 0,
-      });
-    }
-    pageToken = data.nextPageToken;
-  } while (pageToken);
-
-  // Group by filename to deduplicate stray files sharing the exact same name
-  const deduped: DriveFileEntry[] = [];
-  const byName = new Map<string, DriveFileEntry>();
-  for (const item of results) {
-    const existing = byName.get(item.name);
-    if (!existing) {
-      byName.set(item.name, item);
-      deduped.push(item);
-    } else if (item.updatedAt > existing.updatedAt) {
-      deleteDriveFile(token, existing.id).catch(() => {});
-      byName.set(item.name, item);
-      const idx = deduped.indexOf(existing);
-      if (idx !== -1) deduped[idx] = item;
-    } else {
-      deleteDriveFile(token, item.id).catch(() => {});
-    }
+    throw err;
   }
-
-  return deduped;
 }
 
-async function downloadDriveJson(token: string, fileId: string): Promise<any> {
-  const res = await fetch(
-    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`,
-    {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: 'no-store',
-    }
-  );
-  if (res.status === 404) return null;
-  if (!res.ok) {
-    throw new Error(`Download failed: HTTP ${res.status}`);
-  }
-  return await res.json();
-}
-
-/** Raw binary download (used for ROM files). 404 -> null. */
 async function downloadDriveBinary(token: string, fileId: string): Promise<Uint8Array | null> {
-  const res = await fetch(
-    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`,
-    {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: 'no-store',
+  try {
+    return await rawDownloadDriveBinary(token, fileId);
+  } catch (err) {
+    if (err instanceof DriveUnauthorizedError) {
+      inMemoryAccessToken = null;
+      saveStoredToken(null, 0);
+      setStatus('needs_reauth', 'Session expired — tap Reconnect');
     }
-  );
-  if (res.status === 401) {
-    inMemoryAccessToken = null;
-    saveStoredToken(null, 0);
-    setStatus('needs_reauth', 'Session expired — tap Reconnect');
-    throw new Error('Google Drive session expired. Please tap Reconnect.');
+    throw err;
   }
-  if (res.status === 404) return null;
-  if (!res.ok) {
-    throw new Error(`ROM download failed (HTTP ${res.status})`);
-  }
-  const buf = await res.arrayBuffer();
-  return new Uint8Array(buf);
 }
 
 export interface FetchRomResult {
@@ -1526,215 +1204,7 @@ export async function fetchRomFromCloud(
   }
 }
 
-type UploadedFileInfo = { id: string; updatedAt: number };
 
-/**
- * Standard multipart upload for files <= 5 MB (single request, standard Google Drive API).
- */
-async function uploadDriveBinaryMultipart(
-  token: string,
-  filename: string,
-  blob: Blob,
-  existingFileId?: string
-): Promise<UploadedFileInfo> {
-  const boundary = '-------rs_drive_bin_' + Math.random().toString(36).slice(2);
-  const mimeType = 'application/octet-stream';
-  const metadata = existingFileId
-    ? { name: filename, mimeType }
-    : { name: filename, mimeType, parents: ['appDataFolder'] };
-
-  const headerPart =
-    `--${boundary}\r\n` +
-    `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
-    `${JSON.stringify(metadata)}\r\n` +
-    `--${boundary}\r\n` +
-    `Content-Type: ${mimeType}\r\n\r\n`;
-  const footerPart = `\r\n--${boundary}--`;
-  const multipartBlob = new Blob([headerPart, blob, footerPart], {
-    type: `multipart/related; boundary=${boundary}`,
-  });
-
-  const url = existingFileId
-    ? `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(existingFileId)}?uploadType=multipart&fields=id,name,modifiedTime`
-    : `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,modifiedTime`;
-
-  const method = existingFileId ? 'PATCH' : 'POST';
-  const res = await fetch(url, {
-    method,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': `multipart/related; boundary=${boundary}`,
-    },
-    body: multipartBlob,
-  });
-
-  if (res.status === 404 && existingFileId) {
-    return uploadDriveBinaryMultipart(token, filename, blob, undefined);
-  }
-  if (!res.ok) {
-    const txt = await res.text().catch(() => '');
-    throw new Error(`ROM multipart upload failed (HTTP ${res.status}): ${txt.slice(0, 120)}`);
-  }
-  const body = await res.json().catch(() => ({} as any));
-  return {
-    id: body?.id || existingFileId || filename,
-    updatedAt: Date.parse(body?.modifiedTime) || Date.now(),
-  };
-}
-
-/**
- * Resumable raw-binary upload for files > 5 MB using a single PUT of the entire payload.
- */
-async function uploadDriveBinaryResumable(
-  token: string,
-  filename: string,
-  blob: Blob,
-  existingFileId?: string
-): Promise<UploadedFileInfo> {
-  const mimeType = 'application/octet-stream';
-  const totalSize = blob.size;
-
-  const metadata: Record<string, any> = existingFileId
-    ? { name: filename, mimeType }
-    : { name: filename, parents: ['appDataFolder'], mimeType };
-  const initUrl = existingFileId
-    ? `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(
-        existingFileId
-      )}?uploadType=resumable&fields=id,modifiedTime`
-    : `https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,modifiedTime`;
-
-  const initRes = await fetch(initUrl, {
-    method: existingFileId ? 'PATCH' : 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json; charset=UTF-8',
-      'X-Upload-Content-Type': mimeType,
-      'X-Upload-Content-Length': String(totalSize),
-    },
-    body: JSON.stringify(metadata),
-  });
-
-  if (initRes.status === 404 && existingFileId) {
-    return uploadDriveBinaryResumable(token, filename, blob, undefined);
-  }
-  if (!initRes.ok) {
-    const txt = await initRes.text().catch(() => '');
-    throw new Error(`ROM upload init failed (HTTP ${initRes.status}): ${txt.slice(0, 120)}`);
-  }
-
-  const uploadUrl = initRes.headers.get('Location') || initRes.headers.get('location') || '';
-  if (!uploadUrl) throw new Error('ROM upload session missing URL');
-
-  const res = await fetch(uploadUrl, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': mimeType,
-      'Content-Range': `bytes 0-${totalSize - 1}/${totalSize}`,
-    },
-    body: blob,
-  });
-
-  if (res.status === 200 || res.status === 201) {
-    const body = await res.json().catch(() => ({} as any));
-    return {
-      id: body?.id || existingFileId || filename,
-      updatedAt: Date.parse(body?.modifiedTime) || Date.now(),
-    };
-  }
-
-  const txt = await res.text().catch(() => '');
-  throw new Error(`ROM upload failed (HTTP ${res.status}): ${txt.slice(0, 120)}`);
-}
-
-/**
- * Upload binary ROM file to Google Drive.
- * Files up to 5 MB use single-request multipart upload; larger files use resumable upload.
- */
-async function uploadDriveBinary(
-  token: string,
-  filename: string,
-  data: Blob | Uint8Array | ArrayBuffer,
-  existingFileId?: string
-): Promise<UploadedFileInfo> {
-  const mimeType = 'application/octet-stream';
-  const part: BlobPart =
-    data instanceof Uint8Array ? (data as unknown as BlobPart) : (new Uint8Array(data as ArrayBuffer) as BlobPart);
-  const blob =
-    typeof Blob !== 'undefined' && data instanceof Blob
-      ? data
-      : new Blob([part], { type: mimeType });
-  const totalSize = blob.size;
-  if (totalSize <= 0) throw new Error('No ROM data to upload');
-
-  if (totalSize <= 5 * 1024 * 1024) {
-    return await uploadDriveBinaryMultipart(token, filename, blob, existingFileId);
-  }
-  return await uploadDriveBinaryResumable(token, filename, blob, existingFileId);
-}
-
-async function uploadDriveJson(
-  token: string,
-  filename: string,
-  jsonString: string,
-  existingFileId?: string
-): Promise<{ id: string; updatedAt: number }> {
-  const boundary = '-------rs_drive_' + Math.random().toString(36).slice(2);
-  const metadata = existingFileId
-    ? { name: filename, mimeType: 'application/json' }
-    : { name: filename, mimeType: 'application/json', parents: ['appDataFolder'] };
-
-  const headerPart =
-    `--${boundary}\r\n` +
-    `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
-    `${JSON.stringify(metadata)}\r\n` +
-    `--${boundary}\r\n` +
-    `Content-Type: application/json; charset=UTF-8\r\n\r\n`;
-  const footerPart = `\r\n--${boundary}--`;
-  const multipartBody = `${headerPart}${jsonString}${footerPart}`;
-
-  const url = existingFileId
-    ? `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(existingFileId)}?uploadType=multipart&fields=id,name,modifiedTime`
-    : `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,modifiedTime`;
-
-  const method = existingFileId ? 'PATCH' : 'POST';
-  const res = await fetch(url, {
-    method,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': `multipart/related; boundary=${boundary}`,
-    },
-    body: multipartBody,
-  });
-
-  if (res.status === 404 && existingFileId) {
-    return uploadDriveJson(token, filename, jsonString, undefined);
-  }
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(`Upload failed (HTTP ${res.status}): ${errText.slice(0, 120)}`);
-  }
-
-  const data = await res.json();
-  return {
-    id: data.id,
-    updatedAt: Date.parse(data.modifiedTime) || Date.now(),
-  };
-}
-
-async function deleteDriveFile(token: string, fileId: string): Promise<boolean> {
-  try {
-    const res = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}`,
-      {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      }
-    );
-    return res.ok || res.status === 404;
-  } catch (e) {
-    return false;
-  }
-}
 
 export async function deleteAllCloudSaves(): Promise<boolean> {
   const token = await ensureToken(true);

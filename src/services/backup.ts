@@ -7,9 +7,11 @@
 
 import { idbGet, idbGetAllKeys, idbPut } from './storage/idb';
 import {
-  uint8ToBase64,
-  base64ToUint8,
+  uint8ArrayToBase64 as uint8ToBase64,
+  base64ToUint8Array as base64ToUint8,
   normalizeBinaryData,
+} from './storage/binary';
+import {
   markLocalSaveModified,
   getDeletedGameIds,
 } from '../cloudSync';
@@ -80,8 +82,9 @@ export async function createBackupFile(): Promise<BackupFile> {
 
       if (typeof val === 'string') {
         items[key] = val; // cover: data URL string
-      } else if (val instanceof Uint8Array) {
-        items[key] = uint8ToBase64(val); // srm:/rtc:
+      } else if (key.startsWith('srm:') || key.startsWith('rtc:')) {
+        const bin = normalizeBinaryData(val);
+        if (bin) items[key] = uint8ToBase64(bin);
       } else if (typeof val === 'object') {
         // state: JSON with embedded binary -> base64'd copy (never JSON.stringify raw Uint8Array)
         const { emuState: rawEmu, stateData: rawStateData, ...rest } = val;
@@ -132,18 +135,76 @@ export async function createBackupFile(): Promise<BackupFile> {
   };
 }
 
-export function downloadBackup(backup: BackupFile): void {
-  const json = JSON.stringify(backup);
-  const blob = new Blob([json], { type: 'application/json' });
+export function getBackupFileName(backup: BackupFile): string {
+  const date = new Date(backup.createdAt || Date.now()).toISOString().slice(0, 10);
+  return `retro-station-backup-${date}.json`;
+}
+
+export function buildBackupBlob(backup: BackupFile): Blob {
+  // Stream items as separate Blob parts so large libraries never hit V8's max string length
+  const header = JSON.stringify({
+    app: backup.app,
+    kind: backup.kind,
+    version: backup.version,
+    createdAt: backup.createdAt,
+    lists: backup.lists,
+  });
+  const parts: BlobPart[] = [header.slice(0, -1), ',"items":{'];
+  let first = true;
+  for (const [k, v] of Object.entries(backup.items || {})) {
+    if (typeof v !== 'string') continue;
+    if (!first) parts.push(',');
+    first = false;
+    parts.push(JSON.stringify(k), ':', JSON.stringify(v));
+  }
+  parts.push('}}');
+  return new Blob(parts, { type: 'application/json' });
+}
+
+export function triggerBlobDownload(blob: Blob, fileName: string): void {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
-  const date = new Date(backup.createdAt).toISOString().slice(0, 10);
   link.href = url;
-  link.download = `retro-station-backup-${date}.json`;
+  link.download = fileName;
+  link.rel = 'noopener';
+  link.style.display = 'none';
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+export async function exportBackupFile(
+  backup: BackupFile
+): Promise<{ fileName: string; blob: Blob; nativeLocation?: string }> {
+  const fileName = getBackupFileName(backup);
+  const blob = buildBackupBlob(backup);
+
+  const isNative =
+    typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.() === true;
+  if (isNative) {
+    try {
+      const { Filesystem, Directory, Encoding } = await import('@capacitor/filesystem');
+      const text = await blob.text();
+      await Filesystem.writeFile({
+        path: fileName,
+        data: text,
+        directory: Directory.Documents,
+        encoding: Encoding.UTF8,
+        recursive: true,
+      });
+      return { fileName, blob, nativeLocation: `Documents/${fileName}` };
+    } catch {
+      /* Fall through to browser download if Documents permission is unavailable */
+    }
+  }
+
+  triggerBlobDownload(blob, fileName);
+  return { fileName, blob };
+}
+
+export function downloadBackup(backup: BackupFile): void {
+  triggerBlobDownload(buildBackupBlob(backup), getBackupFileName(backup));
 }
 
 export interface ImportResult {

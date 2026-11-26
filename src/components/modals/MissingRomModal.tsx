@@ -41,10 +41,9 @@ export const MissingRomModal: React.FC<MissingRomModalProps> = ({
     if (!game) return;
     setDownloadingCloud(true);
     try {
-      showToast(`Downloading ${game.title} from Cloud Vault...`);
       const res = await fetchRomFromCloud(game.id, game.fileName, true);
       if (res.file) {
-        showToast(`ROM downloaded from Cloud Vault! Launching ${game.title}...`);
+        showToast(`Cartridge plugged in! Launching ${game.title}...`);
         onRomSelected(res.file);
         onClose();
       } else {
@@ -69,22 +68,22 @@ export const MissingRomModal: React.FC<MissingRomModalProps> = ({
       isOpen={isOpen}
       onClose={onClose}
       labelledBy="missing-rom-dialog-title"
-      panelClassName={`w-full max-w-md shadow-2xl ${
-        theme.isLight ? 'border-[#cfcac0] bg-[#dedad0]' : 'border-zinc-800 bg-zinc-950'
+      panelClassName={`w-full max-w-md ${
+        theme.isLight ? 'border-[#cfcac0] bg-[#eae6dd]' : 'border-[#222227] bg-[#131316]'
       }`}
     >
         {/* Header */}
-        <div className={`flex items-center justify-between px-5 py-4 border-b ${
-          theme.isLight ? 'border-[#cfcac0] bg-[#dedad0]' : 'border-zinc-800 bg-zinc-950'
+        <div className={`flex items-center justify-between px-4 sm:px-5 py-3.5 border-b ${
+          theme.isLight ? 'border-[#cfcac0] bg-[#dedad0]' : 'border-[#222227] bg-[#0a0a0c]'
         }`}>
           <div className="flex items-center gap-2.5">
             <div className={`w-8 h-8 rounded-xl border flex items-center justify-center ${theme.accentSoft}`}>
               <HardDrive className="w-4 h-4" />
             </div>
             <div>
-              <h2 id="missing-rom-dialog-title" className={`text-sm sm:text-base font-black ${theme.isLight ? 'text-[#121214]' : 'text-white'}`}>Locate Game ROM</h2>
+              <h2 id="missing-rom-dialog-title" className={`text-sm sm:text-base font-bold ${theme.isLight ? 'text-[#121214]' : 'text-white'}`}>Locate Game ROM</h2>
               <p className={`text-[11px] font-medium ${theme.isLight ? 'text-[#575654]' : 'text-zinc-400'}`}>
-                Cloud saves ready • Link ROM file for this device
+                Link ROM file for this device
               </p>
             </div>
           </div>
@@ -137,7 +136,6 @@ export const MissingRomModal: React.FC<MissingRomModalProps> = ({
               }`}>
                 {game.shortSystem || game.system}
               </span>
-              <span>•</span>
               <span className={`font-mono text-[11px] truncate max-w-[200px] ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
                 {game.fileName || `${game.title}.rom`}
               </span>
@@ -147,7 +145,7 @@ export const MissingRomModal: React.FC<MissingRomModalProps> = ({
           <input
             ref={fileInputRef}
             type="file"
-            accept=".gb,.gbc,.gba,.zip,application/zip"
+            accept="*/*"
             onChange={handleFileChange}
             className="hidden"
           />
@@ -164,7 +162,7 @@ export const MissingRomModal: React.FC<MissingRomModalProps> = ({
                 {downloadingCloud ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin" />
-                    <span>Downloading from Cloud Vault...</span>
+                    <span>Plugging in cartridge...</span>
                   </>
                 ) : (
                   <>

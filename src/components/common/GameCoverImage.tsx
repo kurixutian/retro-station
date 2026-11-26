@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Gamepad2 } from 'lucide-react';
-import { getBoxartUrls, formatGameTitle } from '../../constants/cores';
+import { getBoxartUrls, getGameDisplayTitle } from '../../constants/cores';
 import { resolveBoxartUrl } from '../../services/boxartResolver';
 import { idbGet, idbPut, idbDelete } from '../../services/storage/idb';
 
@@ -40,7 +40,7 @@ export const GameCoverImage: React.FC<GameCoverImageProps> = ({
     setResolvedSrc(null);
     setCachedUrl(null);
     attemptedResolveRef.current = null;
-  }, [game?.id]);
+  }, [game?.id, game?.customTitle]);
 
   useEffect(() => {
     let active = true;
@@ -48,12 +48,7 @@ export const GameCoverImage: React.FC<GameCoverImageProps> = ({
       idbGet(`cover:${game.id}`)
         .then((saved) => {
           if (active && saved && typeof saved === 'string') {
-            // Discard previously cached broken URLs with %20 in raw.githubusercontent.com
-            if (saved.includes('raw.githubusercontent.com') && saved.includes('%20')) {
-              idbDelete(`cover:${game.id}`).catch(() => {});
-            } else {
-              setCachedUrl(saved);
-            }
+            setCachedUrl(saved);
           }
         })
         .catch(() => {});
@@ -95,24 +90,25 @@ export const GameCoverImage: React.FC<GameCoverImageProps> = ({
       });
   };
 
-  const currentUrl = cachedUrl || resolvedSrc || urls[srcIndex];
+  const currentUrl = game?.customCover || game?.customBoxart || cachedUrl || resolvedSrc || urls[srcIndex];
 
   if (!currentUrl || failedAll) {
     return (
       <div
         className={`relative w-full h-full ${
-          game?.coverGradient?.startsWith('bg-') ? game.coverGradient : 'bg-[#141418]'
-        } flex flex-col justify-between p-3 overflow-hidden border border-black/40 ${className}`}
+          game?.coverGradient?.startsWith('bg-') ? game.coverGradient : 'bg-[#16161b]'
+        } flex items-center justify-center overflow-hidden ${className}`}
       >
-        <div className="absolute inset-0 cartridge-grip opacity-30 pointer-events-none" />
+        <div
+          className="absolute inset-x-0 top-0 h-1 opacity-80"
+          style={{ backgroundColor: 'var(--accent)' }}
+        />
+        <Gamepad2 className="w-8 h-8 text-white/20" aria-hidden="true" />
         {showBadge && (
-          <span className="self-start relative z-10 px-2 py-0.5 rounded-md text-[11px] font-bold bg-[#0a0a0c]/90 text-white border border-white/15">
+          <span className="absolute top-2 left-2 px-2 py-0.5 rounded-md text-[11px] font-bold bg-[#0a0a0c]/90 text-white border border-white/15">
             {game?.shortSystem || 'ROM'}
           </span>
         )}
-        <div className="my-auto flex items-center justify-center">
-          <Gamepad2 className="w-10 h-10 text-white/40" />
-        </div>
       </div>
     );
   }
@@ -124,7 +120,7 @@ export const GameCoverImage: React.FC<GameCoverImageProps> = ({
       <img
         src={currentUrl}
         srcSet={srcSet}
-        alt={formatGameTitle(game?.title || '')}
+        alt={getGameDisplayTitle(game)}
         onLoad={() => {
           if (currentUrl && game?.id && currentUrl !== cachedUrl) {
             // Persist whatever works (resolver hit or fresh guess URL) so

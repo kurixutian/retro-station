@@ -36,7 +36,7 @@ import {
   SyncReport,
   GoogleUserProfile,
 } from '../../cloudSync';
-import { createBackupFile, downloadBackup, importBackupFile } from '../../services/backup';
+import { createBackupFile, exportBackupFile, importBackupFile, triggerBlobDownload } from '../../services/backup';
 
 interface CloudSyncModalProps {
   isOpen: boolean;
@@ -66,6 +66,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   // Manual Backup state
   const [backupBusy, setBackupBusy] = useState(false);
   const [backupMsg, setBackupMsg] = useState<string | null>(null);
+  const [readyBackup, setReadyBackup] = useState<{ blob: Blob; fileName: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -80,6 +81,8 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     setConfirmDisconnect(false);
     setConfirmClearCloud(false);
     setRomSyncOn(isRomSyncEnabled());
+    setReadyBackup(null);
+    setBackupMsg(null);
 
     const unsub = subscribeSyncStatus((status, details) => {
       setSyncStatus(status);
@@ -196,18 +199,67 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   const handleExportBackup = async () => {
     setBackupBusy(true);
     setBackupMsg(null);
+    setReadyBackup(null);
     try {
       const backup = await createBackupFile();
-      downloadBackup(backup);
+      const { fileName, blob, nativeLocation } = await exportBackupFile(backup);
+      setReadyBackup({ blob, fileName });
       const keys = Object.keys(backup.items);
       const romCount = keys.filter((k) => k.startsWith('rom:')).length;
       const otherCount = keys.length - romCount;
-      setBackupMsg(`Exported ${romCount} ROM(s), ${otherCount} save item(s) & ${backup.lists.retro_games?.length || 0} game(s).`);
-      showToast('Backup file downloaded!');
+      setBackupMsg(
+        nativeLocation
+          ? `Saved to ${nativeLocation} (${romCount} ROM(s), ${otherCount} save(s)).`
+          : `Prepared ${fileName} (${romCount} ROM(s), ${otherCount} save item(s), ${backup.lists.retro_games?.length || 0} game(s)).`
+      );
+      showToast(nativeLocation ? `Saved ${fileName}` : 'Backup file ready!');
     } catch (e: any) {
       setBackupMsg(`Export failed: ${e?.message || 'unknown error'}`);
     } finally {
       setBackupBusy(false);
+    }
+  };
+
+  const handleSaveReadyBackup = async () => {
+    if (!readyBackup) return;
+    const { blob, fileName } = readyBackup;
+    const w = window as any;
+    if (typeof w.showSaveFilePicker === 'function') {
+      try {
+        const handle = await w.showSaveFilePicker({
+          suggestedName: fileName,
+          types: [{ description: 'JSON Backup', accept: { 'application/json': ['.json'] } }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        showToast(`Saved ${fileName}`);
+        return;
+      } catch (err: any) {
+        if (err?.name === 'AbortError') return;
+      }
+    }
+    const file = new File([blob], fileName, { type: 'application/json' });
+    if (typeof navigator !== 'undefined' && navigator.share && navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: fileName });
+        return;
+      } catch (err: any) {
+        if (err?.name === 'AbortError') return;
+      }
+    }
+    triggerBlobDownload(blob, fileName);
+    showToast(`Downloading ${fileName}`);
+  };
+
+  const handleCopyReadyBackup = async () => {
+    if (!readyBackup) return;
+    try {
+      const text = await readyBackup.blob.text();
+      await navigator.clipboard.writeText(text);
+      showToast('Backup JSON copied to clipboard');
+    } catch {
+      showToast('Clipboard copy failed — use Save / Share instead');
     }
   };
 
@@ -428,9 +480,10 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                 }`}>
                   <div className="flex items-center justify-between">
                     <span className={`font-bold ${theme.isLight ? 'text-zinc-900' : 'text-zinc-300'}`}>Last Sync Report</span>
-                    <span className={`text-[11px] font-mono ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
-                      ↓ {report.pulled} pulled · ↑ {report.pushed} pushed
-                    </span>
+                    <div className={`flex items-center gap-2 text-[11px] font-mono ${theme.isLight ? 'text-stone-600' : 'text-zinc-400'}`}>
+                      <span>↓ {report.pulled} pulled</span>
+                      <span>↑ {report.pushed} pushed</span>
+                    </div>
                   </div>
 
                   {report.skipped.length > 0 && (
@@ -529,12 +582,36 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
             </div>
 
             {backupMsg && (
-              <div className={`p-2 rounded-lg border text-[11px] font-bold break-words ${
+              <div className={`p-2.5 rounded-xl border text-[11px] font-bold break-words space-y-2 ${
                 theme.isLight
                   ? 'bg-amber-500/15 border-amber-500/40 text-amber-900'
                   : 'bg-amber-500/10 border-amber-500/25 text-amber-200'
               }`}>
-                {backupMsg}
+                <div>{backupMsg}</div>
+                {readyBackup && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSaveReadyBackup}
+                      className="px-2.5 py-1.5 rounded-lg bg-amber-400 hover:bg-amber-300 text-zinc-950 font-bold text-[11px] transition active:scale-95"
+                    >
+                      Save / Share File
+                    </button>
+                    {readyBackup.blob.size <= 4 * 1024 * 1024 && (
+                      <button
+                        type="button"
+                        onClick={handleCopyReadyBackup}
+                        className={`px-2.5 py-1.5 rounded-lg border font-bold text-[11px] transition active:scale-95 ${
+                          theme.isLight
+                            ? 'bg-white/80 hover:bg-white border-amber-500/40 text-amber-900'
+                            : 'bg-zinc-900 hover:bg-zinc-800 border-amber-500/30 text-amber-200'
+                        }`}
+                      >
+                        Copy JSON
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
