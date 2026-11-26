@@ -46,7 +46,23 @@ import { autoFetchAndCacheBoxart } from './services/boxartResolver';
 import { isZipFile, isZipBuffer, extractRomsFromZip, isRarFile, isRarBuffer, extractRomsFromRar } from './services/romArchive';
 import { useGamepadInput } from './hooks/useGamepadInput';
 
+const APP_VERSION = '1.1.1';
+const RELEASES_API_URL = 'https://api.github.com/repos/kurixutian/retro-station/releases/latest';
 const INITIAL_GAMES: Game[] = [];
+
+function isNewerSemver(remoteTag: string, currentVersion: string): boolean {
+  const parse = (v: string) =>
+    v.replace(/^v/i, '').split('.').map((n) => parseInt(n, 10) || 0);
+  const r = parse(remoteTag);
+  const c = parse(currentVersion);
+  for (let i = 0; i < Math.max(r.length, c.length); i++) {
+    const rv = r[i] || 0;
+    const cv = c[i] || 0;
+    if (rv > cv) return true;
+    if (rv < cv) return false;
+  }
+  return false;
+}
 
 function sanitizeGameList(rawList: any[]): Game[] {
   if (!Array.isArray(rawList)) return [];
@@ -328,7 +344,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const refreshGameList = () => {
+    const refreshGameList = async () => {
       try {
         const applyGameList = (list: any[]) => {
           if (!Array.isArray(list)) return;
@@ -351,19 +367,23 @@ export default function App() {
             .catch(() => {});
         };
 
-        let saved: any[] | null = null;
-        try {
-          saved = JSON.parse(localStorage.getItem('retro_games') || 'null');
-        } catch (e) {}
-
-        if (Array.isArray(saved) && saved.length > 0) {
-          applyGameList(saved);
-        } else {
-          idbGet('library_games').then((idbList) => {
-            if (Array.isArray(idbList)) {
-              applyGameList(idbList);
+        const [saved, idbList] = await Promise.all([
+          Promise.resolve().then(() => {
+            try {
+              return JSON.parse(localStorage.getItem('retro_games') || 'null');
+            } catch {
+              return null;
             }
-          }).catch(() => {});
+          }),
+          idbGet('library_games').catch(() => null),
+        ]);
+
+        const combined = [
+          ...(Array.isArray(saved) ? saved : []),
+          ...(Array.isArray(idbList) ? idbList : []),
+        ];
+        if (combined.length > 0) {
+          applyGameList(combined);
         }
       } catch (e) {}
     };
@@ -737,6 +757,7 @@ export default function App() {
 
   const [fps, setFps] = useState(60);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastActionUrl, setToastActionUrl] = useState<string | null>(null);
 
   const keysRef = useRef<Record<string, boolean>>({
     up: false,
@@ -800,15 +821,41 @@ export default function App() {
     }
   }, [theme.id, theme.hex, theme.isLight, shaders.amoled]);
 
-  const showToast = useCallback((msg: string) => {
+  const showToast = useCallback((msg: string, actionUrl: string | null = null) => {
+    setToastActionUrl(actionUrl);
     setToastMessage(msg);
   }, []);
 
   useEffect(() => {
     if (!toastMessage) return;
-    const t = setTimeout(() => setToastMessage(null), 2600);
+    const t = setTimeout(() => {
+      setToastMessage(null);
+      setToastActionUrl(null);
+    }, toastActionUrl ? 6000 : 2600);
     return () => clearTimeout(t);
-  }, [toastMessage]);
+  }, [toastMessage, toastActionUrl]);
+
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+    try {
+      if (sessionStorage.getItem('retro_update_checked') === '1') return;
+      sessionStorage.setItem('retro_update_checked', '1');
+    } catch {}
+    let cancelled = false;
+    fetch(RELEASES_API_URL, { headers: { Accept: 'application/vnd.github+json' } })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.tag_name) return;
+        if (isNewerSemver(String(data.tag_name), APP_VERSION)) {
+          const url = typeof data.html_url === 'string'
+            ? data.html_url
+            : 'https://github.com/kurixutian/retro-station/releases/latest';
+          showToast(`Update ${data.tag_name} available — tap to view`, url);
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [showToast]);
 
   const applyTheme = (id: string) => {
     setThemeId(id);
@@ -1761,20 +1808,6 @@ export default function App() {
     } catch (e) {}
   }, [activeGame.real, isRewinding]);
 
-  const filteredGames = useMemo(() => {
-    return games.filter((g) => {
-      if (systemFilter !== 'ALL' && g.shortSystem !== systemFilter) return false;
-      if (
-        searchQuery.trim() &&
-        !g.title.toLowerCase().includes(searchQuery.toLowerCase()) &&
-        !g.system.toLowerCase().includes(searchQuery.toLowerCase())
-      ) {
-        return false;
-      }
-      return true;
-    });
-  }, [games, systemFilter, searchQuery]);
-
   const activePadPointersRef = useRef<Record<string, number | null>>({});
   const activePadTouchesRef = useRef<Record<string, number | null>>({});
   const padRefCallbacksRef = useRef<Record<string, (el: HTMLElement | null) => void>>({});
@@ -1918,7 +1951,15 @@ export default function App() {
         <div
           role="status"
           aria-live="polite"
+          onClick={() => {
+            if (!toastActionUrl) return;
+            window.open(toastActionUrl, '_blank', 'noopener');
+            setToastMessage(null);
+            setToastActionUrl(null);
+          }}
           className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-2.5 px-4 py-2 rounded-xl border text-xs font-semibold shadow-md hardware-panel ${
+            toastActionUrl ? 'cursor-pointer' : ''
+          } ${
             theme.isLight
               ? 'bg-[#f3efe8] border-[#d2cdc3] text-[#121214]'
               : 'bg-[#131316] border-[#222227] text-[#f4f4f6]'

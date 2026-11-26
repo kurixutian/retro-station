@@ -177,6 +177,35 @@ export const InGameView: React.FC<InGameViewProps> = ({
   const [isPoweringOn, setIsPoweringOn] = React.useState(true);
   const [emuReady, setEmuReady] = React.useState(false);
   const [quickMenuOpen, setQuickMenuOpen] = React.useState(false);
+  const [menuPosPortrait, setMenuPosPortrait] = React.useState<{ x: number; y: number }>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('retro_menu_btn_pos_portrait') || 'null');
+      if (saved && typeof saved.x === 'number' && typeof saved.y === 'number') return saved;
+    } catch {}
+    if (typeof window !== 'undefined') {
+      return { x: 12, y: Math.max(12, window.innerHeight - 48) };
+    }
+    return { x: 12, y: 560 };
+  });
+  const [menuXLandscape, setMenuXLandscape] = React.useState<number>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('retro_menu_btn_pos_landscape') || 'null');
+      if (typeof saved === 'number') return saved;
+      if (saved && typeof saved.x === 'number') return saved.x;
+    } catch {}
+    if (typeof window !== 'undefined') {
+      return Math.max(76, Math.round(window.innerWidth * 0.22));
+    }
+    return 180;
+  });
+  const menuDragRef = React.useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    origX: number;
+    origY: number;
+    moved: boolean;
+  } | null>(null);
 
   React.useEffect(() => {
     setEmuReady(false);
@@ -331,9 +360,17 @@ export const InGameView: React.FC<InGameViewProps> = ({
 
   const scalePad = React.useCallback(
     (id: PadGroupId, s: number) => {
+      const pairedId: PadGroupId | undefined =
+        id === 'select' ? 'start' : id === 'start' ? 'select' : id === 'btnL' ? 'btnR' : id === 'btnR' ? 'btnL' : undefined;
       setPadLayout((l) => {
-        const curr = l[id] || (isLandscape ? DEFAULT_LANDSCAPE_PAD_LAYOUT[id] : DEFAULT_PAD_LAYOUT[id]) || { x: 0.5, y: 0.5, s: 1 };
-        return { ...l, [id]: { ...curr, s } };
+        const defaults = isLandscape ? DEFAULT_LANDSCAPE_PAD_LAYOUT : DEFAULT_PAD_LAYOUT;
+        const curr = l[id] || defaults[id] || { x: 0.5, y: 0.5, s: 1 };
+        const next: PadLayout = { ...l, [id]: { ...curr, s } };
+        if (pairedId) {
+          const pairedCurr = l[pairedId] || defaults[pairedId] || { x: 0.5, y: 0.5, s: 1 };
+          next[pairedId] = { ...pairedCurr, s };
+        }
+        return next;
       });
     },
     [setPadLayout, isLandscape]
@@ -648,7 +685,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
         type="button"
         tabIndex={0}
         {...safeBindPadButton('select')}
-        className="flex flex-col items-center gap-1.5 group touch-none select-none"
+        className="min-w-[60px] flex flex-col items-center gap-1.5 group touch-none select-none"
         aria-label="Select button"
       >
         <div
@@ -679,7 +716,7 @@ export const InGameView: React.FC<InGameViewProps> = ({
         type="button"
         tabIndex={0}
         {...safeBindPadButton('start')}
-        className="flex flex-col items-center gap-1.5 group touch-none select-none"
+        className="min-w-[60px] flex flex-col items-center gap-1.5 group touch-none select-none"
         aria-label="Start button"
       >
         <div
@@ -1140,17 +1177,17 @@ export const InGameView: React.FC<InGameViewProps> = ({
               {Math.round(currentScale * 100)}%
             </span>
           </div>
-          <div className="flex items-center gap-2">
-            <input
-              type="range"
-              min={isTransport ? '0.65' : isScreen ? '0.6' : '0.5'}
-              max={isTransport ? '1.5' : isScreen ? '1.5' : '1.8'}
-              step="0.05"
-              value={currentScale}
-              onChange={(e) => scalePad(activeKey, parseFloat(e.target.value))}
-              className="flex-1 accent-emerald-500 cursor-pointer"
-              aria-label={isScreen ? 'Screen scale' : 'Button scale'}
-            />
+          <input
+            type="range"
+            min={isTransport ? '0.35' : isScreen ? '0.6' : '0.5'}
+            max={isTransport ? '1.5' : isScreen ? '1.5' : '1.8'}
+            step="0.05"
+            value={currentScale}
+            onChange={(e) => scalePad(activeKey, parseFloat(e.target.value))}
+            className="w-full accent-emerald-500 cursor-pointer"
+            aria-label={isScreen ? 'Screen scale' : 'Button scale'}
+          />
+          <div className="flex items-center justify-end gap-2 pt-1">
             <button
               onClick={() => {
                 if (padSnapshotRef.current) {
@@ -1334,48 +1371,121 @@ export const InGameView: React.FC<InGameViewProps> = ({
           shaders.amoled ? 'bg-black border-zinc-900' : theme.shellBg
         } ${isLandscape ? '' : 'safe-bottom'}`}
       >
-        {/* Fixed Bottom-Left Icon-Only Menu Trigger */}
-        {!customizing && (
-          <button
-            type="button"
-            aria-label="Open Game Menu"
-            onClick={() => setQuickMenuOpen((o) => !o)}
-            className={`fixed z-50 w-9 h-9 rounded-full flex items-center justify-center border backdrop-blur-md shadow-sm transition active:scale-95 ${
-              shaders.amoled
-                ? 'bg-black/60 border-white/10 text-zinc-400 hover:text-zinc-100'
-                : theme.isLight
-                ? 'bg-black/10 border-black/10 text-zinc-700 hover:bg-black/15'
-                : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white'
-            }`}
-            style={{
-              left: 'max(env(safe-area-inset-left, 0px) + 12px, 12px)',
-              bottom: 'max(env(safe-area-inset-bottom, 0px) + 12px, 12px)',
-            }}
-          >
-            <Sliders className="w-4 h-4" />
-          </button>
-        )}
-
-        {/* ANCHORED ICON-ONLY DROP-UP QUICK MENU */}
-        {quickMenuOpen && (
-          <div
-            className="fixed inset-0 z-40"
-            onClick={() => setQuickMenuOpen(false)}
-          >
-            <div
-              className={`fixed z-50 flex flex-col gap-1 p-1 rounded-2xl border backdrop-blur-md shadow-xl modal-pop ${
-                shaders.amoled
-                  ? 'bg-black/85 border-white/10 text-zinc-300'
-                  : theme.isLight
-                  ? 'bg-white/85 border-black/10 text-zinc-800'
-                  : 'bg-[#16161b]/85 border-white/10 text-zinc-300'
-              }`}
-              style={{
-                left: 'max(env(safe-area-inset-left, 0px) + 12px, 12px)',
-                bottom: 'max(env(safe-area-inset-bottom, 0px) + 56px, 56px)',
+        {/* Draggable Icon-Only Menu Trigger (Portrait: free X/Y; Landscape/Fullscreen: slides horizontally along bottom edge) */}
+        {!customizing && (() => {
+          const vw = typeof window !== 'undefined' ? window.innerWidth : 390;
+          const vh = typeof window !== 'undefined' ? window.innerHeight : 844;
+          const clampedX = Math.max(8, Math.min(vw - 44, isLandscape ? menuXLandscape : menuPosPortrait.x));
+          const clampedY = Math.max(8, Math.min(vh - 44, menuPosPortrait.y));
+          return (
+            <button
+              type="button"
+              aria-label="Open Game Menu"
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                menuDragRef.current = {
+                  pointerId: e.pointerId,
+                  startX: e.clientX,
+                  startY: e.clientY,
+                  origX: clampedX,
+                  origY: clampedY,
+                  moved: false,
+                };
+                try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
               }}
-              onClick={(e) => e.stopPropagation()}
+              onPointerMove={(e) => {
+                const d = menuDragRef.current;
+                if (!d || d.pointerId !== e.pointerId) return;
+                const dx = e.clientX - d.startX;
+                const dy = e.clientY - d.startY;
+                if (!d.moved && Math.hypot(dx, dy) > 6) d.moved = true;
+                if (d.moved) {
+                  const nextX = Math.max(8, Math.min(window.innerWidth - 44, d.origX + dx));
+                  if (isLandscape) {
+                    setMenuXLandscape(nextX);
+                  } else {
+                    const nextY = Math.max(8, Math.min(window.innerHeight - 44, d.origY + dy));
+                    setMenuPosPortrait({ x: nextX, y: nextY });
+                  }
+                }
+              }}
+              onPointerUp={(e) => {
+                const d = menuDragRef.current;
+                if (!d || d.pointerId !== e.pointerId) return;
+                menuDragRef.current = null;
+                try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
+                if (d.moved) {
+                  try {
+                    if (isLandscape) {
+                      localStorage.setItem('retro_menu_btn_pos_landscape', JSON.stringify(menuXLandscape));
+                    } else {
+                      localStorage.setItem('retro_menu_btn_pos_portrait', JSON.stringify(menuPosPortrait));
+                    }
+                  } catch {}
+                } else {
+                  setQuickMenuOpen((o) => !o);
+                }
+              }}
+              onPointerCancel={() => {
+                menuDragRef.current = null;
+              }}
+              className={`fixed z-50 w-9 h-9 rounded-full flex items-center justify-center border backdrop-blur-md shadow-sm touch-none select-none cursor-grab active:cursor-grabbing transition-colors ${
+                shaders.amoled
+                  ? 'bg-black/60 border-white/10 text-zinc-400 hover:text-zinc-100'
+                  : theme.isLight
+                  ? 'bg-black/10 border-black/10 text-zinc-700 hover:bg-black/15'
+                  : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white'
+              }`}
+              style={
+                isLandscape
+                  ? {
+                      left: `${clampedX}px`,
+                      bottom: 'max(env(safe-area-inset-bottom, 0px) + 12px, 12px)',
+                    }
+                  : {
+                      left: `${clampedX}px`,
+                      top: `${clampedY}px`,
+                    }
+              }
             >
+              <Sliders className="w-4 h-4" />
+            </button>
+          );
+        })()}
+
+        {/* ANCHORED ICON-ONLY DROP-UP / DROP-DOWN QUICK MENU */}
+        {quickMenuOpen && (() => {
+          const vw = typeof window !== 'undefined' ? window.innerWidth : 390;
+          const vh = typeof window !== 'undefined' ? window.innerHeight : 844;
+          const btnX = Math.max(8, Math.min(vw - 44, isLandscape ? menuXLandscape : menuPosPortrait.x));
+          const btnY = Math.max(8, Math.min(vh - 44, menuPosPortrait.y));
+          const dropUp = isLandscape || btnY > vh * 0.5;
+          const alignRight = btnX > vw * 0.5;
+          return (
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => setQuickMenuOpen(false)}
+            >
+              <div
+                className={`fixed z-50 flex flex-col gap-1 p-1 rounded-2xl border backdrop-blur-md shadow-xl modal-pop ${
+                  shaders.amoled
+                    ? 'bg-black/85 border-white/10 text-zinc-300'
+                    : theme.isLight
+                    ? 'bg-white/85 border-black/10 text-zinc-800'
+                    : 'bg-[#16161b]/85 border-white/10 text-zinc-300'
+                }`}
+                style={{
+                  ...(isLandscape
+                    ? { bottom: 'max(env(safe-area-inset-bottom, 0px) + 56px, 56px)' }
+                    : dropUp
+                    ? { bottom: `${Math.max(8, vh - btnY + 8)}px` }
+                    : { top: `${Math.max(8, btnY + 44)}px` }),
+                  ...(alignRight
+                    ? { right: `${Math.max(8, vw - (btnX + 36))}px` }
+                    : { left: `${Math.max(8, btnX)}px` }),
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
               <button
                 onClick={() => {
                   setQuickMenuOpen(false);
@@ -1437,9 +1547,10 @@ export const InGameView: React.FC<InGameViewProps> = ({
               >
                 {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
               </button>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* CENTERED PAUSE / CONFIG DIALOG */}
         {inGameMenuOpen && (

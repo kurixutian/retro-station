@@ -40,7 +40,7 @@ export const GameCoverImage: React.FC<GameCoverImageProps> = ({
     setResolvedSrc(null);
     setCachedUrl(null);
     attemptedResolveRef.current = null;
-  }, [game?.id, game?.customTitle]);
+  }, [game?.id]);
 
   useEffect(() => {
     let active = true;

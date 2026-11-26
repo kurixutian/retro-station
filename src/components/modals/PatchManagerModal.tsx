@@ -14,6 +14,7 @@ import { Game, Theme } from '../../types';
 import { ModalShell } from '../common/ModalShell';
 import { getGameDisplayTitle } from '../../constants/cores';
 import { idbGet } from '../../services/storage/idb';
+import { saveFileToDevice } from '../../services/storage/saveSlots';
 import { applyRomPatch, buildPatchedRomFileName } from '../../services/bpsPatcher';
 
 interface PatchManagerModalProps {
@@ -171,18 +172,16 @@ export const PatchManagerModal: React.FC<PatchManagerModalProps> = ({
     return new File([copy.buffer], cleanName, { type: 'application/octet-stream' });
   };
 
-  const handleDownloadPatched = () => {
+  const handleDownloadPatched = async (chooseLocation = false) => {
     const file = buildPatchedFile();
     if (!file) return;
-    const url = URL.createObjectURL(file);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = file.name;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    showToast(`Downloaded ${file.name}`);
+    try {
+      const res = await saveFileToDevice(file, file.name, 'application/octet-stream', chooseLocation);
+      if (res.cancelled) return;
+      showToast(res.location ? `Saved to ${res.location}` : `Downloaded ${file.name}`);
+    } catch (err: any) {
+      showToast(`Save failed: ${err?.message || 'Could not write file'}`);
+    }
   };
 
   const handleImportPatched = async () => {
@@ -456,7 +455,7 @@ export const PatchManagerModal: React.FC<PatchManagerModalProps> = ({
             <div className="flex flex-col sm:flex-row gap-2">
               <button
                 type="button"
-                onClick={handleDownloadPatched}
+                onClick={() => handleDownloadPatched(false)}
                 className={`flex-1 py-2 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 tactile-btn transition ${
                   isLight
                     ? 'bg-white hover:bg-stone-100 text-zinc-900 border border-stone-300'
@@ -464,7 +463,19 @@ export const PatchManagerModal: React.FC<PatchManagerModalProps> = ({
                 }`}
               >
                 <Download className="w-4 h-4" />
-                <span>Download Patched ROM</span>
+                <span>Download</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleDownloadPatched(true)}
+                className={`py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 tactile-btn transition ${
+                  isLight
+                    ? 'bg-stone-200 hover:bg-stone-300 text-zinc-900 border border-stone-300'
+                    : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700'
+                }`}
+              >
+                <span>Choose Folder…</span>
               </button>
 
               <button

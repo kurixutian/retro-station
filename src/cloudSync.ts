@@ -1335,11 +1335,30 @@ async function executeSync(interactive = false): Promise<{
     }
 
     let tombstonesDirty = false;
+    const localDeletedIds = new Set(getDeletedGameIds());
+    let localActiveGameIds = new Set<string>();
+    try {
+      const rawGames = localStorage.getItem('retro_games');
+      const parsed = rawGames ? JSON.parse(rawGames) : [];
+      if (Array.isArray(parsed)) {
+        localActiveGameIds = new Set(parsed.map((g: any) => g?.id).filter(Boolean).map(String));
+      }
+    } catch {}
+    const retroGamesPendingPush = Boolean(metaMap['retro_games']?.pendingUpload);
+
+    const filteredRemoteTombstones = remoteTombstones.deletedGames.filter(
+      (id) => !(retroGamesPendingPush && localActiveGameIds.has(id) && !localDeletedIds.has(id))
+    );
+    if (filteredRemoteTombstones.length !== remoteTombstones.deletedGames.length) {
+      remoteTombstones.deletedGames = filteredRemoteTombstones;
+      tombstonesDirty = true;
+    }
+
     const mergedDeletedGames = new Set<string>([
-      ...getDeletedGameIds(),
-      ...remoteTombstones.deletedGames,
+      ...localDeletedIds,
+      ...filteredRemoteTombstones,
     ]);
-    if (mergedDeletedGames.size !== getDeletedGameIds().length) {
+    if (mergedDeletedGames.size !== localDeletedIds.size) {
       localStorage.setItem(DELETED_GAMES_KEY, JSON.stringify(Array.from(mergedDeletedGames)));
       updatedLocalKeys.push(DELETED_GAMES_KEY);
     }
@@ -1365,7 +1384,7 @@ async function executeSync(interactive = false): Promise<{
       if (tombTs > rItem.updatedAt) return false;
       const local = metaMap[k];
       if (!local) return true;
-      if (rItem.updatedAt > local.updatedAt) return true;
+      if (!local.pendingUpload && rItem.updatedAt > local.updatedAt) return true;
       // If IndexedDB lost the item locally while localMeta survived, re-pull it from Drive
       if (localIdbKeySet && isItemKey(k)) {
         if (isRomKey(k)) {

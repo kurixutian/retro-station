@@ -36,7 +36,8 @@ import {
   SyncReport,
   GoogleUserProfile,
 } from '../../cloudSync';
-import { createBackupFile, exportBackupFile, importBackupFile, triggerBlobDownload } from '../../services/backup';
+import { createBackupFile, exportBackupFile, importBackupFile } from '../../services/backup';
+import { saveFileToDevice } from '../../services/storage/saveSlots';
 
 interface CloudSyncModalProps {
   isOpen: boolean;
@@ -222,34 +223,14 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
 
   const handleSaveReadyBackup = async () => {
     if (!readyBackup) return;
-    const { blob, fileName } = readyBackup;
-    const w = window as any;
-    if (typeof w.showSaveFilePicker === 'function') {
-      try {
-        const handle = await w.showSaveFilePicker({
-          suggestedName: fileName,
-          types: [{ description: 'JSON Backup', accept: { 'application/json': ['.json'] } }],
-        });
-        const writable = await handle.createWritable();
-        await writable.write(blob);
-        await writable.close();
-        showToast(`Saved ${fileName}`);
-        return;
-      } catch (err: any) {
-        if (err?.name === 'AbortError') return;
+    try {
+      const res = await saveFileToDevice(readyBackup.blob, readyBackup.fileName, 'application/json', true);
+      if (!res.cancelled) {
+        showToast(res.location ? `Saved to ${res.location}` : `Saved ${readyBackup.fileName}`);
       }
+    } catch (err: any) {
+      showToast(`Save failed: ${err?.message || 'Could not save file'}`);
     }
-    const file = new File([blob], fileName, { type: 'application/json' });
-    if (typeof navigator !== 'undefined' && navigator.share && navigator.canShare?.({ files: [file] })) {
-      try {
-        await navigator.share({ files: [file], title: fileName });
-        return;
-      } catch (err: any) {
-        if (err?.name === 'AbortError') return;
-      }
-    }
-    triggerBlobDownload(blob, fileName);
-    showToast(`Downloading ${fileName}`);
   };
 
   const handleCopyReadyBackup = async () => {
@@ -595,7 +576,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                       onClick={handleSaveReadyBackup}
                       className="px-2.5 py-1.5 rounded-lg bg-amber-400 hover:bg-amber-300 text-zinc-950 font-bold text-[11px] transition active:scale-95"
                     >
-                      Save / Share File
+                      Choose Folder…
                     </button>
                     {readyBackup.blob.size <= 4 * 1024 * 1024 && (
                       <button

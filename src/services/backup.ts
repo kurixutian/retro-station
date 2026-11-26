@@ -6,6 +6,7 @@
 // ============================================================================
 
 import { idbGet, idbGetAllKeys, idbPut } from './storage/idb';
+import { saveFileToDevice } from './storage/saveSlots';
 import {
   uint8ArrayToBase64 as uint8ToBase64,
   base64ToUint8Array as base64ToUint8,
@@ -105,6 +106,7 @@ export async function createBackupFile(): Promise<BackupFile> {
         }
         items[key] = uint8ToBase64(new TextEncoder().encode(JSON.stringify(copy)));
       }
+      await new Promise((r) => setTimeout(r, 0));
     }
   } catch (e) {
     // fallthrough: lists stay intact even if IDB items failed
@@ -175,32 +177,18 @@ export function triggerBlobDownload(blob: Blob, fileName: string): void {
 }
 
 export async function exportBackupFile(
-  backup: BackupFile
-): Promise<{ fileName: string; blob: Blob; nativeLocation?: string }> {
+  backup: BackupFile,
+  chooseLocation = false
+): Promise<{ fileName: string; blob: Blob; nativeLocation?: string; cancelled?: boolean }> {
   const fileName = getBackupFileName(backup);
   const blob = buildBackupBlob(backup);
-
-  const isNative =
-    typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.() === true;
-  if (isNative) {
-    try {
-      const { Filesystem, Directory, Encoding } = await import('@capacitor/filesystem');
-      const text = await blob.text();
-      await Filesystem.writeFile({
-        path: fileName,
-        data: text,
-        directory: Directory.Documents,
-        encoding: Encoding.UTF8,
-        recursive: true,
-      });
-      return { fileName, blob, nativeLocation: `Documents/${fileName}` };
-    } catch {
-      /* Fall through to browser download if Documents permission is unavailable */
-    }
-  }
-
-  triggerBlobDownload(blob, fileName);
-  return { fileName, blob };
+  const res = await saveFileToDevice(blob, fileName, 'application/json', chooseLocation);
+  return {
+    fileName,
+    blob,
+    nativeLocation: res.saved ? res.location : undefined,
+    cancelled: res.cancelled,
+  };
 }
 
 export function downloadBackup(backup: BackupFile): void {

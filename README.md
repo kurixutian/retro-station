@@ -9,7 +9,12 @@ A tactile, offline-first mobile & web Libretro handheld emulator frontend with a
 ## Play Now
 
 - **Play in your browser:** [https://kurixutian.github.io/retro-station/](https://kurixutian.github.io/retro-station/)
-- **Install the Android App (APK):** [Download v1.1.0 from GitHub Releases](https://github.com/kurixutian/retro-station/releases/latest) — install the native app so your ROMs and saves are stored on your device instead of depending on browser local storage.
+- **Install the Android App (APK):** [Download v1.1.1 from GitHub Releases](https://github.com/kurixutian/retro-station/releases/latest) — install the native app so your ROMs and saves are stored on your device instead of depending on browser local storage.
+
+### What's New in v1.1.1
+- **Draggable Menu & Control Customizer Fixes**: Menu button is draggable in portrait and slides horizontally along the bottom edge in landscape; Start/Select and L/R resize together, 3-button transport bar scales down to 35%, and the Edit Controls `Done` button fits cleanly inside the dialog.
+- **Reliable Downloads & Full Backup Export**: Patched ROMs and full-library backups stream directly to Android `Downloads` (without crashing on large libraries) and support `Choose Folder…` via the system file picker.
+- **Rename & Release Toast**: Fixed cover/sync issues when renaming cartridges and added a non-blocking update toast when a new GitHub release is available.
 
 ### What's New in v1.1.0
 - **Cartridge Insertion Animation**: Custom cartridge plug-in animation with the selected game's cover art replaces raw loading/decompression screens.
