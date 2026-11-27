@@ -9,7 +9,12 @@ A tactile, offline-first mobile & web Libretro handheld emulator frontend with a
 ## Play Now
 
 - **Play in your browser:** [https://kurixutian.github.io/retro-station/](https://kurixutian.github.io/retro-station/)
-- **Install the Android App (APK):** [Download v1.1.3 from GitHub Releases](https://github.com/kurixutian/retro-station/releases/latest) — install the native app so your ROMs and saves are stored on your device instead of depending on browser local storage.
+- **Install the Android App (APK):** [Download v1.1.4 from GitHub Releases](https://github.com/kurixutian/retro-station/releases/latest) — install the native app so your ROMs and saves are stored on your device instead of depending on browser local storage.
+
+### What's New in v1.1.4
+- **HD-2D Diorama (WebGL) Shader**: Multi-pass GPU shader with separable Gaussian tilt-shift focus, warm highlight bloom, feathered directional cast shadows, and deep ACES/black-contrast grading.
+- **RTC Time-of-Day Lighting**: Automatically detects hardware RTC support (GB/GBC MBC3 & GBA RTC titles) to shift sun angle and day/sunset/moonlight mood with your clock.
+- **mGBA Color Correction**: Enabled `mgba_color_correction: "Auto"` for GBA cores to eliminate washed-out raw LCD brightness, plus `.debug` side-by-side package ID for debug builds.
 
 ### What's New in v1.1.3
 - **Updated App & PWA Icon**: Replaced all legacy icons across the web app, PWA manifest, and Android adaptive/round launchers with the updated Retro Station icon.

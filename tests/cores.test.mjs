@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import vm from 'node:vm';
+import fs from 'node:fs';
+import path from 'node:path';
 
 function sanitizeLibretroTitle(title) {
   return title.replace(/[&*\/:\`<>?\\|"]/g, '_').trim();
@@ -47,4 +50,38 @@ test('emulator player avoids per-frame rewind serialization overhead and exposes
   assert.ok(!/"rewind_granularity",default:1\b/.test(html));
   assert.ok(!/rewind_granularity = \\"1\\"/.test(html));
   assert.match(html, /window\.getMeasuredFps=function/);
+});
+
+test('emulator player generates valid JS and wires WebGL HDR 3D relief shader safely', async () => {
+  const { buildPlayerHtml } = await import('../src/services/emulator/playerBridge.ts');
+  const htmlDefault = buildPlayerHtml('gba', 'rom.gba', 'Golden Sun');
+  const match = htmlDefault.match(/<div id="game"><\/div><script>([\s\S]*?)<\/script><script src=/);
+  assert.ok(match, 'inline player script block should exist');
+  assert.doesNotThrow(() => new vm.Script(match[1]), 'inline player script must be syntactically valid JS');
+
+  assert.match(htmlDefault, /window\._hdr3dEnabled=false;/);
+  assert.match(htmlDefault, /window\.setHdr3dShader=function/);
+  assert.match(htmlDefault, /ev\.data\.type==="ejs-set-hdr3d"/);
+  assert.match(htmlDefault, /nextAttrs\.preserveDrawingBuffer=true;/);
+  assert.match(htmlDefault, /c\.dataset&&c\.dataset\.rsShaderOverlay==="1".*continue/);
+  assert.match(htmlDefault, /window\._destroyHdr3dShader\(\)/);
+  assert.match(htmlDefault, /acesFilm\(/);
+  assert.match(htmlDefault, /_probeRtcSupport/);
+  assert.match(htmlDefault, /u_sunDir/);
+
+  const htmlEnabled = buildPlayerHtml('gba', 'rom.gba', 'Golden Sun', { hdr3d: true });
+  assert.match(htmlEnabled, /window\._hdr3dEnabled=true;/);
+});
+
+test('HDR 3D shader toggle is wired across App, SettingsModal, and InGameView', () => {
+  const root = path.resolve('.');
+  const appSrc = fs.readFileSync(path.join(root, 'src/App.tsx'), 'utf8');
+  const settingsSrc = fs.readFileSync(path.join(root, 'src/components/modals/SettingsModal.tsx'), 'utf8');
+  const inGameSrc = fs.readFileSync(path.join(root, 'src/components/emulator/InGameView.tsx'), 'utf8');
+
+  assert.match(appSrc, /hdr3d:\s*false/);
+  assert.match(appSrc, /key === 'hdr3d'/);
+  assert.match(settingsSrc, /key:\s*'hdr3d'/);
+  assert.match(inGameSrc, /shaders\.hdr3d/);
+  assert.match(inGameSrc, /ejs-set-hdr3d/);
 });

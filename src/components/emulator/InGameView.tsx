@@ -51,7 +51,7 @@ import { CartridgeInstallOverlay } from '../common/CartridgeInstallOverlay';
 interface InGameViewProps {
   activeGame: Game;
   theme: Theme;
-  shaders: Record<string, boolean>;
+  shaders: Record<string, any>;
   romUrl: string | null;
   isPaused: boolean;
   setIsPaused: React.Dispatch<React.SetStateAction<boolean>>;
@@ -220,6 +220,16 @@ export const InGameView: React.FC<InGameViewProps> = ({
     window.addEventListener('message', onMsg);
     return () => window.removeEventListener('message', onMsg);
   }, []);
+
+  React.useEffect(() => {
+    if (!activeGame.real || !romUrl) return;
+    try {
+      const win = emuFrameRef.current?.contentWindow as any;
+      const active = Boolean(shaders.hdr3d);
+      win?.setHdr3dShader?.(active);
+      win?.postMessage?.({ type: 'ejs-set-hdr3d', active }, '*');
+    } catch {}
+  }, [activeGame.real, romUrl, emuReady, shaders.hdr3d, emuFrameRef]);
   const [showCartridgeTools, setShowCartridgeTools] = React.useState(false);
   const [saveFormat, setSaveFormat] = React.useState<'sav' | 'srm'>('sav');
   const [showPadHint, setShowPadHint] = React.useState(() => {

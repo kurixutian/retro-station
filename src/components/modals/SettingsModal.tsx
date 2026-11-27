@@ -363,6 +363,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {[
                     {
+                      key: 'hdr3d',
+                      title: 'HD-2D Diorama (WebGL)',
+                      desc: 'Tilt-shift focus, warm golden sunbeams, 3D drop shadows & ACES grading'
+                    },
+                    {
                       key: 'edgeToEdge',
                       title: 'Edge-to-Edge Screen (No Bezel)',
                       desc: 'Remove bezel borders and expand screen flush edge-to-edge'

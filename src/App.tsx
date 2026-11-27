@@ -46,7 +46,7 @@ import { autoFetchAndCacheBoxart } from './services/boxartResolver';
 import { isZipFile, isZipBuffer, extractRomsFromZip, isRarFile, isRarBuffer, extractRomsFromRar } from './services/romArchive';
 import { useGamepadInput } from './hooks/useGamepadInput';
 
-const APP_VERSION = '1.1.3';
+const APP_VERSION = '1.1.4';
 const RELEASES_API_URL = 'https://api.github.com/repos/kurixutian/retro-station/releases/latest';
 const INITIAL_GAMES: Game[] = [];
 
@@ -495,6 +495,7 @@ export default function App() {
       gbGrid: false,
       amoled: false,
       edgeToEdge: false,
+      hdr3d: false,
       colorCorrection: false,
       colorProfile: 'off',
     };
@@ -874,6 +875,8 @@ export default function App() {
         showToast(next.edgeToEdge ? 'Edge-to-Edge Bezel-less Screen: Enabled' : 'Edge-to-Edge Screen: Disabled (Standard Bezel)');
       } else if (key === 'colorCorrection') {
         showToast(next.colorCorrection ? 'RetroArch Colors: Vivid Saturation & Contrast' : 'RetroArch Colors: Disabled (Raw RGB)');
+      } else if (key === 'hdr3d') {
+        showToast(next.hdr3d ? 'HDR 3D Relief Shader: Enabled' : 'HDR 3D Relief Shader: Disabled');
       }
       return next;
     });
