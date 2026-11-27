@@ -46,7 +46,7 @@ import { autoFetchAndCacheBoxart } from './services/boxartResolver';
 import { isZipFile, isZipBuffer, extractRomsFromZip, isRarFile, isRarBuffer, extractRomsFromRar } from './services/romArchive';
 import { useGamepadInput } from './hooks/useGamepadInput';
 
-const APP_VERSION = '1.1.2';
+const APP_VERSION = '1.1.3';
 const RELEASES_API_URL = 'https://api.github.com/repos/kurixutian/retro-station/releases/latest';
 const INITIAL_GAMES: Game[] = [];
 
