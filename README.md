@@ -9,7 +9,10 @@ A tactile, offline-first mobile & web Libretro handheld emulator frontend with a
 ## Play Now
 
 - **Play in your browser:** [https://kurixutian.github.io/retro-station/](https://kurixutian.github.io/retro-station/)
-- **Install the Android App (APK):** [Download v1.1.1 from GitHub Releases](https://github.com/kurixutian/retro-station/releases/latest) — install the native app so your ROMs and saves are stored on your device instead of depending on browser local storage.
+- **Install the Android App (APK):** [Download v1.1.2 from GitHub Releases](https://github.com/kurixutian/retro-station/releases/latest) — install the native app so your ROMs and saves are stored on your device instead of depending on browser local storage.
+
+### What's New in v1.1.2
+- **New Minimalist App & PWA Icon**: Replaced all legacy icons across the web app, PWA manifest, and Android adaptive/round launchers with the new black-and-white Retro Station icon.
 
 ### What's New in v1.1.1
 - **Draggable Menu & Control Customizer Fixes**: Menu button is draggable in portrait and slides horizontally along the bottom edge in landscape; Start/Select and L/R resize together, 3-button transport bar scales down to 35%, and the Edit Controls `Done` button fits cleanly inside the dialog.
